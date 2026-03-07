@@ -2,21 +2,27 @@ import asyncio
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
-from services.f1_data import get_driver_positions_by_time
+from services.storage import get_json
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["replay"])
 
-# Cache computed replay frames
+# In-memory cache for replay frames loaded from R2
 _replay_cache: dict[str, list[dict]] = {}
 
 
-async def _get_frames(year: int, round_num: int, session_type: str) -> list[dict]:
+def _get_frames_sync(year: int, round_num: int, session_type: str) -> list[dict]:
     key = f"{year}_{round_num}_{session_type}"
     if key not in _replay_cache:
-        frames = await get_driver_positions_by_time(year, round_num, session_type)
+        frames = get_json(f"sessions/{year}/{round_num}/{session_type}/replay.json")
+        if frames is None:
+            frames = []
         _replay_cache[key] = frames
     return _replay_cache[key]
+
+
+async def _get_frames(year: int, round_num: int, session_type: str) -> list[dict]:
+    return await asyncio.to_thread(_get_frames_sync, year, round_num, session_type)
 
 
 @router.websocket("/ws/replay/{year}/{round_num}")
@@ -29,7 +35,6 @@ async def replay_websocket(
     await websocket.accept()
 
     try:
-        # Send loading status
         await websocket.send_json({"type": "status", "message": "Loading session data..."})
 
         frames = await _get_frames(year, round_num, type)
@@ -53,7 +58,7 @@ async def replay_websocket(
         playing = False
         speed = 1.0
         frame_index = 0
-        base_interval = 0.5  # matches the 0.5s sampling rate
+        base_interval = 0.5
 
         async def send_seek_frame(target_time: float):
             nonlocal frame_index
@@ -100,7 +105,6 @@ async def replay_websocket(
                 await websocket.send_json({"type": "frame", **frames[0]})
 
         async def check_command(timeout: float) -> bool:
-            """Check for and handle one command. Returns True if received."""
             try:
                 msg = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
                 await handle_command(msg.strip().lower())
@@ -110,7 +114,6 @@ async def replay_websocket(
 
         while True:
             if playing and frame_index < len(frames):
-                # Send current frame
                 await websocket.send_json({"type": "frame", **frames[frame_index]})
                 frame_index += 1
 
@@ -119,14 +122,12 @@ async def replay_websocket(
                     await websocket.send_json({"type": "finished"})
                     continue
 
-                # Wait for the interval, checking for commands periodically
                 remaining = base_interval / speed
                 while remaining > 0 and playing:
                     chunk = min(remaining, 0.05)
                     await check_command(chunk)
                     remaining -= chunk
             else:
-                # Not playing — block waiting for commands
                 await check_command(1.0)
 
     except WebSocketDisconnect:

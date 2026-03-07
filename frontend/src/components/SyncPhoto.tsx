@@ -262,7 +262,7 @@ export default function SyncPhoto({
                 <div className="flex justify-between">
                   <span className="text-sm text-f1-muted">Matched to</span>
                   <span className="text-sm font-extrabold text-white">
-                    Lap {result.lap} — {formatTime(result.timestamp)}
+                    Lap {result.lap}  - {formatTime(result.timestamp)}
                   </span>
                 </div>
                 <div className="flex justify-between">

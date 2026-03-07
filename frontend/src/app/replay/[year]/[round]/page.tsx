@@ -167,6 +167,8 @@ export default function ReplayPage() {
               position: d.position,
             }))}
             highlightedDrivers={selectedDrivers}
+            playbackSpeed={replay.speed}
+            showDriverNames={settings.showDriverNames}
           />
 
           {/* Telemetry overlay */}
@@ -192,14 +194,17 @@ export default function ReplayPage() {
         </div>
 
         {/* Leaderboard sidebar */}
-        <div className="w-72 flex-shrink-0">
-          <Leaderboard
-            drivers={drivers}
-            highlightedDrivers={selectedDrivers}
-            onDriverClick={handleDriverClick}
-            settings={settings}
-          />
-        </div>
+        {settings.showLeaderboard && (
+          <div className="w-72 flex-shrink-0">
+            <Leaderboard
+              drivers={drivers}
+              highlightedDrivers={selectedDrivers}
+              onDriverClick={handleDriverClick}
+              settings={settings}
+              currentTime={replay.frame?.timestamp || 0}
+            />
+          </div>
+        )}
       </div>
 
       {/* Playback controls */}

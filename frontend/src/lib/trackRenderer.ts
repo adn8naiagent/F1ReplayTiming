@@ -30,8 +30,8 @@ export function drawTrack(
   if (points.length === 0) return;
 
   const padX = 40;
-  const padTop = 40;
-  const padBottom = 60;
+  const padTop = 60;
+  const padBottom = 90;
   const w = width - padX * 2;
   const h = height - padTop - padBottom;
 
@@ -104,7 +104,7 @@ export function drawTrack(
   ctx.closePath();
   ctx.stroke();
 
-  // Start/finish marker — drawn perpendicular to track direction
+  // Start/finish marker  - drawn perpendicular to track direction
   const [fx, fy] = toScreen(rotated[0]);
   const [nx, ny] = toScreen(rotated[1]);
   const trackAngle = Math.atan2(ny - fy, nx - fx);
@@ -127,12 +127,13 @@ export function drawDrivers(
   height: number,
   rotation: number,
   highlightedDrivers: string[],
+  showNames: boolean = true,
 ) {
   if (trackPoints.length === 0) return;
 
   const padX = 40;
-  const padTop = 40;
-  const padBottom = 60;
+  const padTop = 60;
+  const padBottom = 90;
   const w = width - padX * 2;
   const h = height - padTop - padBottom;
 
@@ -198,9 +199,11 @@ export function drawDrivers(
     ctx.restore();
 
     // Driver label
-    ctx.font = isHighlighted ? "800 12px system-ui, -apple-system, sans-serif" : "800 10px system-ui, -apple-system, sans-serif";
-    ctx.fillStyle = "#FFFFFF";
-    ctx.textAlign = "center";
-    ctx.fillText(drv.abbr, sx, sy - radius - 4);
+    if (showNames) {
+      ctx.font = isHighlighted ? "800 12px system-ui, -apple-system, sans-serif" : "800 10px system-ui, -apple-system, sans-serif";
+      ctx.fillStyle = "#FFFFFF";
+      ctx.textAlign = "center";
+      ctx.fillText(drv.abbr, sx, sy - radius - 4);
+    }
   }
 }

@@ -10,7 +10,7 @@ from typing import Optional
 import httpx
 from fastapi import APIRouter, UploadFile, File, Query, HTTPException
 
-from routers.replay import _get_frames
+from routers.replay import _get_frames  # reads from R2
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["sync"])
@@ -22,8 +22,8 @@ EXTRACT_PROMPT = """You are analyzing a photo of an F1 TV broadcast leaderboard/
 
 Extract the following data from the image:
 
-1. **Lap number** — the current lap shown (e.g., "LAP 23/58" means lap 23)
-2. **Driver entries** — for each visible driver, extract:
+1. **Lap number**  - the current lap shown (e.g., "LAP 23/58" means lap 23)
+2. **Driver entries**  - for each visible driver, extract:
    - Position (1, 2, 3, etc.)
    - Driver abbreviation (3 letters, e.g., VER, NOR, LEC)
    - Gap to leader (e.g., "+1.234", "+12.456", "1 LAP", "LEADER" or "INTERVAL" for P1)
@@ -45,7 +45,7 @@ Rules:
 - If a driver is lapped, use format "1 LAP" or "2 LAPS"
 - If tyre is not visible, set to null
 - Only include drivers you can clearly read
-- Do NOT guess — only extract what is clearly visible"""
+- Do NOT guess  - only extract what is clearly visible"""
 
 
 async def _extract_leaderboard(image_bytes: bytes) -> dict:

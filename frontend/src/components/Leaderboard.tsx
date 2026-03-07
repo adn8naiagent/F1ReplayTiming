@@ -9,6 +9,7 @@ interface Props {
   highlightedDrivers: string[];
   onDriverClick: (abbr: string) => void;
   settings: ReplaySettings;
+  currentTime: number;
 }
 
 function formatGap(gap: string | null): string {
@@ -22,7 +23,7 @@ function formatGap(gap: string | null): string {
   return gap;
 }
 
-export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick, settings }: Props) {
+export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick, settings, currentTime }: Props) {
   const sorted = [...drivers].sort(
     (a, b) => (a.position ?? 999) - (b.position ?? 999),
   );
@@ -66,7 +67,7 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
               <span className="text-sm font-extrabold text-white flex-shrink-0">
                 {drv.abbr}
               </span>
-              {settings.showGridChange && !drv.retired && (
+              {settings.showGridChange && !drv.retired && currentTime >= 10 && (
                 drv.pit_start ? (
                   <span className="text-[10px] font-bold text-white flex-shrink-0">
                     Pit

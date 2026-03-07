@@ -63,9 +63,9 @@ export default function TelemetryChart({ visible, driver }: Props) {
     <div className="bg-f1-card/90 border border-f1-border rounded px-4 py-1.5 backdrop-blur-sm">
       <div className="flex items-center gap-4">
         {/* Driver */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 w-[42px] shrink-0">
           <span
-            className="w-1 h-4 rounded-sm"
+            className="w-1 h-4 rounded-sm shrink-0"
             style={{ backgroundColor: driver.color }}
           />
           <span className="text-[10px] font-extrabold text-white">
@@ -74,7 +74,7 @@ export default function TelemetryChart({ visible, driver }: Props) {
         </div>
 
         {/* Speed */}
-        <div className="flex items-center gap-1 w-[85px]">
+        <div className="flex items-center gap-1 w-[85px] shrink-0">
           <span className="text-[9px] font-bold text-f1-muted uppercase">Spd</span>
           <span className="text-xs font-extrabold text-white tabular-nums w-[26px] text-right">
             {speed}
@@ -83,19 +83,19 @@ export default function TelemetryChart({ visible, driver }: Props) {
         </div>
 
         {/* Throttle */}
-        <div className="flex items-center gap-1 w-[50px]">
+        <div className="flex items-center gap-1 w-[50px] shrink-0">
           <span className="text-[9px] font-bold text-f1-muted uppercase">Thr</span>
           <BarPips value={throttle} max={100} color="#22C55E" />
         </div>
 
         {/* Brake */}
-        <div className="flex items-center gap-1 w-[48px]">
+        <div className="flex items-center gap-1 w-[48px] shrink-0">
           <span className="text-[9px] font-bold text-f1-muted uppercase">Brk</span>
           <BarPips value={brake} max={100} color="#EF4444" />
         </div>
 
         {/* Gear */}
-        <div className="flex items-center gap-1 w-[38px]">
+        <div className="flex items-center gap-1 w-[38px] shrink-0">
           <span className="text-[9px] font-bold text-f1-muted uppercase">Gear</span>
           <span className="text-xs font-extrabold text-white tabular-nums w-[10px] text-center">
             {gear === 0 ? "N" : gear}
@@ -103,7 +103,7 @@ export default function TelemetryChart({ visible, driver }: Props) {
         </div>
 
         {/* RPM */}
-        <div className="flex items-center gap-1 w-[90px]">
+        <div className="flex items-center gap-1 w-[90px] shrink-0">
           <span className="text-[9px] font-bold text-f1-muted uppercase">RPM</span>
           <span className="text-[10px] font-extrabold text-white tabular-nums w-[32px] text-right">
             {Math.round(rpm / 100) / 10}k

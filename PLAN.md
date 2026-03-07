@@ -1,8 +1,8 @@
-# F1 Timing Web App — Full Implementation Plan
+# F1 Timing Web App  - Full Implementation Plan
 
 ## Overview
 
-Rebuild the [f1-race-replay](https://github.com/IAmTomShaw/f1-race-replay) concept as a modern web app. We are NOT copying the original Arcade-based desktop UI. We use the same data source (FastF1 Python library) but build a completely fresh, modern web frontend. Everything is hosted on Railway (two services).
+A modern web app for replaying F1 race sessions with real timing data, car positions, and telemetry. Built using the FastF1 Python library as the data source, with a fresh web frontend. Everything is hosted on Railway (two services).
 
 ## Architecture
 
@@ -54,12 +54,12 @@ Railway Service 2: f1-frontend (Next.js + React)
 |------|-------------|
 | `WS /ws/replay/{year}/{round}?type=R` | Streams replay frames. Client sends `play`, `pause`, `speed:2`, `seek:45.0`. Server sends `ReplayFrame` JSON every interval. |
 
-### Key Design Decisions — Backend
+### Key Design Decisions  - Backend
 
 - FastF1 sessions are cached in-memory after first load (dict keyed by year_round_type)
 - FastF1 disk cache on Railway persistent volume (sessions are 50-100MB each)
 - Position data sampled every 0.5s for smooth replay (~7000 frames for a 1h race)
-- Track coordinates normalized to 0-1 range — frontend scales to canvas size
+- Track coordinates normalized to 0-1 range  - frontend scales to canvas size
 - All heavy FastF1 loading runs in a thread pool to avoid blocking the event loop
 
 ## Frontend Pages
@@ -77,7 +77,7 @@ Railway Service 2: f1-frontend (Next.js + React)
 Layout:
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Session Banner: "2024 Bahrain Grand Prix — Race"            │
+│  Session Banner: "2024 Bahrain Grand Prix  - Race"            │
 ├────────────────────────────────────┬─────────────────────────┤
 │                                    │    LEADERBOARD          │
 │         TRACK CANVAS               │  P1  VER  +0.000  (S)  │
@@ -91,7 +91,7 @@ Layout:
 ├──────────────────────────────────────────────────────────────┤
 │  TELEMETRY (expandable)                                      │
 │  [Driver 1 selector] vs [Driver 2 selector]                  │
-│  Speed trace chart — Recharts line chart                     │
+│  Speed trace chart  - Recharts line chart                     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -158,7 +158,7 @@ F1timing/
 │   ├── src/
 │   │   ├── app/
 │   │   │   ├── layout.tsx           # Root layout (dark theme, fonts)
-│   │   │   ├── page.tsx             # Home — session picker
+│   │   │   ├── page.tsx             # Home  - session picker
 │   │   │   ├── replay/
 │   │   │   │   └── [year]/
 │   │   │   │       └── [round]/
@@ -190,26 +190,26 @@ F1timing/
 
 | Step | Status | Description |
 |------|--------|-------------|
-| 1 | DONE | Backend scaffold — FastAPI app, Dockerfile, railway.toml |
-| 2 | DONE | Data service — FastF1 integration (f1_data.py) |
+| 1 | DONE | Backend scaffold  - FastAPI app, Dockerfile, railway.toml |
+| 2 | DONE | Data service  - FastF1 integration (f1_data.py) |
 | 3 | DONE | Pydantic models (schemas.py) |
-| 4 | DONE | REST routers — sessions, track, laps, results |
+| 4 | DONE | REST routers  - sessions, track, laps, results |
 | 5 | DONE | WebSocket replay router |
-| 6 | DONE | Backend main.py — wire everything together |
+| 6 | DONE | Backend main.py  - wire everything together |
 | 7 | DONE | Backend Dockerfile + railway.toml |
-| 8 | DONE | Frontend scaffold — Next.js + Tailwind + dark theme |
+| 8 | DONE | Frontend scaffold  - Next.js + Tailwind + dark theme |
 | 9 | DONE | API client + constants |
 | 10 | DONE | Session picker page (home) |
 | 11 | DONE | Track canvas component |
 | 12 | DONE | Replay WebSocket hook |
-| 13 | DONE | Replay page — track + leaderboard + controls |
+| 13 | DONE | Replay page  - track + leaderboard + controls |
 | 14 | DONE | Playback controls component |
 | 15 | DONE | Leaderboard component |
 | 16 | DONE | Telemetry chart component (placeholder) |
 | 17 | DONE | Results page |
 | 18 | DONE | Frontend Dockerfile + railway.toml |
-| 19 | TODO | Railway deployment — create services, volumes, env vars |
-| 20 | TODO | Polish — loading states, error handling, responsive |
+| 19 | TODO | Railway deployment  - create services, volumes, env vars |
+| 20 | TODO | Polish  - loading states, error handling, responsive |
 
 ## Railway Deployment
 

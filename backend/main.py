@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(
-    title="F1 Timing API",
+    title="F1 Replay Timing API",
     description="Formula 1 race replay and telemetry data API",
     version="1.0.0",
 )

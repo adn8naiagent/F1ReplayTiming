@@ -23,12 +23,16 @@ const SESSION_LABELS: Record<string, string> = {
   FP3: "Practice 3",
 };
 
-const SETTING_LABELS: { key: keyof ReplaySettings; label: string }[] = [
+const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string }[] = [
   { key: "showGridChange", label: "Grid position change" },
   { key: "showGapToLeader", label: "Gap to leader" },
   { key: "showPitStops", label: "Pit stops" },
   { key: "showTyreType", label: "Tyre type" },
   { key: "showTyreAge", label: "Tyre age" },
+];
+
+const OTHER_SETTINGS: { key: keyof ReplaySettings; label: string }[] = [
+  { key: "showDriverNames", label: "Driver names on track" },
   { key: "showSessionTime", label: "Total session time" },
 ];
 
@@ -103,11 +107,54 @@ export default function SessionBanner({
             </button>
 
             {settingsOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-f1-card border border-f1-border rounded-lg shadow-xl z-50 py-2">
-                <p className="px-4 py-1.5 text-xs font-bold text-f1-muted uppercase tracking-wider">
-                  Display
-                </p>
-                {SETTING_LABELS.map(({ key, label }) => (
+              <div className="absolute right-0 top-full mt-2 w-60 bg-f1-card border border-f1-border rounded-lg shadow-xl z-50 py-2">
+                {/* Driver Leaderboard section */}
+                <button
+                  onClick={() => onSettingChange("showLeaderboard", !settings.showLeaderboard)}
+                  className="w-full flex items-center justify-between px-4 py-2 hover:bg-white/5 transition-colors"
+                >
+                  <span className="text-xs font-bold text-f1-muted uppercase tracking-wider">Driver Leaderboard</span>
+                  <div
+                    className={`relative w-9 h-5 rounded-full transition-colors ${
+                      settings.showLeaderboard ? "bg-f1-red" : "bg-f1-border"
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        settings.showLeaderboard ? "translate-x-[18px]" : "translate-x-0.5"
+                      }`}
+                    />
+                  </div>
+                </button>
+                {LEADERBOARD_SETTINGS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => onSettingChange(key, !settings[key])}
+                    disabled={!settings.showLeaderboard}
+                    className={`w-full flex items-center justify-between pl-8 pr-4 py-1.5 hover:bg-white/5 transition-colors ${
+                      !settings.showLeaderboard ? "opacity-40 pointer-events-none" : ""
+                    }`}
+                  >
+                    <span className="text-sm text-white">{label}</span>
+                    <div
+                      className={`relative w-9 h-5 rounded-full transition-colors ${
+                        settings[key] ? "bg-f1-red" : "bg-f1-border"
+                      }`}
+                    >
+                      <div
+                        className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                          settings[key] ? "translate-x-[18px]" : "translate-x-0.5"
+                        }`}
+                      />
+                    </div>
+                  </button>
+                ))}
+
+                {/* Divider */}
+                <div className="border-t border-f1-border my-2" />
+
+                {/* Other settings */}
+                {OTHER_SETTINGS.map(({ key, label }) => (
                   <button
                     key={key}
                     onClick={() => onSettingChange(key, !settings[key])}
@@ -164,13 +211,14 @@ export default function SessionBanner({
                 </h3>
                 <p className="text-sm text-f1-muted leading-relaxed">
                   Driver positions and gap times are sourced directly from the official
-                  F1 live timing feed — the same data used by the broadcast. Positions
+                  F1 live timing feed  - the same data used by the broadcast. Positions
                   are determined by sorting drivers on their gap to the leader, which
                   updates multiple times per lap at sector and mini-sector boundaries.
                 </p>
                 <p className="text-sm text-f1-muted leading-relaxed mt-2">
                   For the first few seconds of the race, the starting grid order is
-                  shown before timing data becomes available.
+                  shown before timing data becomes available. Grid position changes
+                  are only displayed after 10 seconds to ensure accuracy.
                 </p>
               </div>
 
@@ -181,7 +229,7 @@ export default function SessionBanner({
                 </h3>
                 <p className="text-sm text-f1-muted leading-relaxed">
                   Occasionally, timing data may be temporarily unavailable for a
-                  driver — for example, during pit stops or if the F1 timing system
+                  driver  - for example, during pit stops or if the F1 timing system
                   has a brief gap. When this happens, the affected driver is shown
                   greyed out at the bottom of the leaderboard. They return to their
                   correct position as soon as data is available again.
@@ -207,9 +255,9 @@ export default function SessionBanner({
                   Session time
                 </h3>
                 <p className="text-sm text-f1-muted leading-relaxed">
-                  Total session time is hidden by default to avoid spoilers — a
-                  shorter-than-expected session can reveal red flags or early
-                  finishes. You can enable it in the settings menu.
+                  Total session time is hidden by default to avoid spoilers - a
+                  longer-than-expected session can reveal red flags and
+                  stoppages. You can enable it in the settings menu.
                 </p>
               </div>
 

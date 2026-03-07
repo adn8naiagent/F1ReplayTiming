@@ -3,23 +3,27 @@
 import { useState, useEffect, useCallback } from "react";
 
 export interface ReplaySettings {
+  showLeaderboard: boolean;
   showTyreAge: boolean;
   showTyreType: boolean;
   showPitStops: boolean;
   showGridChange: boolean;
   showGapToLeader: boolean;
   showSessionTime: boolean;
+  showDriverNames: boolean;
 }
 
 const STORAGE_KEY = "f1replay_settings";
 
 const DEFAULTS: ReplaySettings = {
+  showLeaderboard: true,
   showTyreAge: true,
   showTyreType: true,
   showPitStops: true,
   showGridChange: true,
   showGapToLeader: true,
   showSessionTime: false,
+  showDriverNames: true,
 };
 
 function loadSettings(): ReplaySettings {

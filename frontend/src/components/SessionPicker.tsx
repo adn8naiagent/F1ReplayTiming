@@ -173,7 +173,7 @@ export default function SessionPicker() {
         <div className="max-w-7xl mx-auto px-6 py-8 flex items-center gap-4">
           <img src="/logo.png" alt="F1 Replay" className="w-[72px] h-[72px] rounded-lg" />
           <div className="flex-1">
-            <h1 className="text-3xl font-bold text-white mb-1">F1 Timing Replay</h1>
+            <h1 className="text-3xl font-bold text-white mb-1">F1 Replay Timing</h1>
             <p className="text-f1-muted">Select a session to replay</p>
           </div>
           <a

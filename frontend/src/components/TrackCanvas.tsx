@@ -9,10 +9,13 @@ interface Props {
   trackStatus?: string;
   drivers: DriverMarker[];
   highlightedDrivers: string[];
+  playbackSpeed?: number;
+  showDriverNames?: boolean;
 }
 
-// Duration (ms) over which to linearly interpolate between position updates
-const INTERP_DURATION = 500;
+// Longer than the 500ms frame interval so the dot is always still moving
+// when the next target arrives - the more overlap, the smoother the motion
+const BASE_INTERP_MS = 750;
 
 interface PosEntry {
   prevX: number;
@@ -20,43 +23,51 @@ interface PosEntry {
   targetX: number;
   targetY: number;
   startTime: number;
+  duration: number;
 }
 
-export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers }: Props) {
+
+export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers, playbackSpeed = 1, showDriverNames = true }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
 
-  // Per-driver interpolation state
   const posRef = useRef<Map<string, PosEntry>>(new Map());
   const driversRef = useRef<DriverMarker[]>([]);
   const trackStatusRef = useRef(trackStatus);
   trackStatusRef.current = trackStatus;
+  const speedRef = useRef(playbackSpeed);
+  speedRef.current = playbackSpeed;
+  const showNamesRef = useRef(showDriverNames);
+  showNamesRef.current = showDriverNames;
 
   // Update targets when drivers prop changes
   useEffect(() => {
     driversRef.current = drivers;
     const now = performance.now();
+    // Scale interpolation duration with speed so dots keep up
+    const duration = BASE_INTERP_MS / Math.max(speedRef.current, 0.25);
+
     for (const drv of drivers) {
       const entry = posRef.current.get(drv.abbr);
       if (!entry) {
-        // First time seeing driver — snap to position
+        // First time seeing driver - snap to position
         posRef.current.set(drv.abbr, {
           prevX: drv.x, prevY: drv.y,
           targetX: drv.x, targetY: drv.y,
           startTime: now,
+          duration,
         });
       } else {
-        // Compute current interpolated position as new "prev"
+        // Start new interpolation from current visual position
         const elapsed = now - entry.startTime;
-        const t = Math.min(elapsed / INTERP_DURATION, 1);
-        const curX = entry.prevX + (entry.targetX - entry.prevX) * t;
-        const curY = entry.prevY + (entry.targetY - entry.prevY) * t;
-        entry.prevX = curX;
-        entry.prevY = curY;
+        const t = Math.min(elapsed / entry.duration, 1);
+        entry.prevX = entry.prevX + (entry.targetX - entry.prevX) * t;
+        entry.prevY = entry.prevY + (entry.targetY - entry.prevY) * t;
         entry.targetX = drv.x;
         entry.targetY = drv.y;
         entry.startTime = now;
+        entry.duration = duration;
       }
     }
   }, [drivers]);
@@ -98,7 +109,6 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
 
       drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current);
 
-      // Linearly interpolate between previous and target positions
       const now = performance.now();
       const curr = driversRef.current;
       const interpolated: DriverMarker[] = curr.map((drv) => {
@@ -106,14 +116,14 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
         if (!entry) return drv;
 
         const elapsed = now - entry.startTime;
-        const t = Math.min(elapsed / INTERP_DURATION, 1);
+        const t = Math.min(elapsed / entry.duration, 1);
         const x = entry.prevX + (entry.targetX - entry.prevX) * t;
         const y = entry.prevY + (entry.targetY - entry.prevY) * t;
 
         return { ...drv, x, y };
       });
 
-      drawDrivers(ctx, interpolated, trackPoints, w, h, rotation, highlightedDrivers);
+      drawDrivers(ctx, interpolated, trackPoints, w, h, rotation, highlightedDrivers, showNamesRef.current);
 
       requestAnimationFrame(animate);
     }

@@ -16,7 +16,7 @@ export default function AboutPage() {
         <div className="bg-f1-card border border-f1-red/40 rounded-xl p-6">
           <h2 className="text-lg font-bold text-f1-red mb-3">Disclaimer</h2>
           <p className="text-f1-text leading-relaxed">
-            F1 Timing Replay, FastF1, and this website are unofficial and are not associated in any way with the
+            F1 Replay Timing, FastF1, and this website are unofficial and are not associated in any way with the
             Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and
             related marks are trade marks of Formula One Licensing B.V.
           </p>
@@ -25,7 +25,7 @@ export default function AboutPage() {
         <div className="bg-f1-card border border-f1-border rounded-xl p-6">
           <h2 className="text-lg font-bold text-white mb-3">What is this?</h2>
           <p className="text-f1-text leading-relaxed">
-            F1 Timing Replay is an independent project that lets you replay past Formula 1 sessions
+            F1 Replay Timing is an independent project that lets you replay past Formula 1 sessions
             with track visualisation, driver positions, and timing data. It is built purely for educational and
             entertainment purposes.
           </p>

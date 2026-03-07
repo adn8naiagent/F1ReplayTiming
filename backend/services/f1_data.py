@@ -59,7 +59,7 @@ def _check_session_has_data(year: int, round_num: int, session_type: str) -> boo
         tel = fastest.get_telemetry()
         has_full_data = tel is not None and "X" in tel.columns and len(tel) > 0
 
-        # Only cache positive results — negative might change as data becomes available
+        # Only cache positive results  - negative might change as data becomes available
         if has_full_data:
             _availability_cache[key] = True
         return has_full_data
@@ -263,8 +263,8 @@ def _get_track_data_sync(year: int, round_num: int, session_type: str = "R") -> 
     y = telemetry["Y"].values
 
     # Normalize to 0-1 range for frontend flexibility
-    x_min, x_max = x.min(), x.max()
-    y_min, y_max = y.min(), y.max()
+    x_min, x_max = float(x.min()), float(x.max())
+    y_min, y_max = float(y.min()), float(y.max())
     scale = max(x_max - x_min, y_max - y_min)
     if scale == 0:
         scale = 1
@@ -276,6 +276,8 @@ def _get_track_data_sync(year: int, round_num: int, session_type: str = "R") -> 
         "track_points": [{"x": px, "y": py} for px, py in zip(x_norm, y_norm)],
         "rotation": rotation,
         "circuit_name": str(session.event.get("Location", "")),
+        # Raw normalization params so driver positions use the same reference
+        "norm": {"x_min": x_min, "y_min": y_min, "scale": scale},
     }
 
 
@@ -339,7 +341,7 @@ def _get_driver_telemetry_sync(
     if tel is None or len(tel) == 0:
         return None
 
-    # Build arrays — use Distance as x-axis (relative to lap)
+    # Build arrays  - use Distance as x-axis (relative to lap)
     has_distance = "Distance" in tel.columns
     has_drs = "DRS" in tel.columns
 
@@ -459,15 +461,25 @@ def _get_driver_positions_by_time_sync(
     sample_interval = 0.5
     num_samples = int(total_seconds / sample_interval)
 
-    # Precompute normalized track coords
-    x_all = []
-    y_all = []
-    for tel in driver_pos_data.values():
-        x_all.extend(tel["X"].values.tolist())
-        y_all.extend(tel["Y"].values.tolist())
+    # Use the same normalization as the track outline (fastest lap)
+    # so driver dots align exactly with the drawn track
+    fastest_lap = laps.pick_fastest()
+    fastest_tel = fastest_lap.get_telemetry()
+    if fastest_tel is not None and "X" in fastest_tel.columns and len(fastest_tel) > 0:
+        x_min = float(fastest_tel["X"].min())
+        x_max = float(fastest_tel["X"].max())
+        y_min = float(fastest_tel["Y"].min())
+        y_max = float(fastest_tel["Y"].max())
+    else:
+        # Fallback to all drivers if fastest lap unavailable
+        x_all = []
+        y_all = []
+        for tel in driver_pos_data.values():
+            x_all.extend(tel["X"].values.tolist())
+            y_all.extend(tel["Y"].values.tolist())
+        x_min, x_max = min(x_all), max(x_all)
+        y_min, y_max = min(y_all), max(y_all)
 
-    x_min, x_max = min(x_all), max(x_all)
-    y_min, y_max = min(y_all), max(y_all)
     scale = max(x_max - x_min, y_max - y_min)
     if scale == 0:
         scale = 1
@@ -532,11 +544,11 @@ def _get_driver_positions_by_time_sync(
                 msg_time = msg_row.get("Time")
                 if pd.isna(msg_time):
                     continue
-                # Time may be Timestamp or Timedelta — handle both
+                # Time may be Timestamp or Timedelta  - handle both
                 if hasattr(msg_time, 'total_seconds'):
                     time_sec = msg_time.total_seconds()
                 else:
-                    # Timestamp — convert to offset from min_date
+                    # Timestamp  - convert to offset from min_date
                     try:
                         time_sec = (msg_time - min_date).total_seconds()
                     except Exception:
@@ -699,7 +711,7 @@ def _get_driver_positions_by_time_sync(
             return float("inf")
         if gap_str.startswith("LAP"):
             return 0.0
-        # Lapped cars: "1L", "1 L", "2L" etc — sort after all non-lapped drivers
+        # Lapped cars: "1L", "1 L", "2L" etc  - sort after all non-lapped drivers
         import re
         lapped = re.match(r"^(\d+)\s*L$", gap_str)
         if lapped:
@@ -783,8 +795,8 @@ def _get_driver_positions_by_time_sync(
                 retired_data = {**last_known[drv], "retired": True, "gap": None, "no_timing": False}
                 frame_drivers.append(retired_data)
 
-        # First 5 seconds: use grid positions, no gap display, no greying
-        if t_sec < 5:
+        # First 10 seconds: use grid positions, no gap display, no greying
+        if t_sec < 10:
             for d in frame_drivers:
                 gp = grid_positions.get(d["abbr"])
                 d["position"] = gp if gp and gp > 0 else len(frame_drivers)
