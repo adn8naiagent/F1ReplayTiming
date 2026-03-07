@@ -2,6 +2,13 @@
 
 import { SPEED_OPTIONS } from "@/lib/constants";
 
+const SKIP_OPTIONS = [
+  { label: "10s", seconds: 10 },
+  { label: "30s", seconds: 30 },
+  { label: "1m", seconds: 60 },
+  { label: "5m", seconds: 300 },
+];
+
 interface Props {
   playing: boolean;
   speed: number;
@@ -10,11 +17,13 @@ interface Props {
   currentLap: number;
   totalLaps: number;
   finished: boolean;
+  showSessionTime: boolean;
   onPlay: () => void;
   onPause: () => void;
   onSpeedChange: (speed: number) => void;
   onSeek: (time: number) => void;
   onReset: () => void;
+  onSeekToLap?: (lap: number) => void;
 }
 
 export default function PlaybackControls({
@@ -25,11 +34,13 @@ export default function PlaybackControls({
   currentLap,
   totalLaps,
   finished,
+  showSessionTime,
   onPlay,
   onPause,
   onSpeedChange,
   onSeek,
   onReset,
+  onSeekToLap,
 }: Props) {
   const progress = totalTime > 0 ? (currentTime / totalTime) * 100 : 0;
 
@@ -39,6 +50,11 @@ export default function PlaybackControls({
     const s = Math.floor(seconds % 60);
     if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     return `${m}:${String(s).padStart(2, "0")}`;
+  }
+
+  function skip(delta: number) {
+    const target = Math.max(0, Math.min(totalTime, currentTime + delta));
+    onSeek(target);
   }
 
   return (
@@ -60,11 +76,25 @@ export default function PlaybackControls({
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3">
+        {/* Skip back buttons */}
+        <div className="flex items-center gap-0.5">
+          {[...SKIP_OPTIONS].reverse().map(({ label, seconds }) => (
+            <button
+              key={`back-${label}`}
+              onClick={() => skip(-seconds)}
+              className="px-1.5 py-1 text-[10px] font-bold text-f1-muted hover:text-white rounded hover:bg-white/10 transition-colors"
+              title={`Back ${label}`}
+            >
+              -{label}
+            </button>
+          ))}
+        </div>
+
         {/* Play/Pause */}
         <button
           onClick={finished ? onReset : playing ? onPause : onPlay}
-          className="w-10 h-10 flex items-center justify-center bg-f1-red hover:bg-red-700 rounded-full transition-colors text-white"
+          className="w-10 h-10 flex items-center justify-center bg-f1-red hover:bg-red-700 rounded-full transition-colors text-white flex-shrink-0"
         >
           {finished ? (
             <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
@@ -81,8 +111,22 @@ export default function PlaybackControls({
           )}
         </button>
 
+        {/* Skip forward buttons */}
+        <div className="flex items-center gap-0.5">
+          {SKIP_OPTIONS.map(({ label, seconds }) => (
+            <button
+              key={`fwd-${label}`}
+              onClick={() => skip(seconds)}
+              className="px-1.5 py-1 text-[10px] font-bold text-f1-muted hover:text-white rounded hover:bg-white/10 transition-colors"
+              title={`Forward ${label}`}
+            >
+              +{label}
+            </button>
+          ))}
+        </div>
+
         {/* Speed buttons */}
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 ml-2">
           {SPEED_OPTIONS.map((s) => (
             <button
               key={s}
@@ -99,14 +143,37 @@ export default function PlaybackControls({
         </div>
 
         {/* Time */}
-        <span className="text-sm text-f1-muted font-mono ml-auto">
-          {formatTime(currentTime)} / {formatTime(totalTime)}
+        <span className="text-sm font-extrabold text-white ml-auto">
+          {formatTime(currentTime)}{showSessionTime && ` / ${formatTime(totalTime)}`}
         </span>
 
-        {/* Lap counter */}
-        <span className="text-sm font-bold text-white">
-          Lap {currentLap}/{totalLaps}
-        </span>
+        {/* Lap selector */}
+        <div className="flex items-center gap-1">
+          <span className="text-sm font-extrabold text-white">Lap</span>
+          <input
+            type="number"
+            min={1}
+            max={totalLaps}
+            defaultValue={currentLap}
+            key={currentLap}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const lap = Number((e.target as HTMLInputElement).value);
+                if (lap >= 1 && lap <= totalLaps && onSeekToLap) {
+                  onSeekToLap(lap);
+                }
+              }
+            }}
+            onBlur={(e) => {
+              const lap = Number(e.target.value);
+              if (lap >= 1 && lap <= totalLaps && onSeekToLap) {
+                onSeekToLap(lap);
+              }
+            }}
+            className="bg-f1-border text-white text-sm font-extrabold rounded px-1.5 py-0.5 w-10 text-center appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+          <span className="text-sm font-extrabold text-white">/{totalLaps}</span>
+        </div>
       </div>
     </div>
   );

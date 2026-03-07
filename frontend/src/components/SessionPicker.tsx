@@ -1,7 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useApi } from "@/hooks/useApi";
+
+interface SessionEntry {
+  name: string;
+  date_utc: string | null;
+  available: boolean;
+}
 
 interface Event {
   round_number: number;
@@ -9,7 +15,8 @@ interface Event {
   event_name: string;
   location: string;
   event_date: string;
-  sessions: string[];
+  sessions: SessionEntry[];
+  status: "latest" | "available" | "future";
 }
 
 interface EventsResponse {
@@ -32,9 +39,34 @@ const SESSION_LABELS: Record<string, string> = {
   "Practice 3": "FP3",
 };
 
+function StatusPill({ status }: { status: Event["status"] }) {
+  switch (status) {
+    case "latest":
+      return (
+        <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-f1-red text-white">
+          Latest
+        </span>
+      );
+    case "available":
+      return (
+        <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
+          Available
+        </span>
+      );
+    case "future":
+      return (
+        <span className="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-f1-border text-f1-muted">
+          Upcoming
+        </span>
+      );
+  }
+}
+
 export default function SessionPicker() {
-  const [year, setYear] = useState(2024);
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(currentYear);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const latestRef = useRef<HTMLDivElement>(null);
 
   const { data: seasonsData } = useApi<SeasonsResponse>("/api/seasons");
   const { data: eventsData, loading: eventsLoading } = useApi<EventsResponse>(
@@ -44,13 +76,112 @@ export default function SessionPicker() {
   const seasons = seasonsData?.seasons || [];
   const events = eventsData?.events || [];
 
+  // Only show "latest" for the current year; downgrade to "available" for past seasons
+  const displayEvents = useMemo(() => {
+    if (year === currentYear) return events;
+    return events.map((e) =>
+      e.status === "latest" ? { ...e, status: "available" as const } : e,
+    );
+  }, [events, year, currentYear]);
+
+  const latestEvent = useMemo(
+    () => (year === currentYear ? displayEvents.find((e) => e.status === "latest") || null : null),
+    [displayEvents, year, currentYear],
+  );
+
+  // Scroll to latest card when events load
+  useEffect(() => {
+    if (latestEvent && latestRef.current && year === currentYear) {
+      latestRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  }, [latestEvent, year, currentYear]);
+
+  function EventCard({ evt, isLatestFeature }: { evt: Event; isLatestFeature?: boolean }) {
+    const displayEvt = displayEvents.find((e) => e.round_number === evt.round_number) || evt;
+    const isLatest = displayEvt.status === "latest";
+    const isFuture = displayEvt.status === "future";
+    const isSelected = selectedEvent?.round_number === evt.round_number;
+    const hasAvailableSessions = evt.sessions.some((s) => s.available);
+
+    return (
+      <div
+        ref={isLatest && !isLatestFeature ? latestRef : undefined}
+        onClick={() => setSelectedEvent(isSelected ? null : evt)}
+        className={`bg-f1-card border rounded-xl overflow-hidden transition-all cursor-pointer ${
+          isLatest
+            ? "border-f1-red ring-1 ring-f1-red/30"
+            : isSelected
+              ? "border-f1-red"
+              : isFuture
+                ? "border-f1-border opacity-50 hover:opacity-70"
+                : "border-f1-border hover:border-f1-red/50"
+        }`}
+      >
+        <div className="px-4 py-4">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-f1-muted">
+              ROUND {evt.round_number}
+            </span>
+            <StatusPill status={displayEvt.status} />
+          </div>
+          <h3 className="text-white font-bold mb-1">{evt.event_name}</h3>
+          <p className="text-sm text-f1-muted">
+            {evt.location}, {evt.country}
+          </p>
+          <p className="text-xs text-f1-muted mt-1">{evt.event_date}</p>
+        </div>
+
+        {/* Session buttons (shown when selected) */}
+        {isSelected && (
+          <div className="px-4 pb-4 flex flex-wrap gap-2 border-t border-f1-border pt-3">
+            {evt.sessions.map((session) => {
+              const code = SESSION_LABELS[session.name];
+              if (!code) return null;
+              if (session.available) {
+                return (
+                  <a
+                    key={session.name}
+                    href={`/replay/${year}/${evt.round_number}?type=${code}`}
+                    className="px-3 py-1.5 bg-f1-border text-white text-xs font-bold rounded hover:bg-f1-red transition-colors"
+                  >
+                    {session.name}
+                  </a>
+                );
+              }
+              return (
+                <span
+                  key={session.name}
+                  className="px-3 py-1.5 bg-f1-border/40 text-f1-muted/50 text-xs font-bold rounded cursor-not-allowed"
+                >
+                  {session.name}
+                </span>
+              );
+            })}
+            {!hasAvailableSessions && (
+              <p className="text-xs text-f1-muted w-full">No session data available yet</p>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-f1-dark">
       {/* Header */}
       <div className="bg-f1-card border-b border-f1-border">
-        <div className="max-w-7xl mx-auto px-6 py-8">
-          <h1 className="text-3xl font-bold text-white mb-1">F1 Race Replay</h1>
-          <p className="text-f1-muted">Select a session to replay</p>
+        <div className="max-w-7xl mx-auto px-6 py-8 flex items-center gap-4">
+          <img src="/logo.png" alt="F1 Replay" className="w-[72px] h-[72px] rounded-lg" />
+          <div className="flex-1">
+            <h1 className="text-3xl font-bold text-white mb-1">F1 Timing Replay</h1>
+            <p className="text-f1-muted">Select a session to replay</p>
+          </div>
+          <a
+            href="/about"
+            className="px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
+          >
+            About
+          </a>
         </div>
       </div>
 
@@ -72,62 +203,35 @@ export default function SessionPicker() {
           ))}
         </div>
 
-        {/* Events grid */}
         {eventsLoading ? (
           <div className="text-f1-muted text-center py-20">
             <div className="inline-block w-8 h-8 border-2 border-f1-muted border-t-f1-red rounded-full animate-spin mb-4" />
-            <p>Loading {year} season...</p>
+            <p>Loading data...</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {events.map((evt) => (
-              <div
-                key={evt.round_number}
-                className={`bg-f1-card border rounded-xl overflow-hidden transition-all cursor-pointer hover:border-f1-red/50 ${
-                  selectedEvent?.round_number === evt.round_number
-                    ? "border-f1-red"
-                    : "border-f1-border"
-                }`}
-                onClick={() =>
-                  setSelectedEvent(
-                    selectedEvent?.round_number === evt.round_number ? null : evt,
-                  )
-                }
-              >
-                <div className="px-4 py-4">
-                  <div className="flex items-start justify-between mb-2">
-                    <span className="text-xs font-bold text-f1-muted">
-                      ROUND {evt.round_number}
-                    </span>
-                    <span className="text-xs text-f1-muted">{evt.event_date}</span>
-                  </div>
-                  <h3 className="text-white font-bold mb-1">{evt.event_name}</h3>
-                  <p className="text-sm text-f1-muted">
-                    {evt.location}, {evt.country}
-                  </p>
+          <>
+            {/* Latest event featured section */}
+            {latestEvent && year === currentYear && (
+              <div className="mb-8">
+                <h2 className="text-sm font-bold text-f1-muted uppercase tracking-wider mb-4">
+                  Latest Race Weekend
+                </h2>
+                <div className="max-w-md">
+                  <EventCard evt={latestEvent} isLatestFeature />
                 </div>
-
-                {/* Session buttons (shown when selected) */}
-                {selectedEvent?.round_number === evt.round_number && (
-                  <div className="px-4 pb-4 flex flex-wrap gap-2 border-t border-f1-border pt-3">
-                    {evt.sessions.map((session) => {
-                      const code = SESSION_LABELS[session];
-                      if (!code) return null;
-                      return (
-                        <a
-                          key={session}
-                          href={`/replay/${year}/${evt.round_number}?type=${code}`}
-                          className="px-3 py-1.5 bg-f1-border text-white text-xs font-bold rounded hover:bg-f1-red transition-colors"
-                        >
-                          {session}
-                        </a>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
-            ))}
-          </div>
+            )}
+
+            {/* All events grid */}
+            <h2 className="text-sm font-bold text-f1-muted uppercase tracking-wider mb-4">
+              {year} Season
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {displayEvents.map((evt) => (
+                <EventCard key={evt.round_number} evt={evt} />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

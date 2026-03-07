@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import logging
+import threading
+from datetime import datetime, timezone
 from functools import lru_cache
 
 import fastf1
+from fastf1 import api as f1api
 import numpy as np
 import pandas as pd
 
@@ -23,34 +27,163 @@ except OSError:
     os.makedirs(CACHE_DIR, exist_ok=True)
     fastf1.Cache.enable_cache(CACHE_DIR)
 
-# In-memory cache for loaded sessions
+# In-memory cache for loaded sessions (with lock to prevent concurrent duplicate loads)
 _session_cache: dict[str, fastf1.core.Session] = {}
+_session_lock = threading.Lock()
 
 
 def _cache_key(year: int, round_num: int, session_type: str) -> str:
     return f"{year}_{round_num}_{session_type}"
 
 
-async def get_season_events(year: int) -> list[dict]:
-    schedule = fastf1.get_event_schedule(year, include_testing=False)
+# Cache for session availability checks: key -> bool
+_availability_cache: dict[str, bool] = {}
+
+
+def _check_session_has_data(year: int, round_num: int, session_type: str) -> bool:
+    """Check if full data (laps + telemetry with position coords) is available."""
+    key = f"avail_{year}_{round_num}_{session_type}"
+    if key in _availability_cache:
+        return _availability_cache[key]
+
+    try:
+        session = fastf1.get_session(year, round_num, session_type)
+        session.load(laps=True, telemetry=True, weather=False)
+
+        if len(session.laps) == 0:
+            _availability_cache[key] = False
+            return False
+
+        # Check that telemetry with X/Y position data is actually available
+        fastest = session.laps.pick_fastest()
+        tel = fastest.get_telemetry()
+        has_full_data = tel is not None and "X" in tel.columns and len(tel) > 0
+
+        # Only cache positive results — negative might change as data becomes available
+        if has_full_data:
+            _availability_cache[key] = True
+        return has_full_data
+    except Exception:
+        return False
+
+
+SESSION_NAME_TO_TYPE: dict[str, str] = {
+    "Race": "R",
+    "Qualifying": "Q",
+    "Sprint": "S",
+    "Sprint Qualifying": "SQ",
+    "Sprint Shootout": "SQ",
+    "Practice 1": "FP1",
+    "Practice 2": "FP2",
+    "Practice 3": "FP3",
+}
+
+
+# Cache for raw schedule data: year -> list of event dicts (static, fetched once)
+_schedule_cache: dict[int, list[dict]] = {}
+_schedule_lock = threading.Lock()
+
+
+def _fetch_schedule_sync(year: int) -> list[dict]:
+    """Fetch and cache the raw schedule from FastF1. Only called once per year."""
+    if year in _schedule_cache:
+        return _schedule_cache[year]
+
+    with _schedule_lock:
+        if year in _schedule_cache:
+            return _schedule_cache[year]
+
+        logger.info(f"Fetching schedule for {year} from FastF1...")
+        schedule = fastf1.get_event_schedule(year, include_testing=False)
+        events = []
+
+        for _, row in schedule.iterrows():
+            if row["RoundNumber"] == 0:
+                continue
+
+            sessions_raw = []
+            for i in range(1, 6):
+                name = row.get(f"Session{i}", "")
+                if not (name and isinstance(name, str) and name.strip()):
+                    continue
+                date_utc = row.get(f"Session{i}DateUtc")
+                sessions_raw.append({
+                    "name": name,
+                    "date_utc": str(date_utc) if pd.notna(date_utc) else None,
+                    "_ts": date_utc.to_pydatetime().replace(tzinfo=timezone.utc) if pd.notna(date_utc) else None,
+                })
+
+            event_date = row.get("EventDate")
+            event_dt = pd.Timestamp(event_date).to_pydatetime().replace(tzinfo=timezone.utc) if pd.notna(event_date) else None
+
+            events.append({
+                "round_number": int(row["RoundNumber"]),
+                "country": str(row.get("Country", "")),
+                "event_name": str(row.get("EventName", "")),
+                "location": str(row.get("Location", "")),
+                "event_date": str(row.get("EventDate", ""))[:10],
+                "sessions_raw": sessions_raw,
+                "_event_dt": event_dt,
+            })
+
+        _schedule_cache[year] = events
+        logger.info(f"Schedule for {year} cached ({len(events)} events).")
+        return events
+
+
+def _get_season_events_sync(year: int) -> list[dict]:
+    """Build events list with availability status. Schedule is cached; only status computation is dynamic."""
+    from datetime import timedelta
+    raw_events = _fetch_schedule_sync(year)
+    now = datetime.now(timezone.utc)
     events = []
-    for _, row in schedule.iterrows():
-        if row["RoundNumber"] == 0:
-            continue
-        session_types = []
-        for s in ["Session1", "Session2", "Session3", "Session4", "Session5"]:
-            name = row.get(s, "")
-            if name and isinstance(name, str) and name.strip():
-                session_types.append(name)
+
+    for raw in raw_events:
+        sessions = []
+        has_any_available = False
+        for s in raw["sessions_raw"]:
+            ts = s["_ts"]
+            available = ts is not None and now > ts + timedelta(hours=2)
+            if available:
+                has_any_available = True
+            sessions.append({
+                "name": s["name"],
+                "date_utc": s["date_utc"],
+                "available": available,
+            })
+
+        event_dt = raw["_event_dt"]
+        is_future_event = event_dt is None or event_dt > now
+
+        if has_any_available:
+            status = "available"
+        elif is_future_event:
+            status = "future"
+        else:
+            status = "available"
+
         events.append({
-            "round_number": int(row["RoundNumber"]),
-            "country": str(row.get("Country", "")),
-            "event_name": str(row.get("EventName", "")),
-            "location": str(row.get("Location", "")),
-            "event_date": str(row.get("EventDate", "")),
-            "sessions": session_types,
+            "round_number": raw["round_number"],
+            "country": raw["country"],
+            "event_name": raw["event_name"],
+            "location": raw["location"],
+            "event_date": raw["event_date"],
+            "sessions": sessions,
+            "status": status,
         })
+
+    # Mark the latest available event
+    for evt in reversed(events):
+        if evt["status"] == "available":
+            evt["status"] = "latest"
+            break
+
     return events
+
+
+async def get_season_events(year: int) -> list[dict]:
+    """Return events for a season (non-blocking)."""
+    return await asyncio.to_thread(_get_season_events_sync, year)
 
 
 def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.Session:
@@ -58,17 +191,29 @@ def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.S
     if key in _session_cache:
         return _session_cache[key]
 
-    session = fastf1.get_session(year, round_num, session_type)
-    session.load(
-        telemetry=True,
-        laps=True,
-        weather=True,
-    )
-    _session_cache[key] = session
-    return session
+    with _session_lock:
+        # Double-check after acquiring lock
+        if key in _session_cache:
+            return _session_cache[key]
+
+        logger.info(f"Loading session {year}/{round_num}/{session_type} from FastF1...")
+        session = fastf1.get_session(year, round_num, session_type)
+        session.load(
+            telemetry=True,
+            laps=True,
+            weather=True,
+            messages=True,
+        )
+
+        # Only cache if we actually got meaningful data
+        if len(session.laps) > 0:
+            _session_cache[key] = session
+
+        logger.info(f"Session {year}/{round_num}/{session_type} loaded.")
+        return session
 
 
-async def get_session_info(year: int, round_num: int, session_type: str = "R") -> dict:
+def _get_session_info_sync(year: int, round_num: int, session_type: str = "R") -> dict:
     session = _load_session(year, round_num, session_type)
     drivers = []
     for _, row in session.results.iterrows():
@@ -93,13 +238,26 @@ async def get_session_info(year: int, round_num: int, session_type: str = "R") -
     }
 
 
-async def get_track_data(year: int, round_num: int, session_type: str = "R") -> dict:
+async def get_session_info(year: int, round_num: int, session_type: str = "R") -> dict:
+    return await asyncio.to_thread(_get_session_info_sync, year, round_num, session_type)
+
+
+def _get_track_data_sync(year: int, round_num: int, session_type: str = "R") -> dict:
     session = _load_session(year, round_num, session_type)
-    circuit_info = session.get_circuit_info()
+
+    rotation = 0.0
+    try:
+        circuit_info = session.get_circuit_info()
+        rotation = float(circuit_info.rotation) if hasattr(circuit_info, "rotation") else 0.0
+    except Exception:
+        pass
 
     # Get track coordinates from fastest lap telemetry
     fastest_lap = session.laps.pick_fastest()
     telemetry = fastest_lap.get_telemetry()
+
+    if telemetry is None or "X" not in telemetry.columns or len(telemetry) == 0:
+        raise ValueError("Telemetry data not available for this session")
 
     x = telemetry["X"].values
     y = telemetry["Y"].values
@@ -108,11 +266,11 @@ async def get_track_data(year: int, round_num: int, session_type: str = "R") -> 
     x_min, x_max = x.min(), x.max()
     y_min, y_max = y.min(), y.max()
     scale = max(x_max - x_min, y_max - y_min)
+    if scale == 0:
+        scale = 1
 
     x_norm = ((x - x_min) / scale).tolist()
     y_norm = ((y - y_min) / scale).tolist()
-
-    rotation = float(circuit_info.rotation) if hasattr(circuit_info, "rotation") else 0.0
 
     return {
         "track_points": [{"x": px, "y": py} for px, py in zip(x_norm, y_norm)],
@@ -121,7 +279,11 @@ async def get_track_data(year: int, round_num: int, session_type: str = "R") -> 
     }
 
 
-async def get_lap_data(year: int, round_num: int, session_type: str = "R") -> list[dict]:
+async def get_track_data(year: int, round_num: int, session_type: str = "R") -> dict:
+    return await asyncio.to_thread(_get_track_data_sync, year, round_num, session_type)
+
+
+def _get_lap_data_sync(year: int, round_num: int, session_type: str = "R") -> list[dict]:
     session = _load_session(year, round_num, session_type)
     laps = session.laps
 
@@ -153,7 +315,11 @@ async def get_lap_data(year: int, round_num: int, session_type: str = "R") -> li
     return result
 
 
-async def get_race_results(year: int, round_num: int, session_type: str = "R") -> list[dict]:
+async def get_lap_data(year: int, round_num: int, session_type: str = "R") -> list[dict]:
+    return await asyncio.to_thread(_get_lap_data_sync, year, round_num, session_type)
+
+
+def _get_race_results_sync(year: int, round_num: int, session_type: str = "R") -> list[dict]:
     session = _load_session(year, round_num, session_type)
     results = session.results
 
@@ -190,7 +356,11 @@ async def get_race_results(year: int, round_num: int, session_type: str = "R") -
     return output
 
 
-async def get_driver_positions_by_time(
+async def get_race_results(year: int, round_num: int, session_type: str = "R") -> list[dict]:
+    return await asyncio.to_thread(_get_race_results_sync, year, round_num, session_type)
+
+
+def _get_driver_positions_by_time_sync(
     year: int, round_num: int, session_type: str = "R"
 ) -> list[dict]:
     """Build frame-by-frame position data for the replay engine."""
@@ -202,7 +372,7 @@ async def get_driver_positions_by_time(
     frames = []
     drivers_list = laps["Driver"].unique().tolist()
 
-    # Collect all car position data
+    # Collect all car position data (merged telemetry has cumulative Distance)
     driver_pos_data = {}
     for drv in drivers_list:
         drv_laps = laps.pick_drivers(drv)
@@ -217,7 +387,6 @@ async def get_driver_positions_by_time(
         return []
 
     # Find common time range
-    # We'll sample positions at regular intervals
     all_dates = []
     for drv, tel in driver_pos_data.items():
         if "Date" in tel.columns and len(tel) > 0:
@@ -247,73 +416,291 @@ async def get_driver_positions_by_time(
     if scale == 0:
         scale = 1
 
-    # Get session results for team colors
+    # Get session results for team colors, team names, number->abbr mapping, and retirement status
     colors = {}
+    teams = {}
+    number_to_abbr = {}
+    retired_drivers = set()
+    grid_positions = {}
     for _, row in session.results.iterrows():
         abbr = str(row.get("Abbreviation", ""))
         color = str(row.get("TeamColor", "FFFFFF"))
         if not color or color == "nan":
             color = "FFFFFF"
         colors[abbr] = f"#{color}"
+        teams[abbr] = str(row.get("TeamName", ""))
+        num = str(row.get("DriverNumber", ""))
+        if num:
+            number_to_abbr[num] = abbr
+        status = str(row.get("Status", "")).strip()
+        if status and status not in ("Finished", "") and not status.startswith("+"):
+            retired_drivers.add(abbr)
+        grid = row.get("GridPosition")
+        if pd.notna(grid):
+            grid_val = int(grid)
+            grid_positions[abbr] = grid_val
+
+    # Pre-compute fastest lap holder by lap number
+    fastest_by_lap = {}
+    best_lap_time = None
+    best_lap_driver = None
+    for lap_num in sorted(laps["LapNumber"].unique()):
+        lap_rows = laps[laps["LapNumber"] == lap_num]
+        for _, lr in lap_rows.iterrows():
+            lt = lr.get("LapTime")
+            if pd.notna(lt):
+                secs = lt.total_seconds()
+                if best_lap_time is None or secs < best_lap_time:
+                    best_lap_time = secs
+                    best_lap_driver = str(lr["Driver"])
+        fastest_by_lap[int(lap_num)] = best_lap_driver
+
+    # Pre-compute race control flag events (investigation / penalty)
+    # Each entry: (time_offset_seconds, abbr, flag_type)
+    flag_events = []
+    try:
+        rcm = session.race_control_messages
+        logger.info(f"Race control messages: {len(rcm) if rcm is not None else 'None'} entries")
+        if rcm is not None and len(rcm) > 0:
+            logger.info(f"RCM columns: {list(rcm.columns)}")
+            for _, msg_row in rcm.iterrows():
+                racing_number = str(msg_row.get("RacingNumber", ""))
+                if not racing_number or racing_number == "nan" or racing_number == "":
+                    continue
+                abbr = number_to_abbr.get(racing_number)
+                if not abbr:
+                    # Try without leading zeros
+                    abbr = number_to_abbr.get(racing_number.lstrip("0"))
+                if not abbr:
+                    continue
+                msg_time = msg_row.get("Time")
+                if pd.isna(msg_time):
+                    continue
+                # Time may be Timestamp or Timedelta — handle both
+                if hasattr(msg_time, 'total_seconds'):
+                    time_sec = msg_time.total_seconds()
+                else:
+                    # Timestamp — convert to offset from min_date
+                    try:
+                        time_sec = (msg_time - min_date).total_seconds()
+                    except Exception:
+                        continue
+                message = str(msg_row.get("Message", "")).upper()
+                category = str(msg_row.get("Category", "")).upper()
+
+                logger.info(f"RCM: {abbr} | cat={category} | msg={message[:80]} | t={time_sec:.0f}s")
+
+                if "NO FURTHER ACTION" in message or "CLEARED" in message:
+                    flag_events.append((time_sec, abbr, "clear"))
+                elif "PENALTY" in message or "PENALTY" in category:
+                    flag_events.append((time_sec, abbr, "penalty"))
+                elif "INVESTIGATION" in message or "INVESTIGATION" in category or "NOTED" in message:
+                    flag_events.append((time_sec, abbr, "investigation"))
+        flag_events.sort(key=lambda e: e[0])
+        logger.info(f"Parsed {len(flag_events)} flag events: {flag_events}")
+    except Exception as e:
+        logger.error(f"Failed to parse race control messages: {e}")
+
+    def _get_driver_flag(abbr: str, frame_time: float) -> str | None:
+        """Get current flag state for a driver at a given time."""
+        current = None
+        for evt_time, evt_abbr, evt_type in flag_events:
+            if evt_time > frame_time:
+                break
+            if evt_abbr == abbr:
+                current = None if evt_type == "clear" else evt_type
+        return current
 
     # Build lap lookup: for each driver, which lap are they on at a given time
     driver_lap_lookup = {}
     for drv in drivers_list:
         drv_laps_df = laps.pick_drivers(drv).sort_values("LapNumber")
         lap_entries = []
+        pit_count = 0
         for _, lap_row in drv_laps_df.iterrows():
+            is_pit_in = lap_row.get("PitInTime") is not pd.NaT and pd.notna(lap_row.get("PitInTime"))
+            if is_pit_in:
+                pit_count += 1
             lap_entries.append({
                 "lap": int(lap_row["LapNumber"]),
                 "compound": str(lap_row.get("Compound", "")) if pd.notna(lap_row.get("Compound")) else None,
                 "tyre_life": int(lap_row["TyreLife"]) if pd.notna(lap_row.get("TyreLife")) else None,
                 "position": int(lap_row["Position"]) if pd.notna(lap_row.get("Position")) else None,
+                "pit_stops": pit_count,
             })
         driver_lap_lookup[drv] = lap_entries
 
+    # Compute session time offset: t_sec (from min_date) + session_time_offset = session timedelta
+    # This is needed because gap data uses session timedeltas, not min_date offsets
+    session_time_offset = 0.0
+    for tel in driver_pos_data.values():
+        if "SessionTime" in tel.columns and "Date" in tel.columns and len(tel) > 0:
+            # Find the entry closest to min_date
+            diffs = (tel["Date"] - min_date).abs()
+            closest_idx = diffs.idxmin()
+            st = tel.loc[closest_idx, "SessionTime"]
+            if pd.notna(st):
+                session_time_offset = st.total_seconds()
+                break
+
+    # Pre-convert telemetry to numpy arrays for fast lookup via searchsorted
+    driver_arrays: dict[str, dict] = {}
+    for drv, tel in driver_pos_data.items():
+        if "Date" not in tel.columns or len(tel) == 0:
+            continue
+        times = (tel["Date"] - min_date).dt.total_seconds().values.astype(np.float64)
+        sort_idx = np.argsort(times)
+        times = times[sort_idx]
+        x_vals = ((tel["X"].values[sort_idx] - x_min) / scale).astype(np.float64)
+        y_vals = ((tel["Y"].values[sort_idx] - y_min) / scale).astype(np.float64)
+        driver_arrays[drv] = {
+            "times": times,
+            "x": x_vals,
+            "y": y_vals,
+        }
+
+    logger.info(f"Pre-processed {len(driver_arrays)} drivers for frame generation, {min(num_samples, 50000)} frames to build")
+
+    # Load real-time gap-to-leader data from F1 timing feed
+    # abbr -> (times_array, gap_strings_array)
+    timing_lookup: dict[str, tuple] = {}
+    try:
+        _, timing_df = f1api.timing_data(session.api_path)
+        if timing_df is not None and "GapToLeader" in timing_df.columns:
+            num_to_abbr = {}
+            for _, row in session.results.iterrows():
+                num_to_abbr[str(row.get("DriverNumber", ""))] = str(row.get("Abbreviation", ""))
+
+            for drv_num in timing_df["Driver"].unique():
+                abbr = num_to_abbr.get(str(drv_num))
+                if not abbr:
+                    continue
+                drv_data = timing_df[timing_df["Driver"] == drv_num].sort_values("Time")
+                times = drv_data["Time"].dt.total_seconds().values.astype(np.float64)
+                gap_strs = drv_data["GapToLeader"].values
+                timing_lookup[abbr] = (times, gap_strs)
+            logger.info(f"Loaded F1 timing data for {len(timing_lookup)} drivers ({len(timing_df)} entries)")
+    except Exception as e:
+        logger.error(f"Failed to load timing data: {e}")
+
+    def _get_gap_to_leader(abbr: str, t_sec: float) -> str | None:
+        """Get the most recent GapToLeader string for a driver at time t_sec."""
+        entry = timing_lookup.get(abbr)
+        if entry is None:
+            return None
+        times, gap_strs = entry
+        session_t = t_sec + session_time_offset
+        idx = np.searchsorted(times, session_t, side="right") - 1
+        if idx < 0:
+            return None
+        val = gap_strs[idx]
+        if pd.isna(val) or val is None:
+            return None
+        return str(val)
+
+    def _gap_sort_key(gap_str: str | None) -> float:
+        """Convert gap string to a sortable number. Leader (LAP X) = 0, +N.NNN = N.NNN, None = inf."""
+        if gap_str is None:
+            return float("inf")
+        if gap_str.startswith("LAP"):
+            return 0.0
+        try:
+            return float(gap_str.lstrip("+"))
+        except ValueError:
+            return float("inf")
+
+    # Track last known state for each driver (for showing retired drivers)
+    last_known: dict[str, dict] = {}
+
     for i in range(min(num_samples, 50000)):  # cap to prevent excessive data
-        t = min_date + pd.Timedelta(seconds=i * sample_interval)
+        t_sec = i * sample_interval
         frame_drivers = []
+        seen_drivers = set()
 
-        for drv, tel in driver_pos_data.items():
-            if "Date" not in tel.columns:
-                continue
-            # Find nearest telemetry point
-            idx = (tel["Date"] - t).abs().idxmin()
-            row = tel.loc[idx]
+        # Collect each driver's track coordinates and gap data
+        for drv, arrays in driver_arrays.items():
+            times = arrays["times"]
+            idx = np.searchsorted(times, t_sec, side="left")
+            if idx >= len(times):
+                idx = len(times) - 1
+            elif idx > 0:
+                if abs(times[idx - 1] - t_sec) < abs(times[idx] - t_sec):
+                    idx = idx - 1
 
-            # Only include if within reasonable time range
-            time_diff = abs((row["Date"] - t).total_seconds())
+            time_diff = abs(times[idx] - t_sec)
             if time_diff > 10:
                 continue
 
-            x_norm = (row["X"] - x_min) / scale
-            y_norm = (row["Y"] - y_min) / scale
+            seen_drivers.add(drv)
+            x_norm = float(arrays["x"][idx])
+            y_norm = float(arrays["y"][idx])
 
-            # Find current lap info
+            gap = _get_gap_to_leader(drv, t_sec)
+            grid_pos = grid_positions.get(drv)
+            is_pit_lane_starter = grid_pos == 0
+            show_pit_badge = is_pit_lane_starter and t_sec < 10
+
+            # Find current lap info for tyre/pit data
             lap_info = driver_lap_lookup.get(drv, [])
-            current_lap = 1
+            estimated_lap = max(1, int(t_sec / (total_seconds / total_laps)) + 1) if total_laps > 0 else 1
             compound = None
             tyre_life = None
-            position = None
+            pit_stops = 0
             for entry in lap_info:
-                if entry["lap"] <= max(1, int(i * sample_interval / (total_seconds / total_laps)) + 1):
-                    current_lap = entry["lap"]
+                if entry["lap"] <= estimated_lap:
                     compound = entry["compound"]
                     tyre_life = entry["tyre_life"]
-                    position = entry["position"]
+                    pit_stops = entry["pit_stops"]
+            if compound is None and lap_info:
+                compound = lap_info[0]["compound"]
+                tyre_life = lap_info[0]["tyre_life"]
 
-            frame_drivers.append({
+            # Determine fastest lap (use completed laps, not current lap)
+            frame_lap = min(int(t_sec / (total_seconds / total_laps)) + 1, total_laps) if total_laps > 0 else 1
+            completed_lap = frame_lap - 1
+            fl_holder = fastest_by_lap.get(completed_lap) if completed_lap > 0 else None
+
+            drv_data = {
                 "abbr": drv,
-                "x": float(x_norm),
-                "y": float(y_norm),
+                "x": x_norm,
+                "y": y_norm,
                 "color": colors.get(drv, "#FFFFFF"),
-                "position": position,
+                "team": teams.get(drv, ""),
+                "position": None,  # assigned after sorting by gap
+                "grid_position": grid_pos if not is_pit_lane_starter else None,
+                "pit_start": show_pit_badge,
                 "compound": compound,
                 "tyre_life": tyre_life,
-            })
+                "pit_stops": pit_stops,
+                "has_fastest_lap": drv == fl_holder,
+                "flag": _get_driver_flag(drv, t_sec),
+                "gap": gap,
+                "no_timing": gap is None,
+                "retired": False,
+            }
+            last_known[drv] = drv_data
+            frame_drivers.append(drv_data)
 
-        # Sort by position
-        frame_drivers.sort(key=lambda d: d["position"] if d["position"] else 999)
+        # Add retired drivers that have dropped out of telemetry
+        for drv in driver_arrays:
+            if drv not in seen_drivers and drv in last_known and drv in retired_drivers:
+                retired_data = {**last_known[drv], "retired": True, "gap": None, "no_timing": False}
+                frame_drivers.append(retired_data)
+
+        # First 5 seconds: use grid positions, no gap display, no greying
+        if t_sec < 5:
+            for d in frame_drivers:
+                gp = grid_positions.get(d["abbr"])
+                d["position"] = gp if gp and gp > 0 else len(frame_drivers)
+                d["gap"] = None
+                d["no_timing"] = False
+            frame_drivers.sort(key=lambda d: d["position"])
+        else:
+            # Derive positions by sorting on gap-to-leader
+            # Drivers with gap data are ranked by gap value; drivers without go to the bottom
+            frame_drivers.sort(key=lambda d: _gap_sort_key(d["gap"]))
+            for pos, d in enumerate(frame_drivers, 1):
+                d["position"] = pos
 
         frames.append({
             "timestamp": i * sample_interval,
@@ -324,3 +711,9 @@ async def get_driver_positions_by_time(
         })
 
     return frames
+
+
+async def get_driver_positions_by_time(
+    year: int, round_num: int, session_type: str = "R"
+) -> list[dict]:
+    return await asyncio.to_thread(_get_driver_positions_by_time_sync, year, round_num, session_type)

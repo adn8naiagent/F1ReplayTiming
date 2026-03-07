@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
@@ -47,94 +46,88 @@ async def replay_websocket(
             "total_laps": frames[-1]["total_laps"] if frames else 0,
         })
 
+        # Send first frame immediately so cars are visible before play
+        await websocket.send_json({"type": "frame", **frames[0]})
+
         # Playback state
         playing = False
         speed = 1.0
         frame_index = 0
         base_interval = 0.5  # matches the 0.5s sampling rate
 
+        async def send_seek_frame(target_time: float):
+            nonlocal frame_index
+            for i, f in enumerate(frames):
+                if f["timestamp"] >= target_time:
+                    frame_index = i
+                    break
+            if frame_index < len(frames):
+                await websocket.send_json({"type": "frame", **frames[frame_index]})
+
+        async def handle_command(cmd: str):
+            nonlocal playing, speed, frame_index
+
+            if cmd == "play":
+                playing = True
+            elif cmd == "pause":
+                playing = False
+            elif cmd.startswith("speed:"):
+                try:
+                    speed = float(cmd.split(":")[1])
+                    speed = max(0.25, min(50.0, speed))
+                except ValueError:
+                    pass
+            elif cmd.startswith("seek:"):
+                try:
+                    target_time = float(cmd.split(":")[1])
+                    await send_seek_frame(target_time)
+                except ValueError:
+                    pass
+            elif cmd.startswith("seeklap:"):
+                try:
+                    target_lap = int(cmd.split(":")[1])
+                    for i, f in enumerate(frames):
+                        if f["lap"] >= target_lap:
+                            frame_index = i
+                            break
+                    if frame_index < len(frames):
+                        await websocket.send_json({"type": "frame", **frames[frame_index]})
+                except ValueError:
+                    pass
+            elif cmd == "reset":
+                frame_index = 0
+                playing = False
+                await websocket.send_json({"type": "frame", **frames[0]})
+
+        async def check_command(timeout: float) -> bool:
+            """Check for and handle one command. Returns True if received."""
+            try:
+                msg = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
+                await handle_command(msg.strip().lower())
+                return True
+            except asyncio.TimeoutError:
+                return False
+
         while True:
             if playing and frame_index < len(frames):
                 # Send current frame
-                frame = frames[frame_index]
-                await websocket.send_json({"type": "frame", **frame})
+                await websocket.send_json({"type": "frame", **frames[frame_index]})
                 frame_index += 1
 
-                # Wait based on speed
-                await asyncio.sleep(base_interval / speed)
+                if frame_index >= len(frames):
+                    playing = False
+                    await websocket.send_json({"type": "finished"})
+                    continue
+
+                # Wait for the interval, checking for commands periodically
+                remaining = base_interval / speed
+                while remaining > 0 and playing:
+                    chunk = min(remaining, 0.05)
+                    await check_command(chunk)
+                    remaining -= chunk
             else:
-                # Wait for commands
-                try:
-                    msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.1)
-                    cmd = msg.strip().lower()
-
-                    if cmd == "play":
-                        playing = True
-                    elif cmd == "pause":
-                        playing = False
-                    elif cmd.startswith("speed:"):
-                        try:
-                            speed = float(cmd.split(":")[1])
-                            speed = max(0.25, min(50.0, speed))
-                        except ValueError:
-                            pass
-                    elif cmd.startswith("seek:"):
-                        try:
-                            target_time = float(cmd.split(":")[1])
-                            # Find nearest frame
-                            for i, f in enumerate(frames):
-                                if f["timestamp"] >= target_time:
-                                    frame_index = i
-                                    break
-                            # Send the seeked frame immediately
-                            if frame_index < len(frames):
-                                await websocket.send_json({
-                                    "type": "frame",
-                                    **frames[frame_index],
-                                })
-                        except ValueError:
-                            pass
-                    elif cmd == "reset":
-                        frame_index = 0
-                        playing = False
-                except asyncio.TimeoutError:
-                    # Check for incoming messages while playing
-                    if playing:
-                        continue
-                    await asyncio.sleep(0.05)
-
-            # Also check for commands while playing
-            if playing:
-                try:
-                    msg = await asyncio.wait_for(websocket.receive_text(), timeout=0.01)
-                    cmd = msg.strip().lower()
-                    if cmd == "pause":
-                        playing = False
-                    elif cmd.startswith("speed:"):
-                        try:
-                            speed = float(cmd.split(":")[1])
-                            speed = max(0.25, min(50.0, speed))
-                        except ValueError:
-                            pass
-                    elif cmd.startswith("seek:"):
-                        try:
-                            target_time = float(cmd.split(":")[1])
-                            for i, f in enumerate(frames):
-                                if f["timestamp"] >= target_time:
-                                    frame_index = i
-                                    break
-                        except ValueError:
-                            pass
-                    elif cmd == "reset":
-                        frame_index = 0
-                        playing = False
-                except asyncio.TimeoutError:
-                    pass
-
-            # If we've reached the end
-            if frame_index >= len(frames) and playing:
-                playing = False
-                await websocket.send_json({"type": "finished"})
+                # Not playing — block waiting for commands
+                await check_command(1.0)
 
     except WebSocketDisconnect:
         logger.info(f"WebSocket disconnected: {year}/{round_num}")

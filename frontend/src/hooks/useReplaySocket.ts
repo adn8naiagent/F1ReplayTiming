@@ -8,9 +8,18 @@ export interface ReplayDriver {
   x: number;
   y: number;
   color: string;
+  team: string;
   position: number | null;
+  grid_position: number | null;
   compound: string | null;
   tyre_life: number | null;
+  pit_stops: number;
+  gap: string | null;
+  has_fastest_lap: boolean;
+  flag: "investigation" | "penalty" | null;
+  retired: boolean;
+  pit_start: boolean;
+  no_timing: boolean;
 }
 
 export interface ReplayFrame {
@@ -73,6 +82,10 @@ export function useReplaySocket(year: number, round: number, sessionType: string
             totalTime: msg.total_time,
             totalLaps: msg.total_laps,
           }));
+          // Request first frame so cars are visible before play
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send("seek:0");
+          }
           break;
         case "frame":
           setState((s) => ({
@@ -134,10 +147,15 @@ export function useReplaySocket(year: number, round: number, sessionType: string
     setState((s) => ({ ...s, finished: false }));
   }, [send]);
 
+  const seekToLap = useCallback((lap: number) => {
+    send(`seeklap:${lap}`);
+    setState((s) => ({ ...s, finished: false }));
+  }, [send]);
+
   const reset = useCallback(() => {
     send("reset");
     setState((s) => ({ ...s, playing: false, finished: false }));
   }, [send]);
 
-  return { ...state, play, pause, setSpeed, seek, reset };
+  return { ...state, play, pause, setSpeed, seek, seekToLap, reset };
 }

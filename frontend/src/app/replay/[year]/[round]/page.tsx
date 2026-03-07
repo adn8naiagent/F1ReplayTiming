@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
 import { useReplaySocket } from "@/hooks/useReplaySocket";
+import { useSettings } from "@/hooks/useSettings";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
 import Leaderboard from "@/components/Leaderboard";
@@ -41,20 +42,23 @@ export default function ReplayPage() {
 
   const [highlightedDriver, setHighlightedDriver] = useState<string | null>(null);
   const [showTelemetry, setShowTelemetry] = useState(false);
+  const { settings, update: updateSetting } = useSettings();
 
-  const { data: sessionData, loading: sessionLoading } = useApi<SessionData>(
+  const { data: sessionData, loading: sessionLoading, error: sessionError } = useApi<SessionData>(
     `/api/sessions/${year}/${round}?type=${sessionType}`,
   );
 
-  const { data: trackData, loading: trackLoading } = useApi<TrackData>(
+  const { data: trackData, loading: trackLoading, error: trackError } = useApi<TrackData>(
     `/api/sessions/${year}/${round}/track?type=${sessionType}`,
   );
 
   const replay = useReplaySocket(year, round, sessionType);
 
-  const isLoading = sessionLoading || trackLoading || replay.loading;
+  const isLoading = sessionLoading || trackLoading;
+  const dataError = sessionError || trackError;
 
-  if (isLoading) {
+  // Show loading until session + track + replay frames are all ready
+  if (isLoading || (!dataError && replay.loading)) {
     return (
       <div className="min-h-screen bg-f1-dark flex items-center justify-center">
         <div className="text-center">
@@ -68,13 +72,18 @@ export default function ReplayPage() {
     );
   }
 
-  if (replay.error) {
+  if (dataError) {
     return (
       <div className="min-h-screen bg-f1-dark flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-400 text-lg mb-2">Error</p>
-          <p className="text-f1-muted">{replay.error}</p>
-          <a href="/" className="inline-block mt-4 text-f1-red hover:underline">
+        <div className="text-center max-w-md">
+          <p className="text-red-400 text-lg font-bold mb-2">Session Unavailable</p>
+          <p className="text-f1-muted mb-1">
+            Data for this session is not available yet.
+          </p>
+          <p className="text-f1-muted text-sm mb-6">
+            If the session just finished, data typically becomes available 1–2 hours after the chequered flag.
+          </p>
+          <a href="/" className="inline-block px-4 py-2 bg-f1-red text-white font-bold text-sm rounded hover:bg-red-700 transition-colors">
             Back to session picker
           </a>
         </div>
@@ -96,6 +105,8 @@ export default function ReplayPage() {
           country={sessionData.country}
           sessionType={sessionType}
           year={year}
+          settings={settings}
+          onSettingChange={updateSetting}
         />
       )}
 
@@ -133,6 +144,7 @@ export default function ReplayPage() {
             onDriverClick={(abbr) =>
               setHighlightedDriver(highlightedDriver === abbr ? null : abbr)
             }
+            settings={settings}
           />
         </div>
       </div>
@@ -149,10 +161,12 @@ export default function ReplayPage() {
         currentLap={replay.frame?.lap || 0}
         totalLaps={replay.totalLaps}
         finished={replay.finished}
+        showSessionTime={settings.showSessionTime}
         onPlay={replay.play}
         onPause={replay.pause}
         onSpeedChange={replay.setSpeed}
         onSeek={replay.seek}
+        onSeekToLap={replay.seekToLap}
         onReset={replay.reset}
       />
     </div>

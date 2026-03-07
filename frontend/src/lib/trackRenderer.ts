@@ -93,10 +93,19 @@ export function drawTrack(
   ctx.closePath();
   ctx.stroke();
 
-  // Start/finish marker
+  // Start/finish marker — drawn perpendicular to track direction
   const [fx, fy] = toScreen(rotated[0]);
-  ctx.fillStyle = "#FFFFFF";
-  ctx.fillRect(fx - 2, fy - 8, 4, 16);
+  const [nx, ny] = toScreen(rotated[1]);
+  const trackAngle = Math.atan2(ny - fy, nx - fx);
+  const perpAngle = trackAngle + Math.PI / 2;
+  const markerLen = 8;
+  ctx.beginPath();
+  ctx.moveTo(fx - Math.cos(perpAngle) * markerLen, fy - Math.sin(perpAngle) * markerLen);
+  ctx.lineTo(fx + Math.cos(perpAngle) * markerLen, fy + Math.sin(perpAngle) * markerLen);
+  ctx.strokeStyle = "#FFFFFF";
+  ctx.lineWidth = 3;
+  ctx.lineCap = "round";
+  ctx.stroke();
 }
 
 export function drawDrivers(
@@ -154,6 +163,8 @@ export function drawDrivers(
     const isHighlighted = highlightedDriver === drv.abbr;
     const radius = isHighlighted ? 8 : 5;
 
+    ctx.save();
+
     // Glow effect for highlighted
     if (isHighlighted) {
       ctx.beginPath();
@@ -166,13 +177,15 @@ export function drawDrivers(
     ctx.beginPath();
     ctx.arc(sx, sy, radius, 0, Math.PI * 2);
     ctx.fillStyle = drv.color;
+    ctx.strokeStyle = drv.color;
+    ctx.lineWidth = 1;
     ctx.fill();
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 1.5;
     ctx.stroke();
 
+    ctx.restore();
+
     // Driver label
-    ctx.font = isHighlighted ? "bold 11px monospace" : "10px monospace";
+    ctx.font = isHighlighted ? "800 12px system-ui, -apple-system, sans-serif" : "800 10px system-ui, -apple-system, sans-serif";
     ctx.fillStyle = "#FFFFFF";
     ctx.textAlign = "center";
     ctx.fillText(drv.abbr, sx, sy - radius - 4);
