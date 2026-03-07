@@ -6,7 +6,7 @@ import { TYRE_COLORS, TYRE_SHORT } from "@/lib/constants";
 
 interface Props {
   drivers: ReplayDriver[];
-  highlightedDriver: string | null;
+  highlightedDrivers: string[];
   onDriverClick: (abbr: string) => void;
   settings: ReplaySettings;
 }
@@ -22,7 +22,7 @@ function formatGap(gap: string | null): string {
   return gap;
 }
 
-export default function Leaderboard({ drivers, highlightedDriver, onDriverClick, settings }: Props) {
+export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick, settings }: Props) {
   const sorted = [...drivers].sort(
     (a, b) => (a.position ?? 999) - (b.position ?? 999),
   );
@@ -31,7 +31,7 @@ export default function Leaderboard({ drivers, highlightedDriver, onDriverClick,
     <div className="bg-f1-card border-l border-f1-border h-full overflow-y-auto">
       <div className="divide-y divide-f1-border/50">
         {sorted.map((drv) => {
-          const isHighlighted = highlightedDriver === drv.abbr;
+          const isHighlighted = highlightedDrivers.includes(drv.abbr);
           const isLeader = drv.position === 1;
           const compound = drv.compound;
           const tyreColor = compound ? (TYRE_COLORS[compound] || "#888") : undefined;
@@ -66,7 +66,7 @@ export default function Leaderboard({ drivers, highlightedDriver, onDriverClick,
               <span className="text-sm font-extrabold text-white flex-shrink-0">
                 {drv.abbr}
               </span>
-              {settings.showGridChange && (
+              {settings.showGridChange && !drv.retired && (
                 drv.pit_start ? (
                   <span className="text-[10px] font-bold text-white flex-shrink-0">
                     Pit

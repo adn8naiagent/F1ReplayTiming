@@ -65,17 +65,17 @@ export default function SessionBanner({
             <img src="/logo.png" alt="Home" className="w-10 h-10 rounded-lg hover:opacity-80 transition-opacity" />
           </a>
           <div>
-            <h1 className="text-lg font-bold text-white">
+            <h1 className="text-sm font-extrabold text-white">
               {year} {eventName}
             </h1>
-            <p className="text-sm text-f1-muted">
+            <p className="text-xs font-bold text-f1-muted">
               {circuit}, {country}
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="bg-f1-red px-4 py-1 rounded text-white font-bold text-sm uppercase">
+          <div className="bg-f1-red px-4 py-1 rounded text-white font-extrabold text-xs uppercase">
             {SESSION_LABELS[sessionType] || sessionType}
           </div>
 

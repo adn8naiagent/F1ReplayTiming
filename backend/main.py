@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import sessions, track, laps, results, replay
+from routers import sessions, track, laps, results, replay, telemetry, sync
 
 load_dotenv()
 
@@ -34,6 +34,8 @@ app.include_router(track.router)
 app.include_router(laps.router)
 app.include_router(results.router)
 app.include_router(replay.router)
+app.include_router(telemetry.router)
+app.include_router(sync.router)
 
 
 @app.get("/api/health")

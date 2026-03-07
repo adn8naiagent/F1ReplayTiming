@@ -319,6 +319,62 @@ async def get_lap_data(year: int, round_num: int, session_type: str = "R") -> li
     return await asyncio.to_thread(_get_lap_data_sync, year, round_num, session_type)
 
 
+def _get_driver_telemetry_sync(
+    year: int, round_num: int, session_type: str, driver: str, lap_number: int
+) -> dict | None:
+    """Return telemetry trace for a single driver on a single lap."""
+    session = _load_session(year, round_num, session_type)
+    laps_df = session.laps
+
+    drv_laps = laps_df.pick_drivers(driver)
+    lap_row = drv_laps[drv_laps["LapNumber"] == lap_number]
+    if len(lap_row) == 0:
+        return None
+
+    try:
+        tel = lap_row.get_telemetry()
+    except Exception:
+        return None
+
+    if tel is None or len(tel) == 0:
+        return None
+
+    # Build arrays — use Distance as x-axis (relative to lap)
+    has_distance = "Distance" in tel.columns
+    has_drs = "DRS" in tel.columns
+
+    # Downsample if too many points (target ~500 points for smooth charts)
+    step = max(1, len(tel) // 500)
+    tel_sampled = tel.iloc[::step]
+
+    result = {
+        "driver": driver,
+        "lap": lap_number,
+        "distance": tel_sampled["Distance"].tolist() if has_distance else list(range(len(tel_sampled))),
+        "speed": tel_sampled["Speed"].astype(float).tolist(),
+        "throttle": tel_sampled["Throttle"].astype(float).tolist(),
+        "brake": [int(b) * 100 for b in tel_sampled["Brake"].tolist()],
+        "gear": tel_sampled["nGear"].astype(int).tolist(),
+        "rpm": tel_sampled["RPM"].astype(float).tolist(),
+    }
+    if has_drs:
+        result["drs"] = tel_sampled["DRS"].astype(int).tolist()
+
+    # Include relative distance for position marker mapping
+    if "RelativeDistance" in tel_sampled.columns:
+        result["relative_distance"] = tel_sampled["RelativeDistance"].astype(float).tolist()
+
+    return result
+
+
+async def get_driver_telemetry(
+    year: int, round_num: int, session_type: str, driver: str, lap_number: int
+) -> dict | None:
+    return await asyncio.to_thread(
+        _get_driver_telemetry_sync, year, round_num, session_type, driver, lap_number
+    )
+
+
 def _get_race_results_sync(year: int, round_num: int, session_type: str = "R") -> list[dict]:
     session = _load_session(year, round_num, session_type)
     results = session.results
@@ -578,10 +634,24 @@ def _get_driver_positions_by_time_sync(
         times = times[sort_idx]
         x_vals = ((tel["X"].values[sort_idx] - x_min) / scale).astype(np.float64)
         y_vals = ((tel["Y"].values[sort_idx] - y_min) / scale).astype(np.float64)
+        rel_dist = tel["RelativeDistance"].values[sort_idx].astype(np.float64) if "RelativeDistance" in tel.columns else np.zeros(len(times))
+        speed = tel["Speed"].values[sort_idx].astype(np.float64) if "Speed" in tel.columns else np.zeros(len(times))
+        throttle = tel["Throttle"].values[sort_idx].astype(np.float64) if "Throttle" in tel.columns else np.zeros(len(times))
+        brake = tel["Brake"].values[sort_idx] if "Brake" in tel.columns else np.zeros(len(times), dtype=bool)
+        gear = tel["nGear"].values[sort_idx].astype(int) if "nGear" in tel.columns else np.zeros(len(times), dtype=int)
+        rpm = tel["RPM"].values[sort_idx].astype(np.float64) if "RPM" in tel.columns else np.zeros(len(times))
+        drs = tel["DRS"].values[sort_idx].astype(int) if "DRS" in tel.columns else np.zeros(len(times), dtype=int)
         driver_arrays[drv] = {
             "times": times,
             "x": x_vals,
             "y": y_vals,
+            "rel_dist": rel_dist,
+            "speed": speed,
+            "throttle": throttle,
+            "brake": brake,
+            "gear": gear,
+            "rpm": rpm,
+            "drs": drs,
         }
 
     logger.info(f"Pre-processed {len(driver_arrays)} drivers for frame generation, {min(num_samples, 50000)} frames to build")
@@ -664,28 +734,20 @@ def _get_driver_positions_by_time_sync(
             seen_drivers.add(drv)
             x_norm = float(arrays["x"][idx])
             y_norm = float(arrays["y"][idx])
+            rel_dist = float(arrays["rel_dist"][idx])
+            spd = float(arrays["speed"][idx])
+            thr = float(arrays["throttle"][idx])
+            brk = bool(arrays["brake"][idx])
+            gr = int(arrays["gear"][idx])
+            rpms = float(arrays["rpm"][idx])
+            drs_val = int(arrays["drs"][idx])
 
             gap = _get_gap_to_leader(drv, t_sec)
             grid_pos = grid_positions.get(drv)
             is_pit_lane_starter = grid_pos == 0
             show_pit_badge = is_pit_lane_starter and t_sec < 10
 
-            # Find current lap info for tyre/pit data
-            lap_info = driver_lap_lookup.get(drv, [])
-            estimated_lap = max(1, int(t_sec / (total_seconds / total_laps)) + 1) if total_laps > 0 else 1
-            compound = None
-            tyre_life = None
-            pit_stops = 0
-            for entry in lap_info:
-                if entry["lap"] <= estimated_lap:
-                    compound = entry["compound"]
-                    tyre_life = entry["tyre_life"]
-                    pit_stops = entry["pit_stops"]
-            if compound is None and lap_info:
-                compound = lap_info[0]["compound"]
-                tyre_life = lap_info[0]["tyre_life"]
-
-            # Fastest lap holder is determined after sorting (uses leader's gap to know current lap)
+            # Tyre/pit data filled in after current lap is determined (below)
 
             drv_data = {
                 "abbr": drv,
@@ -696,14 +758,21 @@ def _get_driver_positions_by_time_sync(
                 "position": None,  # assigned after sorting by gap
                 "grid_position": grid_pos if not is_pit_lane_starter else None,
                 "pit_start": show_pit_badge,
-                "compound": compound,
-                "tyre_life": tyre_life,
-                "pit_stops": pit_stops,
+                "compound": None,
+                "tyre_life": None,
+                "pit_stops": 0,
                 "has_fastest_lap": False,  # set after sorting
                 "flag": _get_driver_flag(drv, t_sec),
                 "gap": gap,
                 "no_timing": gap is None,
                 "retired": False,
+                "relative_distance": rel_dist,
+                "speed": spd,
+                "throttle": thr,
+                "brake": brk,
+                "gear": gr,
+                "rpm": rpms,
+                "drs": drs_val,
             }
             last_known[drv] = drv_data
             frame_drivers.append(drv_data)
@@ -746,6 +815,24 @@ def _get_driver_positions_by_time_sync(
                         if d["abbr"] == fl_holder:
                             d["has_fastest_lap"] = True
                             break
+
+        # Fill in tyre/pit data using real current lap
+        for d in frame_drivers:
+            lap_info = driver_lap_lookup.get(d["abbr"], [])
+            compound = None
+            tyre_life = None
+            pit_stops = 0
+            for entry in lap_info:
+                if entry["lap"] <= current_lap:
+                    compound = entry["compound"]
+                    tyre_life = entry["tyre_life"]
+                    pit_stops = entry["pit_stops"]
+            if compound is None and lap_info:
+                compound = lap_info[0]["compound"]
+                tyre_life = lap_info[0]["tyre_life"]
+            d["compound"] = compound
+            d["tyre_life"] = tyre_life
+            d["pit_stops"] = pit_stops
 
         frames.append({
             "timestamp": i * sample_interval,

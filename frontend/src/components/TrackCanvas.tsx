@@ -8,19 +8,27 @@ interface Props {
   rotation: number;
   trackStatus?: string;
   drivers: DriverMarker[];
-  highlightedDriver: string | null;
+  highlightedDrivers: string[];
 }
 
-const LERP_SPEED = 0.08; // fraction of remaining distance to close per frame (~60fps)
+// Duration (ms) over which to linearly interpolate between position updates
+const INTERP_DURATION = 500;
 
-export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDriver }: Props) {
+interface PosEntry {
+  prevX: number;
+  prevY: number;
+  targetX: number;
+  targetY: number;
+  startTime: number;
+}
+
+export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
 
-  // Target positions (updated from props) and smoothed positions (animated)
-  const targetRef = useRef<Map<string, { x: number; y: number }>>(new Map());
-  const smoothRef = useRef<Map<string, { x: number; y: number }>>(new Map());
+  // Per-driver interpolation state
+  const posRef = useRef<Map<string, PosEntry>>(new Map());
   const driversRef = useRef<DriverMarker[]>([]);
   const trackStatusRef = useRef(trackStatus);
   trackStatusRef.current = trackStatus;
@@ -28,11 +36,27 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
   // Update targets when drivers prop changes
   useEffect(() => {
     driversRef.current = drivers;
+    const now = performance.now();
     for (const drv of drivers) {
-      targetRef.current.set(drv.abbr, { x: drv.x, y: drv.y });
-      // Initialize smooth position if first time seeing this driver
-      if (!smoothRef.current.has(drv.abbr)) {
-        smoothRef.current.set(drv.abbr, { x: drv.x, y: drv.y });
+      const entry = posRef.current.get(drv.abbr);
+      if (!entry) {
+        // First time seeing driver — snap to position
+        posRef.current.set(drv.abbr, {
+          prevX: drv.x, prevY: drv.y,
+          targetX: drv.x, targetY: drv.y,
+          startTime: now,
+        });
+      } else {
+        // Compute current interpolated position as new "prev"
+        const elapsed = now - entry.startTime;
+        const t = Math.min(elapsed / INTERP_DURATION, 1);
+        const curX = entry.prevX + (entry.targetX - entry.prevX) * t;
+        const curY = entry.prevY + (entry.targetY - entry.prevY) * t;
+        entry.prevX = curX;
+        entry.prevY = curY;
+        entry.targetX = drv.x;
+        entry.targetY = drv.y;
+        entry.startTime = now;
       }
     }
   }, [drivers]);
@@ -74,28 +98,29 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
 
       drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current);
 
-      // Smoothly lerp toward target positions each animation frame
+      // Linearly interpolate between previous and target positions
+      const now = performance.now();
       const curr = driversRef.current;
       const interpolated: DriverMarker[] = curr.map((drv) => {
-        const target = targetRef.current.get(drv.abbr);
-        const smooth = smoothRef.current.get(drv.abbr);
-        if (!target || !smooth) return drv;
+        const entry = posRef.current.get(drv.abbr);
+        if (!entry) return drv;
 
-        // Exponential lerp: close LERP_SPEED of remaining distance each frame
-        smooth.x += (target.x - smooth.x) * LERP_SPEED;
-        smooth.y += (target.y - smooth.y) * LERP_SPEED;
+        const elapsed = now - entry.startTime;
+        const t = Math.min(elapsed / INTERP_DURATION, 1);
+        const x = entry.prevX + (entry.targetX - entry.prevX) * t;
+        const y = entry.prevY + (entry.targetY - entry.prevY) * t;
 
-        return { ...drv, x: smooth.x, y: smooth.y };
+        return { ...drv, x, y };
       });
 
-      drawDrivers(ctx, interpolated, trackPoints, w, h, rotation, highlightedDriver);
+      drawDrivers(ctx, interpolated, trackPoints, w, h, rotation, highlightedDrivers);
 
       requestAnimationFrame(animate);
     }
 
     requestAnimationFrame(animate);
     return () => { running = false; };
-  }, [trackPoints, rotation, highlightedDriver]);
+  }, [trackPoints, rotation, highlightedDrivers]);
 
   // Track container size via ResizeObserver
   useEffect(() => {

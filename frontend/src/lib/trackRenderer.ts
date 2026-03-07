@@ -29,9 +29,11 @@ export function drawTrack(
 ) {
   if (points.length === 0) return;
 
-  const padding = 40;
-  const w = width - padding * 2;
-  const h = height - padding * 2;
+  const padX = 40;
+  const padTop = 40;
+  const padBottom = 60;
+  const w = width - padX * 2;
+  const h = height - padTop - padBottom;
 
   // Apply rotation
   const rad = (rotation * Math.PI) / 180;
@@ -64,8 +66,8 @@ export function drawTrack(
   const rangeY = maxY - minY || 1;
   const scale = Math.min(w / rangeX, h / rangeY);
 
-  const offsetX = padding + (w - rangeX * scale) / 2;
-  const offsetY = padding + (h - rangeY * scale) / 2;
+  const offsetX = padX + (w - rangeX * scale) / 2;
+  const offsetY = padTop + (h - rangeY * scale) / 2;
 
   function toScreen(p: TrackPoint): [number, number] {
     return [
@@ -124,13 +126,15 @@ export function drawDrivers(
   width: number,
   height: number,
   rotation: number,
-  highlightedDriver: string | null,
+  highlightedDrivers: string[],
 ) {
   if (trackPoints.length === 0) return;
 
-  const padding = 40;
-  const w = width - padding * 2;
-  const h = height - padding * 2;
+  const padX = 40;
+  const padTop = 40;
+  const padBottom = 60;
+  const w = width - padX * 2;
+  const h = height - padTop - padBottom;
 
   const rad = (rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
@@ -156,8 +160,8 @@ export function drawDrivers(
   const rangeX = maxX - minX || 1;
   const rangeY = maxY - minY || 1;
   const scale = Math.min(w / rangeX, h / rangeY);
-  const offsetX = padding + (w - rangeX * scale) / 2;
-  const offsetY = padding + (h - rangeY * scale) / 2;
+  const offsetX = padX + (w - rangeX * scale) / 2;
+  const offsetY = padTop + (h - rangeY * scale) / 2;
 
   for (const drv of drivers) {
     // Rotate driver position
@@ -169,7 +173,7 @@ export function drawDrivers(
     const sx = offsetX + (rx - minX) * scale;
     const sy = offsetY + (ry - minY) * scale;
 
-    const isHighlighted = highlightedDriver === drv.abbr;
+    const isHighlighted = highlightedDrivers.includes(drv.abbr);
     const radius = isHighlighted ? 8 : 5;
 
     ctx.save();

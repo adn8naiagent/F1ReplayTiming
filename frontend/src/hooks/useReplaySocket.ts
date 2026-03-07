@@ -20,6 +20,13 @@ export interface ReplayDriver {
   retired: boolean;
   pit_start: boolean;
   no_timing: boolean;
+  relative_distance: number;
+  speed: number | null;
+  throttle: number | null;
+  brake: boolean;
+  gear: number | null;
+  rpm: number | null;
+  drs: number | null;
 }
 
 export interface ReplayFrame {

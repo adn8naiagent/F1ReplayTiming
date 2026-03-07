@@ -10,6 +10,7 @@ import TrackCanvas from "@/components/TrackCanvas";
 import Leaderboard from "@/components/Leaderboard";
 import PlaybackControls from "@/components/PlaybackControls";
 import TelemetryChart from "@/components/TelemetryChart";
+import SyncPhoto from "@/components/SyncPhoto";
 
 interface TrackData {
   track_points: { x: number; y: number }[];
@@ -40,8 +41,22 @@ export default function ReplayPage() {
   const round = Number(params.round);
   const sessionType = searchParams.get("type") || "R";
 
-  const [highlightedDriver, setHighlightedDriver] = useState<string | null>(null);
+  const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
   const [showTelemetry, setShowTelemetry] = useState(false);
+  const [showSyncPhoto, setShowSyncPhoto] = useState(false);
+
+  function handleDriverClick(abbr: string) {
+    setSelectedDrivers((prev) => {
+      if (prev.includes(abbr)) {
+        return prev.filter((d) => d !== abbr);
+      }
+      if (prev.length >= 2) {
+        // Replace the oldest selection
+        return [prev[1], abbr];
+      }
+      return [...prev, abbr];
+    });
+  }
   const { settings, update: updateSetting } = useSettings();
 
   const { data: sessionData, loading: sessionLoading, error: sessionError } = useApi<SessionData>(
@@ -151,13 +166,26 @@ export default function ReplayPage() {
               color: d.color,
               position: d.position,
             }))}
-            highlightedDriver={highlightedDriver}
+            highlightedDrivers={selectedDrivers}
           />
+
+          {/* Telemetry overlay */}
+          {showTelemetry && (
+            <div className="absolute bottom-2 left-8 z-10">
+              {selectedDrivers.map((abbr) => {
+                const drv = drivers.find((d) => d.abbr === abbr) || null;
+                return <TelemetryChart key={abbr} visible driver={drv} />;
+              })}
+              {selectedDrivers.length === 0 && (
+                <TelemetryChart visible driver={null} />
+              )}
+            </div>
+          )}
 
           {/* Telemetry toggle */}
           <button
             onClick={() => setShowTelemetry(!showTelemetry)}
-            className="absolute bottom-4 right-4 px-3 py-1.5 bg-f1-card border border-f1-border rounded text-xs text-f1-muted hover:text-white transition-colors"
+            className="absolute bottom-2 right-2 px-2 py-1 bg-f1-card/80 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors"
           >
             {showTelemetry ? "Hide" : "Show"} Telemetry
           </button>
@@ -167,17 +195,12 @@ export default function ReplayPage() {
         <div className="w-72 flex-shrink-0">
           <Leaderboard
             drivers={drivers}
-            highlightedDriver={highlightedDriver}
-            onDriverClick={(abbr) =>
-              setHighlightedDriver(highlightedDriver === abbr ? null : abbr)
-            }
+            highlightedDrivers={selectedDrivers}
+            onDriverClick={handleDriverClick}
             settings={settings}
           />
         </div>
       </div>
-
-      {/* Telemetry panel */}
-      <TelemetryChart visible={showTelemetry} />
 
       {/* Playback controls */}
       <PlaybackControls
@@ -195,7 +218,20 @@ export default function ReplayPage() {
         onSeek={replay.seek}
         onSeekToLap={replay.seekToLap}
         onReset={replay.reset}
+        isRace={sessionType === "R"}
+        onSyncPhoto={() => setShowSyncPhoto(true)}
       />
+
+      {/* Sync with photo modal */}
+      {showSyncPhoto && (
+        <SyncPhoto
+          year={year}
+          round={round}
+          sessionType={sessionType}
+          onSync={(timestamp) => replay.seek(timestamp)}
+          onClose={() => setShowSyncPhoto(false)}
+        />
+      )}
     </div>
   );
 }
