@@ -94,6 +94,7 @@ export default function ReplayPage() {
   const trackPoints = trackData?.track_points || [];
   const rotation = trackData?.rotation || 0;
   const drivers = replay.frame?.drivers || [];
+  const trackStatus = replay.frame?.status || "green";
 
   return (
     <div className="h-screen flex flex-col bg-f1-dark overflow-hidden">
@@ -114,10 +115,36 @@ export default function ReplayPage() {
       <div className="flex-1 flex min-h-0">
         {/* Track */}
         <div className="flex-1 relative">
+          {/* Flag badge */}
+          {trackStatus !== "green" && (
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
+              <div
+                className={`px-3 py-1 rounded text-xs font-extrabold uppercase ${
+                  trackStatus === "red"
+                    ? "bg-red-600 text-white"
+                    : trackStatus === "sc"
+                    ? "bg-yellow-500 text-black"
+                    : trackStatus === "vsc"
+                    ? "bg-yellow-500/80 text-black"
+                    : "bg-yellow-400 text-black"
+                }`}
+              >
+                {trackStatus === "red"
+                  ? "Red Flag"
+                  : trackStatus === "sc"
+                  ? "Safety Car"
+                  : trackStatus === "vsc"
+                  ? "Virtual Safety Car"
+                  : "Yellow Flag"}
+              </div>
+            </div>
+          )}
+
           <TrackCanvas
             trackPoints={trackPoints}
             rotation={rotation}
-            drivers={drivers.map((d) => ({
+            trackStatus={trackStatus}
+            drivers={drivers.filter((d) => !d.retired).map((d) => ({
               abbr: d.abbr,
               x: d.x,
               y: d.y,

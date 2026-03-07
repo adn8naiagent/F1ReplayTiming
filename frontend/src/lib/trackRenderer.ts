@@ -11,12 +11,21 @@ export interface DriverMarker {
   position: number | null;
 }
 
+const TRACK_STATUS_COLORS: Record<string, string> = {
+  green: "#3A3A4A",
+  yellow: "#F5C518",
+  sc: "#F5C518",
+  vsc: "#F5C518",
+  red: "#E10600",
+};
+
 export function drawTrack(
   ctx: CanvasRenderingContext2D,
   points: TrackPoint[],
   width: number,
   height: number,
   rotation: number,
+  trackStatus: string = "green",
 ) {
   if (points.length === 0) return;
 
@@ -67,7 +76,7 @@ export function drawTrack(
 
   // Draw track outline
   ctx.beginPath();
-  ctx.strokeStyle = "#3A3A4A";
+  ctx.strokeStyle = TRACK_STATUS_COLORS[trackStatus] || "#3A3A4A";
   ctx.lineWidth = 12;
   ctx.lineCap = "round";
   ctx.lineJoin = "round";

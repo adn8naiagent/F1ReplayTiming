@@ -7,6 +7,7 @@ export interface ReplaySettings {
   showTyreType: boolean;
   showPitStops: boolean;
   showGridChange: boolean;
+  showGapToLeader: boolean;
   showSessionTime: boolean;
 }
 
@@ -17,6 +18,7 @@ const DEFAULTS: ReplaySettings = {
   showTyreType: true,
   showPitStops: true,
   showGridChange: true,
+  showGapToLeader: true,
   showSessionTime: false,
 };
 

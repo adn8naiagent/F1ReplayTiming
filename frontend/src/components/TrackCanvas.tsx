@@ -6,13 +6,14 @@ import { drawTrack, drawDrivers, TrackPoint, DriverMarker } from "@/lib/trackRen
 interface Props {
   trackPoints: TrackPoint[];
   rotation: number;
+  trackStatus?: string;
   drivers: DriverMarker[];
   highlightedDriver: string | null;
 }
 
 const LERP_SPEED = 0.08; // fraction of remaining distance to close per frame (~60fps)
 
-export default function TrackCanvas({ trackPoints, rotation, drivers, highlightedDriver }: Props) {
+export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDriver }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -21,6 +22,8 @@ export default function TrackCanvas({ trackPoints, rotation, drivers, highlighte
   const targetRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const smoothRef = useRef<Map<string, { x: number; y: number }>>(new Map());
   const driversRef = useRef<DriverMarker[]>([]);
+  const trackStatusRef = useRef(trackStatus);
+  trackStatusRef.current = trackStatus;
 
   // Update targets when drivers prop changes
   useEffect(() => {
@@ -69,7 +72,7 @@ export default function TrackCanvas({ trackPoints, rotation, drivers, highlighte
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      drawTrack(ctx, trackPoints, w, h, rotation);
+      drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current);
 
       // Smoothly lerp toward target positions each animation frame
       const curr = driversRef.current;

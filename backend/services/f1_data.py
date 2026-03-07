@@ -543,6 +543,31 @@ def _get_driver_positions_by_time_sync(
                 session_time_offset = st.total_seconds()
                 break
 
+    # Pre-compute track status (yellow/SC/VSC/red) lookup
+    # track_status Time is a session timedelta, same as gap data
+    track_status_times = np.array([], dtype=np.float64)
+    track_status_codes = np.array([], dtype=int)
+    STATUS_MAP = {1: "green", 2: "yellow", 4: "sc", 5: "red", 6: "vsc", 7: "green"}
+    try:
+        ts = session.track_status
+        if ts is not None and len(ts) > 0:
+            track_status_times = ts["Time"].dt.total_seconds().values.astype(np.float64)
+            track_status_codes = ts["Status"].values.astype(int)
+            logger.info(f"Loaded {len(ts)} track status entries")
+    except Exception as e:
+        logger.error(f"Failed to load track status: {e}")
+
+    def _get_track_status(t_sec: float) -> str:
+        """Get track status (green/yellow/sc/vsc/red) at time t_sec."""
+        if len(track_status_times) == 0:
+            return "green"
+        session_t = t_sec + session_time_offset
+        idx = np.searchsorted(track_status_times, session_t, side="right") - 1
+        if idx < 0:
+            return "green"
+        code = int(track_status_codes[idx])
+        return STATUS_MAP.get(code, "green")
+
     # Pre-convert telemetry to numpy arrays for fast lookup via searchsorted
     driver_arrays: dict[str, dict] = {}
     for drv, tel in driver_pos_data.items():
@@ -599,11 +624,16 @@ def _get_driver_positions_by_time_sync(
         return str(val)
 
     def _gap_sort_key(gap_str: str | None) -> float:
-        """Convert gap string to a sortable number. Leader (LAP X) = 0, +N.NNN = N.NNN, None = inf."""
+        """Convert gap string to a sortable number. Leader (LAP X) = 0, +N.NNN = N.NNN, lapped = 9000+N, None = inf."""
         if gap_str is None:
             return float("inf")
         if gap_str.startswith("LAP"):
             return 0.0
+        # Lapped cars: "1L", "1 L", "2L" etc — sort after all non-lapped drivers
+        import re
+        lapped = re.match(r"^(\d+)\s*L$", gap_str)
+        if lapped:
+            return 9000.0 + int(lapped.group(1))
         try:
             return float(gap_str.lstrip("+"))
         except ValueError:
@@ -655,10 +685,7 @@ def _get_driver_positions_by_time_sync(
                 compound = lap_info[0]["compound"]
                 tyre_life = lap_info[0]["tyre_life"]
 
-            # Determine fastest lap (use completed laps, not current lap)
-            frame_lap = min(int(t_sec / (total_seconds / total_laps)) + 1, total_laps) if total_laps > 0 else 1
-            completed_lap = frame_lap - 1
-            fl_holder = fastest_by_lap.get(completed_lap) if completed_lap > 0 else None
+            # Fastest lap holder is determined after sorting (uses leader's gap to know current lap)
 
             drv_data = {
                 "abbr": drv,
@@ -672,7 +699,7 @@ def _get_driver_positions_by_time_sync(
                 "compound": compound,
                 "tyre_life": tyre_life,
                 "pit_stops": pit_stops,
-                "has_fastest_lap": drv == fl_holder,
+                "has_fastest_lap": False,  # set after sorting
                 "flag": _get_driver_flag(drv, t_sec),
                 "gap": gap,
                 "no_timing": gap is None,
@@ -702,12 +729,30 @@ def _get_driver_positions_by_time_sync(
             for pos, d in enumerate(frame_drivers, 1):
                 d["position"] = pos
 
+        # Determine current lap from leader's gap ("LAP N") and assign fastest lap
+        current_lap = 1
+        if frame_drivers:
+            leader_gap = frame_drivers[0].get("gap")
+            if leader_gap and leader_gap.startswith("LAP "):
+                try:
+                    current_lap = int(leader_gap.split(" ")[1])
+                except (ValueError, IndexError):
+                    pass
+            completed_lap = current_lap - 1
+            if completed_lap > 0:
+                fl_holder = fastest_by_lap.get(completed_lap)
+                if fl_holder:
+                    for d in frame_drivers:
+                        if d["abbr"] == fl_holder:
+                            d["has_fastest_lap"] = True
+                            break
+
         frames.append({
             "timestamp": i * sample_interval,
-            "lap": min(int(i * sample_interval / (total_seconds / total_laps)) + 1, total_laps) if total_laps > 0 else 1,
+            "lap": current_lap,
             "total_laps": total_laps,
             "drivers": frame_drivers,
-            "status": "green",
+            "status": _get_track_status(i * sample_interval),
         })
 
     return frames

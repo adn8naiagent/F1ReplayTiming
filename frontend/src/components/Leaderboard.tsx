@@ -11,6 +11,17 @@ interface Props {
   settings: ReplaySettings;
 }
 
+function formatGap(gap: string | null): string {
+  if (!gap) return "";
+  // "1L" or "1 L" -> "+1 Lap", "2L" or "2 L" -> "+2 Laps"
+  const match = gap.match(/^(\d+)\s*L$/);
+  if (match) {
+    const n = parseInt(match[1]);
+    return `+${n} Lap${n > 1 ? "s" : ""}`;
+  }
+  return gap;
+}
+
 export default function Leaderboard({ drivers, highlightedDriver, onDriverClick, settings }: Props) {
   const sorted = [...drivers].sort(
     (a, b) => (a.position ?? 999) - (b.position ?? 999),
@@ -98,10 +109,14 @@ export default function Leaderboard({ drivers, highlightedDriver, onDriverClick,
               </span>
 
               {/* Gap to leader */}
-              <span className={`text-sm font-bold text-right flex-1 ${
-                drv.retired ? "text-red-500" : "text-f1-muted"
-              }`}>
-                {drv.retired ? "Out" : drv.position === 1 ? "Leader" : drv.gap || ""}
+              <span className="text-sm font-bold text-right flex-1 text-f1-muted">
+                {drv.retired
+                  ? "Out"
+                  : settings.showGapToLeader
+                  ? drv.position === 1
+                    ? "Leader"
+                    : formatGap(drv.gap)
+                  : ""}
               </span>
 
               {/* Pit stops - "boxed" */}
