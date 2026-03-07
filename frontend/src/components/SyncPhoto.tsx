@@ -132,7 +132,7 @@ export default function SyncPhoto({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="bg-f1-card border border-f1-border rounded-xl shadow-2xl max-w-md w-full">
+      <div className="bg-f1-card border border-f1-border rounded-xl shadow-2xl max-w-md w-full" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-f1-border">
           <h2 className="text-lg font-bold text-white">Sync with TV</h2>
@@ -293,11 +293,16 @@ export default function SyncPhoto({
               </div>
 
               <button
-                onClick={() => {
-                  onSync(result.timestamp);
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const ts = result!.timestamp;
+                  console.log("Syncing to timestamp:", ts);
+                  onSync(ts);
                   onClose();
                 }}
-                className="w-full py-3 bg-f1-red hover:bg-red-700 rounded-lg text-white font-bold text-sm transition-colors"
+                className="w-full py-3 bg-f1-red hover:bg-red-700 rounded-lg text-white font-bold text-sm transition-colors cursor-pointer relative z-[60]"
               >
                 Sync to this moment
               </button>

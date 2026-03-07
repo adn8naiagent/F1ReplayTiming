@@ -46,7 +46,7 @@ export default function TelemetryChart({ visible, driver }: Props) {
     return (
       <div className="bg-f1-card/90 border border-f1-border rounded px-4 py-1.5 backdrop-blur-sm">
         <p className="text-[10px] text-f1-muted">
-          Select a driver to view telemetry
+          Select 1–2 drivers to view telemetry
         </p>
       </div>
     );

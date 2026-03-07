@@ -15,7 +15,6 @@ from routers.replay import _get_frames
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["sync"])
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 VISION_MODEL = "google/gemini-2.0-flash-001"
 
@@ -51,7 +50,8 @@ Rules:
 
 async def _extract_leaderboard(image_bytes: bytes) -> dict:
     """Send image to Gemini via OpenRouter and extract leaderboard data."""
-    if not OPENROUTER_API_KEY:
+    api_key = os.environ.get("OPENROUTER_API_KEY", "")
+    if not api_key:
         raise HTTPException(status_code=500, detail="OPENROUTER_API_KEY not configured")
 
     b64 = base64.b64encode(image_bytes).decode("utf-8")
@@ -79,7 +79,7 @@ async def _extract_leaderboard(image_bytes: bytes) -> dict:
             OPENROUTER_URL,
             json=payload,
             headers={
-                "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
         )
