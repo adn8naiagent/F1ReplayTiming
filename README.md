@@ -6,9 +6,9 @@ A web app that lets you replay Formula 1 race sessions with real timing data, ca
 
 - **Frontend**: Next.js (React) with Tailwind CSS
 - **Backend**: FastAPI (Python) - serves pre-computed data from local storage or Cloudflare R2
-- **Data Source**: [FastF1](https://github.com/theOehrly/Fast-F1) (used offline during pre-computation only)
+- **Data Source**: [FastF1](https://github.com/theOehrly/Fast-F1) (used during data processing only)
 
-Race data is pre-computed once and stored locally (or in R2 for remote access). The backend serves this static data with zero runtime computation.
+Session data is processed once and stored locally (or in R2 for remote access). You can either pre-compute data in bulk ahead of time, or let the app process sessions on demand when you select them.
 
 ## Self-Hosting Guide
 
@@ -32,20 +32,11 @@ cd F1timing
 FRONTEND_URL=http://localhost:3000
 PORT=8000
 
-# Storage: "local" (default) or "r2"
-STORAGE_MODE=local
-
-# Local storage directory (only used when STORAGE_MODE=local)
+# Directory for processed session data
 DATA_DIR=./data
-
-# Only needed for pre-compute script (not required at runtime)
-FASTF1_CACHE_DIR=.fastf1-cache
 
 # Optional - for photo sync feature
 OPENROUTER_API_KEY=
-
-# If using Cloudflare R2 storage, see the "Using Cloudflare R2" section
-# below for additional required environment variables.
 ```
 
 **Frontend** (`frontend/.env`):
@@ -53,49 +44,17 @@ OPENROUTER_API_KEY=
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-### 3. Pre-compute race data
-
-This step downloads data from the F1 timing API via FastF1, processes it, and saves it locally. You only need to do this once per session — after that, the data is stored permanently.
-
-**Timing estimates:**
-- A single session (e.g. one race) takes **3–5 minutes**
-- A full race weekend (FP1, FP2, FP3, Qualifying, Race) takes **15–25 minutes**
-- A complete season (~24 rounds, all sessions) takes **6–10 hours**
-
-We recommend starting with just the current season or specific rounds you're interested in, rather than processing everything upfront.
+### 3. Install dependencies and start
 
 ```bash
+# Backend
 cd backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-
-# Recommended: process the current season only
-python precompute.py 2026 --skip-existing
-
-# Process a specific race weekend
-python precompute.py 2026 --round 1
-
-# Process only the race session (skip practice/qualifying)
-python precompute.py 2026 --round 1 --session R
-
-# Process a full past season (will take several hours)
-python precompute.py 2025 --skip-existing
-```
-
-Once processed, the backend never needs FastF1 again. The app also includes a background task that automatically checks for and processes new session data on race weekends (Friday–Monday), so you don't need to manually re-run the script after each race.
-
-### 4. Start the backend
-
-```bash
-cd backend
-source venv/bin/activate
 uvicorn main:app --reload --port 8000
-```
 
-### 5. Start the frontend
-
-```bash
+# Frontend (in a separate terminal)
 cd frontend
 npm install
 npm run dev
@@ -103,31 +62,41 @@ npm run dev
 
 Open http://localhost:3000.
 
-### Updating with new races
+### 4. Getting session data
 
-After a race weekend finishes, run the pre-compute script for that round:
+There are two ways to get session data into the app:
+
+#### Option A: On-demand processing (recommended for getting started)
+
+Simply select any past session from the homepage. If the data hasn't been processed yet, the app will automatically fetch it from the F1 API, process it, and start the replay. The first load of a session takes **1–3 minutes** — after that, it's instant.
+
+#### Option B: Bulk pre-compute (recommended for preparing a full season)
+
+Use the CLI script to process sessions ahead of time. This is useful if you want all data ready before you start using the app.
 
 ```bash
-python precompute.py 2025 --round 5 --skip-existing
+cd backend
+source venv/bin/activate
+
+# Process a specific race weekend
+python precompute.py 2026 --round 1
+
+# Process only the race session (skip practice/qualifying)
+python precompute.py 2026 --round 1 --session R
+
+# Process an entire season (will take several hours)
+python precompute.py 2025 --skip-existing
+
+# Process multiple years
+python precompute.py 2024 2025 --skip-existing
 ```
 
-### Using Cloudflare R2 (optional)
+**Timing estimates:**
+- A single session (e.g. one race) takes **3–5 minutes**
+- A full race weekend (FP1, FP2, FP3, Qualifying, Race) takes **15–25 minutes**
+- A complete season (~24 rounds, all sessions) takes **6–10 hours**
 
-If you want to access your data remotely rather than from local files, you can use Cloudflare R2:
-
-1. Create an R2 bucket in your Cloudflare dashboard
-2. Create an API token with **Object Read & Write** permission
-3. Add to your `backend/.env`:
-
-```
-STORAGE_MODE=r2
-R2_ACCOUNT_ID=your_account_id
-R2_ACCESS_KEY_ID=your_access_key
-R2_SECRET_ACCESS_KEY=your_secret_key
-R2_BUCKET_NAME=f1timingdata
-```
-
-4. Re-run the pre-compute script to upload data to R2
+The app also includes a background task that automatically checks for and processes new session data on race weekends (Friday–Monday).
 
 ### Photo Sync Feature
 

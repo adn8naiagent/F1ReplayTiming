@@ -57,6 +57,11 @@ export interface ReplayFrame {
   quali_phase?: QualiPhase;
 }
 
+export interface QualiPhaseInfo {
+  phase: string;
+  timestamp: number;
+}
+
 interface ReplayState {
   connected: boolean;
   ready: boolean;
@@ -66,6 +71,7 @@ interface ReplayState {
   frame: ReplayFrame | null;
   totalTime: number;
   totalLaps: number;
+  qualiPhases: QualiPhaseInfo[];
   finished: boolean;
   error: string | null;
 }
@@ -81,6 +87,7 @@ export function useReplaySocket(year: number, round: number, sessionType: string
     frame: null,
     totalTime: 0,
     totalLaps: 0,
+    qualiPhases: [],
     finished: false,
     error: null,
   });
@@ -108,6 +115,7 @@ export function useReplaySocket(year: number, round: number, sessionType: string
             loading: false,
             totalTime: msg.total_time,
             totalLaps: msg.total_laps,
+            qualiPhases: msg.quali_phases || [],
           }));
           // Request first frame so cars are visible before play
           if (ws.readyState === WebSocket.OPEN) {

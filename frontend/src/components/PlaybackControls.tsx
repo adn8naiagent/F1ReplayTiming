@@ -1,10 +1,10 @@
 "use client";
 
 import { SPEED_OPTIONS } from "@/lib/constants";
-import { QualiPhase } from "@/hooks/useReplaySocket";
+import { QualiPhase, QualiPhaseInfo } from "@/hooks/useReplaySocket";
 
 const SKIP_OPTIONS = [
-  { label: "10s", seconds: 10 },
+  { label: "5s", seconds: 5 },
   { label: "30s", seconds: 30 },
   { label: "1m", seconds: 60 },
   { label: "5m", seconds: 300 },
@@ -28,6 +28,7 @@ interface Props {
   isRace?: boolean;
   onSyncPhoto?: () => void;
   qualiPhase?: QualiPhase | null;
+  qualiPhases?: QualiPhaseInfo[];
 }
 
 export default function PlaybackControls({
@@ -48,6 +49,7 @@ export default function PlaybackControls({
   isRace,
   onSyncPhoto,
   qualiPhase,
+  qualiPhases,
 }: Props) {
   const progress = totalTime > 0 ? (currentTime / totalTime) * 100 : 0;
 
@@ -149,6 +151,25 @@ export default function PlaybackControls({
           ))}
         </div>
 
+        {/* Qualifying phase skip buttons */}
+        {qualiPhases && qualiPhases.length > 0 && (
+          <div className="flex items-center gap-1 ml-2">
+            {qualiPhases.map((qp) => (
+              <button
+                key={qp.phase}
+                onClick={() => onSeek(qp.timestamp)}
+                className={`px-2 py-1 text-xs font-bold rounded transition-colors ${
+                  qualiPhase?.phase === qp.phase
+                    ? "bg-f1-red text-white"
+                    : "bg-f1-border text-f1-muted hover:text-white"
+                }`}
+              >
+                {qp.phase}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* Time display */}
         {isRace ? (
           <>
@@ -197,6 +218,18 @@ export default function PlaybackControls({
                 {formatTime(qualiPhase.remaining)}
               </span>
             </div>
+            {showSessionTime && (
+              <>
+                <div className="text-center">
+                  <span className="text-[10px] font-bold text-f1-muted uppercase block">Elapsed</span>
+                  <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(currentTime)}</span>
+                </div>
+                <div className="text-center">
+                  <span className="text-[10px] font-bold text-f1-muted uppercase block">Total</span>
+                  <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(Math.max(0, totalTime - currentTime))}</span>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           <div className="flex items-center gap-4 ml-auto">

@@ -4,7 +4,8 @@ from copy import deepcopy
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, HTTPException
-from services.storage import get_json, exists, list_keys
+from services.storage import get_json
+from services.process import ensure_session_data
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -28,37 +29,43 @@ _CACHE_TTL = 300  # 5 minutes
 
 
 def _build_events(year: int) -> dict:
-    """Build events response with availability checked against storage."""
+    """Build events response with availability based on session dates."""
     data = get_json(f"seasons/{year}/schedule.json")
     if data is None:
         return None
 
     data = deepcopy(data)
     events = data.get("events", [])
-
-    # Single scan to find all replay.json files for this year
-    all_keys = set(list_keys(f"sessions/{year}"))
-    last_available_idx = None
+    now = datetime.now(timezone.utc)
+    last_past_idx = None
 
     for i, evt in enumerate(events):
-        round_num = evt["round_number"]
-        has_data = False
+        has_past_session = False
         for session in evt.get("sessions", []):
-            st = SESSION_NAME_TO_TYPE.get(session["name"])
-            if st and f"sessions/{year}/{round_num}/{st}/replay.json" in all_keys:
-                session["available"] = True
-                has_data = True
+            date_str = session.get("date_utc")
+            if date_str:
+                try:
+                    session_dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+                    if session_dt.tzinfo is None:
+                        session_dt = session_dt.replace(tzinfo=timezone.utc)
+                    # Available if the session date is in the past
+                    session["available"] = session_dt < now
+                    if session["available"]:
+                        has_past_session = True
+                except (ValueError, TypeError):
+                    session["available"] = False
             else:
                 session["available"] = False
 
-        if has_data:
+        if has_past_session:
             evt["status"] = "available"
-            last_available_idx = i
+            last_past_idx = i
         else:
             evt["status"] = "future"
 
-    if last_available_idx is not None:
-        events[last_available_idx]["status"] = "latest"
+    # Mark the most recent past event as "latest"
+    if last_past_idx is not None:
+        events[last_past_idx]["status"] = "latest"
 
     return data
 
@@ -91,9 +98,17 @@ async def get_session(
     type: str = Query("R", description="Session type: R, Q, S, FP1, FP2, FP3, SQ"),
 ):
     data = get_json(f"sessions/{year}/{round_num}/{type}/info.json")
-    if data is None:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Session data not available for {year} Round {round_num} ({type}).",
-        )
-    return data
+    if data is not None:
+        return data
+
+    # On-demand: try to process the session
+    available = await ensure_session_data(year, round_num, type)
+    if available:
+        data = get_json(f"sessions/{year}/{round_num}/{type}/info.json")
+        if data is not None:
+            return data
+
+    raise HTTPException(
+        status_code=404,
+        detail=f"Session data not available for {year} Round {round_num} ({type}).",
+    )

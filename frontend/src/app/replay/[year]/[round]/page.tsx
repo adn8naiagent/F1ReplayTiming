@@ -117,6 +117,7 @@ export default function ReplayPage() {
   const leaderboardWidth = (() => {
     let w = 106; // base: position(24) + team bar(12) + driver(30) + flags(16) + padding(16) + right padding(8)
     if (settings.showTeamAbbr) w += 28;
+    if (!isRace) w += 18; // pit indicator (P box + margin)
     if (isRace && settings.showGridChange) w += 24;
     if (settings.showGapToLeader) w += 56;
     if (isRace && settings.showPitStops) w += 24;
@@ -243,6 +244,7 @@ export default function ReplayPage() {
         isRace={isRace}
         onSyncPhoto={() => setShowSyncPhoto(true)}
         qualiPhase={replay.frame?.quali_phase}
+        qualiPhases={replay.qualiPhases}
       />
 
       {/* Sync with photo modal */}

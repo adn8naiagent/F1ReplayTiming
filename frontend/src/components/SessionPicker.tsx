@@ -95,7 +95,6 @@ export default function SessionPicker() {
     const isLatest = displayEvt.status === "latest";
     const isFuture = displayEvt.status === "future";
     const isSelected = selectedEvent?.round_number === evt.round_number;
-    const hasAvailableSessions = evt.sessions.some((s) => s.available);
 
     return (
       <div
@@ -151,8 +150,8 @@ export default function SessionPicker() {
                 </span>
               );
             })}
-            {!hasAvailableSessions && (
-              <p className="text-xs text-f1-muted w-full">No session data available yet</p>
+            {isFuture && (
+              <p className="text-xs text-f1-muted w-full">Sessions not yet started</p>
             )}
           </div>
         )}

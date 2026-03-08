@@ -719,6 +719,12 @@ def _get_driver_positions_by_time_sync(
                         cumulative += ge - gs
 
                 logger.info(f"Qualifying phases: {[(name, f'{gs:.0f}-{ge:.0f}') for name, gs, ge, _, _ in quali_intervals]}")
+
+                # Align session_time_offset to Q1 green start so countdown starts at full duration
+                if quali_intervals:
+                    session_time_offset = quali_intervals[0][1]
+                    logger.info(f"Quali: set session_time_offset to Q1 green start ({session_time_offset:.1f}s)")
+
         except Exception as e:
             logger.error(f"Failed to parse qualifying phases: {e}")
 

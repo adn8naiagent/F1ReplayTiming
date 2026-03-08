@@ -4,6 +4,7 @@ import math
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from services.storage import get_json
+from services.process import ensure_session_data_ws
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["replay"])
@@ -47,7 +48,25 @@ async def replay_websocket(
     await websocket.accept()
 
     try:
-        await websocket.send_json({"type": "status", "message": "Loading session data..."})
+        async def send_status(msg: str):
+            await websocket.send_json({"type": "status", "message": msg})
+
+        await send_status("Loading session data...")
+
+        # On-demand: process session if data doesn't exist yet
+        available = await ensure_session_data_ws(year, round_num, type, send_status)
+
+        if not available:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Failed to load session data. The session may not be available yet.",
+            })
+            await websocket.close()
+            return
+
+        # Clear cache entry in case we just processed new data
+        cache_key = f"{year}_{round_num}_{type}"
+        _replay_cache.pop(cache_key, None)
 
         frames = await _get_frames(year, round_num, type)
 
@@ -56,11 +75,21 @@ async def replay_websocket(
             await websocket.close()
             return
 
+        # Extract qualifying phase start times for seek buttons
+        quali_phases = []
+        seen_phases = set()
+        for f in frames:
+            qp = f.get("quali_phase")
+            if qp and qp["phase"] not in seen_phases:
+                seen_phases.add(qp["phase"])
+                quali_phases.append({"phase": qp["phase"], "timestamp": f["timestamp"]})
+
         await websocket.send_json({
             "type": "ready",
             "total_frames": len(frames),
             "total_time": frames[-1]["timestamp"] if frames else 0,
             "total_laps": frames[-1]["total_laps"] if frames else 0,
+            "quali_phases": quali_phases if quali_phases else None,
         })
 
         # Send first frame immediately so cars are visible before play

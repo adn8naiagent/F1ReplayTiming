@@ -27,8 +27,7 @@ async def _check_and_process():
     from services.f1_data import _fetch_schedule_sync, SESSION_NAME_TO_TYPE
     from services import storage
 
-    # Import precompute function - runs in thread pool since it's blocking
-    from precompute import process_session
+    from services.process import process_session_sync as process_session
 
     now = datetime.now(timezone.utc)
     year = now.year

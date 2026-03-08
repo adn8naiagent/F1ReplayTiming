@@ -75,6 +75,17 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                 {drv.abbr}
               </span>
 
+              {/* Pit indicator (non-race only) */}
+              {!isRace && (
+                <span className="w-[13px] ml-2 -mr-1 flex-shrink-0 flex items-center justify-center">
+                  {drv.in_pit && (
+                    <span className="w-[13px] h-[13px] bg-white rounded-[2px] flex items-center justify-center">
+                      <span className="text-[8px] font-extrabold text-black leading-none">P</span>
+                    </span>
+                  )}
+                </span>
+              )}
+
               {/* Grid delta - 24px (race only) */}
               {isRace && settings.showGridChange && (
               <span className="w-6 flex-shrink-0 text-center">
@@ -118,7 +129,7 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
 
               {/* Gap / best time - 56px */}
               {settings.showGapToLeader && (
-                <span className={`w-14 flex-shrink-0 text-xs font-bold text-right ${drv.in_pit ? "text-yellow-400" : isRace ? "text-f1-muted" : drv.position === 1 ? "text-purple-400" : "text-f1-muted"}`}>
+                <span className={`w-14 flex-shrink-0 text-xs font-bold text-right ${drv.in_pit && isRace ? "text-yellow-400" : isRace ? "text-f1-muted" : drv.position === 1 ? "text-purple-400" : "text-f1-muted"}`}>
                   {drv.retired
                     ? "Out"
                     : drv.in_pit && isRace
