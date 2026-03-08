@@ -37,8 +37,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
         }
       })
       .catch(() => {
-        // If we can't reach the backend, let through and let API calls fail naturally
-        setAuthenticated(true);
+        // Can't reach backend — assume auth is required so we don't bypass it
+        setAuthRequired(true);
       })
       .finally(() => {
         if (!authRequired) setChecking(false);
