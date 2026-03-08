@@ -73,28 +73,22 @@ export default function SessionPicker() {
     `/api/seasons/${year}/events`,
   );
 
-  const seasons = seasonsData?.seasons || [];
+  const seasons = (seasonsData?.seasons || []).filter((s) => s <= currentYear);
   const events = eventsData?.events || [];
 
-  // Only show "latest" for the current year; downgrade to "available" for past seasons
-  const displayEvents = useMemo(() => {
-    if (year === currentYear) return events;
-    return events.map((e) =>
-      e.status === "latest" ? { ...e, status: "available" as const } : e,
-    );
-  }, [events, year, currentYear]);
+  const displayEvents = events;
 
   const latestEvent = useMemo(
-    () => (year === currentYear ? displayEvents.find((e) => e.status === "latest") || null : null),
-    [displayEvents, year, currentYear],
+    () => displayEvents.find((e) => e.status === "latest") || null,
+    [displayEvents],
   );
 
   // Scroll to latest card when events load
   useEffect(() => {
-    if (latestEvent && latestRef.current && year === currentYear) {
+    if (latestEvent && latestRef.current) {
       latestRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [latestEvent, year, currentYear]);
+  }, [latestEvent]);
 
   function EventCard({ evt, isLatestFeature }: { evt: Event; isLatestFeature?: boolean }) {
     const displayEvt = displayEvents.find((e) => e.round_number === evt.round_number) || evt;
@@ -211,10 +205,10 @@ export default function SessionPicker() {
         ) : (
           <>
             {/* Latest event featured section */}
-            {latestEvent && year === currentYear && (
+            {latestEvent && (
               <div className="mb-8">
                 <h2 className="text-sm font-bold text-f1-muted uppercase tracking-wider mb-4">
-                  Latest Race Weekend
+                  Most Recent Round
                 </h2>
                 <div className="max-w-md">
                   <EventCard evt={latestEvent} isLatestFeature />
