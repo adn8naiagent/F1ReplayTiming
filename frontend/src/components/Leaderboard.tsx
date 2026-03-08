@@ -2,7 +2,7 @@
 
 import { ReplayDriver } from "@/hooks/useReplaySocket";
 import { ReplaySettings } from "@/hooks/useSettings";
-import { TYRE_COLORS, TYRE_SHORT } from "@/lib/constants";
+import { TYRE_COLORS, TYRE_SHORT, TEAM_ABBR } from "@/lib/constants";
 
 interface Props {
   drivers: ReplayDriver[];
@@ -10,6 +10,7 @@ interface Props {
   onDriverClick: (abbr: string) => void;
   settings: ReplaySettings;
   currentTime: number;
+  isRace: boolean;
 }
 
 function formatGap(gap: string | null): string {
@@ -22,7 +23,7 @@ function formatGap(gap: string | null): string {
   return gap;
 }
 
-export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick, settings, currentTime }: Props) {
+export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick, settings, currentTime, isRace }: Props) {
   const sorted = [...drivers].sort(
     (a, b) => (a.position ?? 999) - (b.position ?? 999),
   );
@@ -62,14 +63,22 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                 style={{ backgroundColor: drv.color }}
               />
 
+              {/* Team abbreviation - 28px */}
+              {settings.showTeamAbbr && (
+                <span className="w-7 text-[10px] font-bold text-f1-muted flex-shrink-0">
+                  {TEAM_ABBR[drv.team] || drv.team?.slice(0, 3).toUpperCase()}
+                </span>
+              )}
+
               {/* Driver abbreviation - 30px */}
               <span className="w-[30px] text-sm font-extrabold text-white flex-shrink-0">
                 {drv.abbr}
               </span>
 
-              {/* Grid delta - 24px */}
+              {/* Grid delta - 24px (race only) */}
+              {isRace && settings.showGridChange && (
               <span className="w-6 flex-shrink-0 text-center">
-                {settings.showGridChange && !drv.retired && currentTime >= 10 && (
+                {!drv.retired && currentTime >= 10 && (
                   drv.pit_start ? (
                     <span className="text-[10px] font-bold text-white">Pit</span>
                   ) : drv.grid_position != null && drv.position != null && (() => {
@@ -84,6 +93,7 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                   })()
                 )}
               </span>
+              )}
 
               {/* Flags - 16px */}
               <span className="w-4 flex-shrink-0 flex items-center justify-center">
@@ -106,21 +116,23 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                 )}
               </span>
 
-              {/* Gap to leader - 56px */}
+              {/* Gap / best time - 56px */}
               {settings.showGapToLeader && (
-                <span className={`w-14 flex-shrink-0 text-xs font-bold text-right ${drv.in_pit ? "text-yellow-400" : "text-f1-muted"}`}>
+                <span className={`w-14 flex-shrink-0 text-xs font-bold text-right ${drv.in_pit ? "text-yellow-400" : isRace ? "text-f1-muted" : drv.position === 1 ? "text-purple-400" : "text-f1-muted"}`}>
                   {drv.retired
                     ? "Out"
-                    : drv.in_pit
+                    : drv.in_pit && isRace
                     ? "PIT"
-                    : drv.position === 1
+                    : isRace && drv.position === 1
                     ? "Leader"
+                    : drv.gap === "No time"
+                    ? "No time"
                     : formatGap(drv.gap)}
                 </span>
               )}
 
-              {/* Pit stops - 20px */}
-              {settings.showPitStops && (
+              {/* Pit stops - 20px (race only) */}
+              {isRace && settings.showPitStops && (
                 <span className="w-5 flex-shrink-0 flex items-center justify-center ml-1">
                   {drv.pit_stops > 0 && (
                     <span className="w-5 h-5 border border-f1-muted rounded-sm flex items-center justify-center text-[10px] font-extrabold text-white">
@@ -130,8 +142,8 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                 </span>
               )}
 
-              {/* Tyre history - 36px */}
-              {settings.showTyreHistory && (
+              {/* Tyre history - 36px (race only) */}
+              {isRace && settings.showTyreHistory && (
                 <span className="w-9 flex-shrink-0 flex items-center justify-end gap-0.5">
                   {(drv.tyre_history || []).slice(-2).map((comp, i) => {
                     const hColor = TYRE_COLORS[comp] || "#888";

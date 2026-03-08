@@ -5,6 +5,7 @@ import { ReplayDriver } from "@/hooks/useReplaySocket";
 interface Props {
   visible: boolean;
   driver: ReplayDriver | null;
+  year?: number;
 }
 
 function BarPips({
@@ -39,7 +40,8 @@ function BarPips({
   );
 }
 
-export default function TelemetryChart({ visible, driver }: Props) {
+export default function TelemetryChart({ visible, driver, year }: Props) {
+  const hasDrs = !year || year < 2026;
   if (!visible) return null;
 
   if (!driver) {
@@ -111,16 +113,18 @@ export default function TelemetryChart({ visible, driver }: Props) {
           <BarPips value={rpm} max={15000} color="#F59E0B" />
         </div>
 
-        {/* DRS */}
-        <span
-          className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
-            drs >= 10
-              ? "text-green-400 bg-green-400/10 border border-green-400/30"
-              : "text-f1-muted/40 border border-f1-border"
-          }`}
-        >
-          DRS
-        </span>
+        {/* DRS (not available from 2026) */}
+        {hasDrs && (
+          <span
+            className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+              drs >= 10
+                ? "text-green-400 bg-green-400/10 border border-green-400/30"
+                : "text-f1-muted/40 border border-f1-border"
+            }`}
+          >
+            DRS
+          </span>
+        )}
       </div>
     </div>
   );

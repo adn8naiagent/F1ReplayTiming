@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from services.storage import get_json
@@ -11,12 +12,23 @@ router = APIRouter(tags=["replay"])
 _replay_cache: dict[str, list[dict]] = {}
 
 
+def _sanitize_frame(frame: dict) -> dict:
+    """Replace NaN/Infinity floats with None to produce valid JSON."""
+    for drv in frame.get("drivers", []):
+        for key, val in drv.items():
+            if isinstance(val, float) and (math.isnan(val) or math.isinf(val)):
+                drv[key] = None
+    return frame
+
+
 def _get_frames_sync(year: int, round_num: int, session_type: str) -> list[dict]:
     key = f"{year}_{round_num}_{session_type}"
     if key not in _replay_cache:
         frames = get_json(f"sessions/{year}/{round_num}/{session_type}/replay.json")
         if frames is None:
             frames = []
+        for f in frames:
+            _sanitize_frame(f)
         _replay_cache[key] = frames
     return _replay_cache[key]
 

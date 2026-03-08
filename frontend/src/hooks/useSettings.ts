@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 
 export interface ReplaySettings {
   showLeaderboard: boolean;
+  showTeamAbbr: boolean;
   showTyreAge: boolean;
   showTyreType: boolean;
   showPitStops: boolean;
@@ -24,6 +25,7 @@ const STORAGE_KEY = "f1replay_settings";
 
 export const DEFAULTS: ReplaySettings = {
   showLeaderboard: true,
+  showTeamAbbr: false,
   showTyreAge: true,
   showTyreType: true,
   showPitStops: true,

@@ -14,7 +14,7 @@ Race data is pre-computed once and stored locally (or in R2 for remote access). 
 
 ### Prerequisites
 
-- Python 3.9+
+- Python 3.10+
 - Node.js 18+
 - An [OpenRouter](https://openrouter.ai/) API key (optional, for the photo sync feature)
 

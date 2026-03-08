@@ -1,6 +1,7 @@
 "use client";
 
 import { SPEED_OPTIONS } from "@/lib/constants";
+import { QualiPhase } from "@/hooks/useReplaySocket";
 
 const SKIP_OPTIONS = [
   { label: "10s", seconds: 10 },
@@ -26,6 +27,7 @@ interface Props {
   onSeekToLap?: (lap: number) => void;
   isRace?: boolean;
   onSyncPhoto?: () => void;
+  qualiPhase?: QualiPhase | null;
 }
 
 export default function PlaybackControls({
@@ -45,6 +47,7 @@ export default function PlaybackControls({
   onSeekToLap,
   isRace,
   onSyncPhoto,
+  qualiPhase,
 }: Props) {
   const progress = totalTime > 0 ? (currentTime / totalTime) * 100 : 0;
 
@@ -146,42 +149,67 @@ export default function PlaybackControls({
           ))}
         </div>
 
-        {/* Time */}
-        <span className="text-sm font-extrabold text-white ml-auto">
-          {formatTime(currentTime)}{showSessionTime && ` / ${formatTime(totalTime)}`}
-        </span>
+        {/* Time display */}
+        {isRace ? (
+          <>
+            <span className="text-sm font-extrabold text-white ml-auto tabular-nums">
+              {formatTime(currentTime)}{showSessionTime && ` / ${formatTime(totalTime)}`}
+            </span>
 
-        {/* Sync with TV */}
-        {isRace && onSyncPhoto && (
-          <button
-            onClick={onSyncPhoto}
-            className="px-3 py-1.5 rounded border border-f1-border hover:bg-white/10 transition-colors text-f1-muted hover:text-white text-xs font-bold"
-          >
-            Sync
-          </button>
+            {/* Sync with TV */}
+            {onSyncPhoto && (
+              <button
+                onClick={onSyncPhoto}
+                className="px-3 py-1.5 rounded border border-f1-border hover:bg-white/10 transition-colors text-f1-muted hover:text-white text-xs font-bold"
+              >
+                Sync
+              </button>
+            )}
+
+            {/* Lap selector */}
+            <div className="flex items-center gap-1">
+              <span className="text-sm font-extrabold text-white">Lap</span>
+              <select
+                value={currentLap}
+                onChange={(e) => {
+                  const lap = Number(e.target.value);
+                  if (onSeekToLap) {
+                    onSeekToLap(lap);
+                  }
+                }}
+                className="bg-f1-border text-white text-sm font-extrabold rounded px-2 py-1 cursor-pointer hover:bg-white/20 transition-colors"
+              >
+                {Array.from({ length: totalLaps }, (_, i) => i + 1).map((lap) => (
+                  <option key={lap} value={lap} className="bg-f1-card text-white">
+                    {lap}
+                  </option>
+                ))}
+              </select>
+              <span className="text-sm font-extrabold text-white">/{totalLaps}</span>
+            </div>
+          </>
+        ) : qualiPhase ? (
+          <div className="flex items-end gap-4 ml-auto">
+            <span className="text-sm font-extrabold text-white" style={{ marginBottom: 1, marginRight: -10 }}>{qualiPhase.phase}</span>
+            <div className="text-center">
+              <span className="text-[10px] font-bold text-f1-muted uppercase block">Remaining</span>
+              <span className="text-sm font-extrabold text-white tabular-nums">
+                {formatTime(qualiPhase.remaining)}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-4 ml-auto">
+            <div className="text-center">
+              <span className="text-[10px] font-bold text-f1-muted uppercase block">Elapsed</span>
+              <span className="text-sm font-extrabold text-white tabular-nums">{formatTime(currentTime)}</span>
+            </div>
+            <div className="text-center">
+              <span className="text-[10px] font-bold text-f1-muted uppercase block">Remaining</span>
+              <span className="text-sm font-extrabold text-white tabular-nums">{formatTime(Math.max(0, totalTime - currentTime))}</span>
+            </div>
+          </div>
         )}
-
-        {/* Lap selector */}
-        <div className="flex items-center gap-1">
-          <span className="text-sm font-extrabold text-white">Lap</span>
-          <select
-            value={currentLap}
-            onChange={(e) => {
-              const lap = Number(e.target.value);
-              if (onSeekToLap) {
-                onSeekToLap(lap);
-              }
-            }}
-            className="bg-f1-border text-white text-sm font-extrabold rounded px-2 py-1 cursor-pointer hover:bg-white/20 transition-colors"
-          >
-            {Array.from({ length: totalLaps }, (_, i) => i + 1).map((lap) => (
-              <option key={lap} value={lap} className="bg-f1-card text-white">
-                {lap}
-              </option>
-            ))}
-          </select>
-          <span className="text-sm font-extrabold text-white">/{totalLaps}</span>
-        </div>
       </div>
     </div>
   );

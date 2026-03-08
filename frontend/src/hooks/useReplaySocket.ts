@@ -40,13 +40,21 @@ export interface WeatherData {
   wind_direction: number;
 }
 
+export interface QualiPhase {
+  phase: string;  // "Q1", "Q2", "Q3"
+  elapsed: number;
+  remaining: number;
+}
+
 export interface ReplayFrame {
   timestamp: number;
   lap: number;
   total_laps: number;
+  session_type?: string;
   drivers: ReplayDriver[];
   status: string;
   weather?: WeatherData;
+  quali_phase?: QualiPhase;
 }
 
 interface ReplayState {
@@ -113,9 +121,11 @@ export function useReplaySocket(year: number, round: number, sessionType: string
               timestamp: msg.timestamp,
               lap: msg.lap,
               total_laps: msg.total_laps,
+              session_type: msg.session_type,
               drivers: msg.drivers,
               status: msg.status,
               weather: msg.weather,
+              quali_phase: msg.quali_phase,
             },
           }));
           break;

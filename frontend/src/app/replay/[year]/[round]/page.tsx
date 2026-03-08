@@ -111,14 +111,16 @@ export default function ReplayPage() {
   const drivers = replay.frame?.drivers || [];
   const trackStatus = replay.frame?.status || "green";
   const weather = replay.frame?.weather;
+  const isRace = sessionType === "R" || sessionType === "S";
 
   // Calculate leaderboard width based on active columns
   const leaderboardWidth = (() => {
     let w = 106; // base: position(24) + team bar(12) + driver(30) + flags(16) + padding(16) + right padding(8)
-    if (settings.showGridChange) w += 24;
+    if (settings.showTeamAbbr) w += 28;
+    if (isRace && settings.showGridChange) w += 24;
     if (settings.showGapToLeader) w += 56;
-    if (settings.showPitStops) w += 24;
-    if (settings.showTyreHistory) w += 36;
+    if (isRace && settings.showPitStops) w += 24;
+    if (isRace && settings.showTyreHistory) w += 36;
     if (settings.showTyreType) w += 24;
     if (settings.showTyreAge) w += 20;
     return w;
@@ -190,10 +192,10 @@ export default function ReplayPage() {
             <div className="absolute bottom-2 left-8 z-10">
               {selectedDrivers.map((abbr) => {
                 const drv = drivers.find((d) => d.abbr === abbr) || null;
-                return <TelemetryChart key={abbr} visible driver={drv} />;
+                return <TelemetryChart key={abbr} visible driver={drv} year={year} />;
               })}
               {selectedDrivers.length === 0 && (
-                <TelemetryChart visible driver={null} />
+                <TelemetryChart visible driver={null} year={year} />
               )}
             </div>
           )}
@@ -216,6 +218,7 @@ export default function ReplayPage() {
               onDriverClick={handleDriverClick}
               settings={settings}
               currentTime={replay.frame?.timestamp || 0}
+              isRace={isRace}
             />
           </div>
         )}
@@ -237,8 +240,9 @@ export default function ReplayPage() {
         onSeek={replay.seek}
         onSeekToLap={replay.seekToLap}
         onReset={replay.reset}
-        isRace={sessionType === "R"}
+        isRace={isRace}
         onSyncPhoto={() => setShowSyncPhoto(true)}
+        qualiPhase={replay.frame?.quali_phase}
       />
 
       {/* Sync with photo modal */}

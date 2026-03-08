@@ -25,13 +25,14 @@ const SESSION_LABELS: Record<string, string> = {
   FP3: "Practice 3",
 };
 
-const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string }[] = [
-  { key: "showGridChange", label: "Grid position change" },
+const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string; raceOnly?: boolean }[] = [
+  { key: "showTeamAbbr", label: "Team" },
+  { key: "showGridChange", label: "Grid position change", raceOnly: true },
   { key: "showGapToLeader", label: "Gap to leader" },
-  { key: "showPitStops", label: "Pit stops" },
+  { key: "showPitStops", label: "Pit stops", raceOnly: true },
   { key: "showTyreType", label: "Tyre type" },
   { key: "showTyreAge", label: "Tyre age" },
-  { key: "showTyreHistory", label: "Tyre history" },
+  { key: "showTyreHistory", label: "Tyre history", raceOnly: true },
 ];
 
 const WEATHER_SETTINGS: { key: keyof ReplaySettings; label: string }[] = [
@@ -58,6 +59,7 @@ export default function SessionBanner({
   weather,
 }: Props) {
   const settings = settingsProp || DEFAULT_SETTINGS;
+  const isRace = sessionType === "R" || sessionType === "S";
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -193,7 +195,7 @@ export default function SessionBanner({
                     />
                   </div>
                 </button>
-                {LEADERBOARD_SETTINGS.map(({ key, label }) => (
+                {LEADERBOARD_SETTINGS.filter(s => !s.raceOnly || isRace).map(({ key, label }) => (
                   <button
                     key={key}
                     onClick={() => onSettingChange?.(key, !settings[key])}

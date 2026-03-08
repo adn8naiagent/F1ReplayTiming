@@ -35,7 +35,7 @@ export function drawTrack(
   const w = width - padX * 2;
   const h = height - padTop - padBottom;
 
-  // Apply rotation
+  // Rotation is pre-applied in the backend; keep for any future manual override
   const rad = (rotation * Math.PI) / 180;
   const cos = Math.cos(rad);
   const sin = Math.sin(rad);
@@ -72,7 +72,7 @@ export function drawTrack(
   function toScreen(p: TrackPoint): [number, number] {
     return [
       offsetX + (p.x - minX) * scale,
-      offsetY + (p.y - minY) * scale,
+      offsetY + (maxY - p.y) * scale, // Flip Y: data Y-up → screen Y-down
     ];
   }
 
@@ -143,7 +143,6 @@ export function drawDrivers(
   const cx = 0.5;
   const cy = 0.5;
 
-  // Compute rotation bounds from track points
   const rotatedTrack = trackPoints.map((p) => {
     const dx = p.x - cx;
     const dy = p.y - cy;
@@ -172,7 +171,7 @@ export function drawDrivers(
     const ry = dx * sin + dy * cos + cy;
 
     const sx = offsetX + (rx - minX) * scale;
-    const sy = offsetY + (ry - minY) * scale;
+    const sy = offsetY + (maxY - ry) * scale; // Flip Y: data Y-up → screen Y-down
 
     const isHighlighted = highlightedDrivers.includes(drv.abbr);
     const radius = isHighlighted ? 8 : 5;

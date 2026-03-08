@@ -425,6 +425,7 @@ def _get_driver_positions_by_time_sync(
     session = _load_session(year, round_num, session_type)
     laps = session.laps
     total_laps = int(laps["LapNumber"].max()) if len(laps) > 0 else 0
+    is_race = session_type in ("R", "S")  # Race or Sprint
 
     # Get position data (x, y coords over time) for each driver
     frames = []
@@ -620,6 +621,34 @@ def _get_driver_positions_by_time_sync(
         driver_lap_lookup[drv] = lap_entries
         driver_pit_intervals[drv] = pit_intervals
 
+    # For non-race sessions (FP/Q/SQ): build best-lap-time lookup per driver
+    # Each entry: (session_time_seconds_when_completed, lap_time_seconds)
+    # sorted by session time so we can binary-search at each frame
+    driver_best_lap_events: dict[str, list[tuple[float, float]]] = {}
+    # Also track lap completion times per driver: (session_time, lap_number)
+    driver_lap_completions: dict[str, list[tuple[float, int]]] = {}
+    if not is_race:
+        for drv in drivers_list:
+            drv_laps_df = laps.pick_drivers(drv).sort_values("LapNumber")
+            events = []
+            completions = []
+            for _, lap_row in drv_laps_df.iterrows():
+                lt = lap_row.get("LapTime")
+                completion_time = lap_row.get("Time")  # session timedelta when lap finished
+                lap_num = int(lap_row["LapNumber"])
+                if pd.notna(completion_time):
+                    completions.append((completion_time.total_seconds(), lap_num))
+                if pd.notna(lt) and pd.notna(completion_time):
+                    events.append((completion_time.total_seconds(), lt.total_seconds()))
+            driver_best_lap_events[drv] = events
+            driver_lap_completions[drv] = completions
+
+    def _format_lap_time(seconds: float) -> str:
+        """Format seconds as M:SS.sss lap time string."""
+        mins = int(seconds // 60)
+        secs = seconds - mins * 60
+        return f"{mins}:{secs:06.3f}"
+
     # Compute session time offset: t_sec (from min_date) + session_time_offset = session timedelta
     # This is needed because gap data uses session timedeltas, not min_date offsets
     session_time_offset = 0.0
@@ -646,6 +675,87 @@ def _get_driver_positions_by_time_sync(
             logger.info(f"Loaded {len(ts)} track status entries")
     except Exception as e:
         logger.error(f"Failed to load track status: {e}")
+
+    # Pre-compute qualifying phase data (Q1/Q2/Q3 green intervals)
+    # Each entry: (phase_name, green_start_session_t, green_end_session_t, cumulative_green_before, phase_duration)
+    quali_intervals: list[tuple[str, float, float, float, float]] = []
+    is_quali = session_type in ("Q", "SQ")
+    if is_quali:
+        PHASE_DURATIONS = {"Q1": 1080.0, "Q2": 900.0, "Q3": 720.0}  # 18, 15, 12 min
+        SQ_PHASE_DURATIONS = {"Q1": 720.0, "Q2": 600.0, "Q3": 480.0}  # 12, 10, 8 min (sprint)
+        phase_durs = SQ_PHASE_DURATIONS if session_type == "SQ" else PHASE_DURATIONS
+        try:
+            ss = session.session_status
+            if ss is not None and len(ss) > 0:
+                # Build green intervals from Started->Finished/Aborted pairs
+                # Track the end status so we can distinguish phase ends from red flags
+                green_intervals: list[tuple[float, float, str]] = []  # (start, end, end_status)
+                current_start = None
+                for _, row in ss.iterrows():
+                    t = row["Time"].total_seconds()
+                    status = row["Status"]
+                    if status == "Started":
+                        current_start = t
+                    elif status in ("Finished", "Aborted") and current_start is not None:
+                        green_intervals.append((current_start, t, status))
+                        current_start = None
+
+                # Group intervals into Q1/Q2/Q3 phases
+                # Only split on "Finished" boundaries (natural phase end)
+                # "Aborted" means red flag/interruption — same phase resumes after restart
+                phase_groups: list[list[tuple[float, float, str]]] = [[]]
+                for i, (gs, ge, end_status) in enumerate(green_intervals):
+                    phase_groups[-1].append((gs, ge, end_status))
+                    if i < len(green_intervals) - 1 and end_status == "Finished":
+                        phase_groups.append([])
+
+                phase_names = ["Q1", "Q2", "Q3"]
+                for pi, intervals in enumerate(phase_groups[:3]):
+                    phase_name = phase_names[pi] if pi < len(phase_names) else f"Q{pi+1}"
+                    phase_dur = phase_durs.get(phase_name, 720.0)
+                    cumulative = 0.0
+                    for gs, ge, _end_status in intervals:
+                        quali_intervals.append((phase_name, gs, ge, cumulative, phase_dur))
+                        cumulative += ge - gs
+
+                logger.info(f"Qualifying phases: {[(name, f'{gs:.0f}-{ge:.0f}') for name, gs, ge, _, _ in quali_intervals]}")
+        except Exception as e:
+            logger.error(f"Failed to parse qualifying phases: {e}")
+
+    def _get_quali_phase(t_sec: float) -> dict | None:
+        """Get qualifying phase info at time t_sec."""
+        if not quali_intervals:
+            return None
+        session_t = t_sec + session_time_offset
+        for phase_name, gs, ge, cum_before, phase_dur in quali_intervals:
+            if gs <= session_t <= ge:
+                elapsed = cum_before + (session_t - gs)
+                remaining = max(0.0, phase_dur - elapsed)
+                return {"phase": phase_name, "elapsed": round(elapsed, 1), "remaining": round(remaining, 1)}
+        # Between phases or before/after qualifying
+        # Check if we're in a red flag gap within a phase (between Aborted end and next Started)
+        last_phase = None
+        last_cum = 0.0
+        last_dur = 0.0
+        for phase_name, gs, ge, cum_before, phase_dur in quali_intervals:
+            if session_t < gs:
+                # We're before this interval starts
+                if last_phase == phase_name:
+                    # Same phase — we're in a red flag gap, freeze the countdown
+                    remaining = max(0.0, phase_dur - last_cum)
+                    return {"phase": phase_name, "elapsed": round(last_cum, 1), "remaining": round(remaining, 1)}
+                break
+            last_phase = phase_name
+            last_cum = cum_before + (ge - gs)
+            last_dur = phase_dur
+        if last_phase:
+            return {"phase": last_phase, "elapsed": round(last_dur, 1), "remaining": 0.0}
+        # Before any qualifying phase starts — show Q1 with full duration
+        if quali_intervals:
+            first_phase = quali_intervals[0][0]
+            first_dur = quali_intervals[0][4]
+            return {"phase": first_phase, "elapsed": 0.0, "remaining": round(first_dur, 1)}
+        return None
 
     # Pre-compute weather data lookup
     weather_times = np.array([], dtype=np.float64)
@@ -805,19 +915,22 @@ def _get_driver_positions_by_time_sync(
                 continue
 
             seen_drivers.add(drv)
-            x_norm = float(arrays["x"][idx])
-            y_norm = float(arrays["y"][idx])
-            rel_dist = float(arrays["rel_dist"][idx])
-            spd = float(arrays["speed"][idx])
-            thr = float(arrays["throttle"][idx])
+            def _safe_float(v) -> float:
+                f = float(v)
+                return 0.0 if np.isnan(f) or np.isinf(f) else f
+            x_norm = _safe_float(arrays["x"][idx])
+            y_norm = _safe_float(arrays["y"][idx])
+            rel_dist = _safe_float(arrays["rel_dist"][idx])
+            spd = _safe_float(arrays["speed"][idx])
+            thr = _safe_float(arrays["throttle"][idx])
             brk = bool(arrays["brake"][idx])
-            gr = int(arrays["gear"][idx])
-            rpms = float(arrays["rpm"][idx])
-            drs_val = int(arrays["drs"][idx])
+            gr = int(arrays["gear"][idx]) if not np.isnan(arrays["gear"][idx]) else 0
+            rpms = _safe_float(arrays["rpm"][idx])
+            drs_val = int(arrays["drs"][idx]) if not np.isnan(arrays["drs"][idx]) else 0
 
-            gap = _get_gap_to_leader(drv, t_sec)
-            grid_pos = grid_positions.get(drv)
-            is_pit_lane_starter = grid_pos == 0
+            gap = _get_gap_to_leader(drv, t_sec) if is_race else None
+            grid_pos = grid_positions.get(drv) if is_race else None
+            is_pit_lane_starter = grid_pos == 0 if is_race else False
             show_pit_badge = is_pit_lane_starter and t_sec < 10
 
             # Check if driver is currently in the pit lane
@@ -865,24 +978,68 @@ def _get_driver_positions_by_time_sync(
                 retired_data = {**last_known[drv], "retired": True, "gap": None, "no_timing": False}
                 frame_drivers.append(retired_data)
 
-        # First 10 seconds: use grid positions, no gap display, no greying
-        if t_sec < 10:
-            for d in frame_drivers:
-                gp = grid_positions.get(d["abbr"])
-                d["position"] = gp if gp and gp > 0 else len(frame_drivers)
-                d["gap"] = None
-                d["no_timing"] = False
-            frame_drivers.sort(key=lambda d: d["position"])
+        if is_race:
+            # First 10 seconds: use grid positions, no gap display, no greying
+            if t_sec < 10:
+                for d in frame_drivers:
+                    gp = grid_positions.get(d["abbr"])
+                    d["position"] = gp if gp and gp > 0 else len(frame_drivers)
+                    d["gap"] = None
+                    d["no_timing"] = False
+                frame_drivers.sort(key=lambda d: d["position"])
+            else:
+                # Derive positions by sorting on gap-to-leader
+                # Drivers with gap data are ranked by gap value; drivers without go to the bottom
+                frame_drivers.sort(key=lambda d: _gap_sort_key(d["gap"]))
+                for pos, d in enumerate(frame_drivers, 1):
+                    d["position"] = pos
         else:
-            # Derive positions by sorting on gap-to-leader
-            # Drivers with gap data are ranked by gap value; drivers without go to the bottom
-            frame_drivers.sort(key=lambda d: _gap_sort_key(d["gap"]))
+            # Non-race sessions: sort by best lap time
+            session_t_now = t_sec + session_time_offset
+
+            # Per-driver: only show a time once that driver has completed
+            # at least 2 laps (lap 1 is always the out-lap)
+            driver_best_times: dict[str, float] = {}
+            for d in frame_drivers:
+                # Check if this driver has completed lap 2+ (a flying lap)
+                drv_has_flying_lap = False
+                for comp_t, lap_num in driver_lap_completions.get(d["abbr"], []):
+                    if lap_num >= 2 and comp_t <= session_t_now:
+                        drv_has_flying_lap = True
+                        break
+                if not drv_has_flying_lap:
+                    continue
+                events = driver_best_lap_events.get(d["abbr"], [])
+                best = None
+                for completion_t, lap_t in events:
+                    if completion_t <= session_t_now:
+                        if best is None or lap_t < best:
+                            best = lap_t
+                    else:
+                        break
+                if best is not None:
+                    driver_best_times[d["abbr"]] = best
+
+            # Sort: drivers with times by best time, drivers without at bottom
+            frame_drivers.sort(key=lambda d: driver_best_times.get(d["abbr"], float("inf")))
+            fastest_time = None
             for pos, d in enumerate(frame_drivers, 1):
                 d["position"] = pos
+                best = driver_best_times.get(d["abbr"])
+                if best is not None:
+                    if fastest_time is None:
+                        fastest_time = best
+                        d["gap"] = _format_lap_time(best)
+                    else:
+                        d["gap"] = f"+{best - fastest_time:.3f}"
+                    d["no_timing"] = False
+                else:
+                    d["gap"] = "No time"
+                    d["no_timing"] = False
 
         # Determine current lap from leader's gap ("LAP N") and assign fastest lap
         current_lap = 1
-        if frame_drivers:
+        if is_race and frame_drivers:
             leader_gap = frame_drivers[0].get("gap")
             if leader_gap and leader_gap.startswith("LAP "):
                 try:
@@ -908,12 +1065,23 @@ def _get_driver_positions_by_time_sync(
             completed_pits = sum(1 for _, pit_out in intervals if session_t >= pit_out)
             d["pit_stops"] = completed_pits
 
+            # For non-race: determine per-driver current lap from session time
+            if is_race:
+                drv_current_lap = current_lap
+            else:
+                drv_current_lap = 0
+                for comp_t, lap_num in driver_lap_completions.get(d["abbr"], []):
+                    if comp_t <= session_t:
+                        drv_current_lap = lap_num
+                    else:
+                        break
+
             # Build tyre stints from lap data: each compound change is a stint
             stints: list[str] = []
             prev_compound = None
             tyre_life_by_stint: list[int | None] = []
             for entry in lap_info:
-                if entry["lap"] <= current_lap:
+                if entry["lap"] <= drv_current_lap:
                     c = entry["compound"]
                     if c and c != prev_compound:
                         stints.append(c)
@@ -939,12 +1107,16 @@ def _get_driver_positions_by_time_sync(
             "timestamp": i * sample_interval,
             "lap": current_lap,
             "total_laps": total_laps,
+            "session_type": session_type,
             "drivers": frame_drivers,
             "status": _get_track_status(i * sample_interval),
         }
         weather = _get_weather(i * sample_interval)
         if weather:
             frame["weather"] = weather
+        quali_phase = _get_quali_phase(i * sample_interval)
+        if quali_phase:
+            frame["quali_phase"] = quali_phase
         frames.append(frame)
 
     return frames
