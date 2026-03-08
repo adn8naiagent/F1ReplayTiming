@@ -486,13 +486,16 @@ export default function SyncPhoto({
                     placeholder="NOR"
                     className="w-20 bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red uppercase"
                   />
-                  <input
-                    type="text"
-                    value={manualP2.gap}
-                    onChange={(e) => setManualP2({ ...manualP2, gap: e.target.value })}
-                    placeholder="+1.234"
-                    className="flex-1 bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red"
-                  />
+                  <div className="flex-1 relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-f1-muted">+</span>
+                    <input
+                      type="text"
+                      value={manualP2.gap}
+                      onChange={(e) => setManualP2({ ...manualP2, gap: e.target.value })}
+                      placeholder="0.6"
+                      className="w-full bg-f1-dark border border-f1-border rounded-lg pl-6 pr-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red"
+                    />
+                  </div>
                 </div>
 
                 {/* P3 */}
@@ -508,13 +511,16 @@ export default function SyncPhoto({
                     placeholder="LEC"
                     className="w-20 bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red uppercase"
                   />
-                  <input
-                    type="text"
-                    value={manualP3.gap}
-                    onChange={(e) => setManualP3({ ...manualP3, gap: e.target.value })}
-                    placeholder="+3.456"
-                    className="flex-1 bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red"
-                  />
+                  <div className="flex-1 relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-f1-muted">+</span>
+                    <input
+                      type="text"
+                      value={manualP3.gap}
+                      onChange={(e) => setManualP3({ ...manualP3, gap: e.target.value })}
+                      placeholder="1.1"
+                      className="w-full bg-f1-dark border border-f1-border rounded-lg pl-6 pr-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red"
+                    />
+                  </div>
                 </div>
               </div>
 

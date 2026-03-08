@@ -79,8 +79,8 @@ export default function SessionPicker() {
   const displayEvents = events;
 
   const latestEvent = useMemo(
-    () => displayEvents.find((e) => e.status === "latest") || null,
-    [displayEvents],
+    () => year === currentYear ? displayEvents.find((e) => e.status === "latest") || null : null,
+    [displayEvents, year, currentYear],
   );
 
   // Scroll to latest card when events load
@@ -92,7 +92,7 @@ export default function SessionPicker() {
 
   function EventCard({ evt, isLatestFeature }: { evt: Event; isLatestFeature?: boolean }) {
     const displayEvt = displayEvents.find((e) => e.round_number === evt.round_number) || evt;
-    const isLatest = displayEvt.status === "latest";
+    const isLatest = displayEvt.status === "latest" && year === currentYear;
     const isFuture = displayEvt.status === "future";
     const isSelected = selectedEvent?.round_number === evt.round_number;
 
@@ -101,10 +101,10 @@ export default function SessionPicker() {
         ref={isLatest && !isLatestFeature ? latestRef : undefined}
         onClick={() => setSelectedEvent(isSelected ? null : evt)}
         className={`bg-f1-card border rounded-xl overflow-hidden transition-all cursor-pointer ${
-          isLatest
-            ? "border-f1-red ring-1 ring-f1-red/30"
-            : isSelected
-              ? "border-f1-red"
+          isSelected
+            ? "border-white/60 ring-1 ring-white/20"
+            : isLatest
+              ? "border-f1-red ring-1 ring-f1-red/30"
               : isFuture
                 ? "border-f1-border opacity-50 hover:opacity-70"
                 : "border-f1-border hover:border-f1-red/50"
@@ -115,7 +115,7 @@ export default function SessionPicker() {
             <span className="text-xs font-bold text-f1-muted">
               ROUND {evt.round_number}
             </span>
-            <StatusPill status={displayEvt.status} />
+            <StatusPill status={isLatest ? "latest" : displayEvt.status === "latest" ? "available" : displayEvt.status} />
           </div>
           <h3 className="text-white font-bold mb-1">{evt.event_name}</h3>
           <p className="text-sm text-f1-muted">

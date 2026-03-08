@@ -25,7 +25,7 @@ const SESSION_LABELS: Record<string, string> = {
   FP3: "Practice 3",
 };
 
-const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string; raceOnly?: boolean }[] = [
+const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string; raceOnly?: boolean; badge?: string }[] = [
   { key: "showTeamAbbr", label: "Team" },
   { key: "showGridChange", label: "Grid position change", raceOnly: true },
   { key: "showGapToLeader", label: "Gap to leader" },
@@ -33,6 +33,7 @@ const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string; raceOnly
   { key: "showTyreType", label: "Tyre type" },
   { key: "showTyreAge", label: "Tyre age" },
   { key: "showTyreHistory", label: "Tyre history", raceOnly: true },
+  { key: "showPitPrediction", label: "Pit prediction", raceOnly: true, badge: "Beta" },
 ];
 
 const WEATHER_SETTINGS: { key: keyof ReplaySettings; label: string }[] = [
@@ -195,7 +196,7 @@ export default function SessionBanner({
                     />
                   </div>
                 </button>
-                {LEADERBOARD_SETTINGS.filter(s => !s.raceOnly || isRace).map(({ key, label }) => (
+                {LEADERBOARD_SETTINGS.filter(s => !s.raceOnly || isRace).map(({ key, label, badge }) => (
                   <button
                     key={key}
                     onClick={() => onSettingChange?.(key, !settings[key])}
@@ -204,7 +205,14 @@ export default function SessionBanner({
                       !settings.showLeaderboard ? "opacity-40 pointer-events-none" : ""
                     }`}
                   >
-                    <span className="text-sm text-white">{label}</span>
+                    <span className="text-sm text-white flex items-center gap-2">
+                      {label}
+                      {badge && (
+                        <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-f1-red/20 text-f1-red leading-none">
+                          {badge}
+                        </span>
+                      )}
+                    </span>
                     <div
                       className={`relative w-9 h-5 rounded-full transition-colors ${
                         settings[key] ? "bg-f1-red" : "bg-f1-border"

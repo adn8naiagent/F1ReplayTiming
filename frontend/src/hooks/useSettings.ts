@@ -19,6 +19,7 @@ export interface ReplaySettings {
   showHumidity: boolean;
   showWind: boolean;
   showRainfall: boolean;
+  showPitPrediction: boolean;
 }
 
 const STORAGE_KEY = "f1replay_settings";
@@ -40,6 +41,7 @@ export const DEFAULTS: ReplaySettings = {
   showHumidity: true,
   showWind: true,
   showRainfall: true,
+  showPitPrediction: true,
 };
 
 function loadSettings(): ReplaySettings {
