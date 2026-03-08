@@ -1,5 +1,7 @@
 # F1 Replay Timing
 
+> **Disclaimer:** This project is intended for **personal, non-commercial use only**. This website is unofficial and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.
+
 A web app that lets you replay Formula 1 race sessions with real timing data, car positions on track, telemetry, and more. Built with Next.js and FastAPI. Intended for personal, non-commercial use.
 
 ## Architecture
@@ -68,7 +70,7 @@ There are two ways to get session data into the app:
 
 #### Option A: On-demand processing (recommended for getting started)
 
-Simply select any past session from the homepage. If the data hasn't been processed yet, the app will automatically fetch it from the F1 API, process it, and start the replay. The first load of a session takes **1–3 minutes** — after that, it's instant.
+Simply select any past session from the homepage. If the data hasn't been processed yet, the app will automatically fetch and process it using FastF1 and start the replay. The first load of a session takes **1-3 minutes**. After that, it's instant.
 
 #### Option B: Bulk pre-compute (recommended for preparing a full season)
 
@@ -92,9 +94,9 @@ python precompute.py 2024 2025 --skip-existing
 ```
 
 **Timing estimates:**
-- A single session (e.g. one race) takes **3–5 minutes**
-- A full race weekend (FP1, FP2, FP3, Qualifying, Race) takes **15–25 minutes**
-- A complete season (~24 rounds, all sessions) takes **6–10 hours**
+- A single session (e.g. one race) takes **1-3 minutes**
+- A full race weekend (FP1, FP2, FP3, Qualifying, Race) takes **3-5 minutes**
+- A complete season (~24 rounds, all sessions) takes **2-3 hours**
 
 The app also includes a background task that automatically checks for and processes new session data on race weekends (Friday–Monday).
 
@@ -105,12 +107,6 @@ The app includes a feature that lets you take a photo of your F1 TV broadcast's 
 ## Acknowledgements
 
 This project is powered by [FastF1](https://github.com/theOehrly/Fast-F1), an open-source Python library for accessing Formula 1 timing and telemetry data. FastF1 is the original inspiration and data source for this project - without it, none of this would be possible.
-
-## Disclaimer
-
-This project is intended for **personal, non-commercial use only**.
-
-This website is unofficial and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.
 
 ## License
 

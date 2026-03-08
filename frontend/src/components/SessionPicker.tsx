@@ -170,6 +170,12 @@ export default function SessionPicker() {
             <p className="text-f1-muted">Select a session to replay</p>
           </div>
           <a
+            href="/features"
+            className="px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
+          >
+            Features
+          </a>
+          <a
             href="/about"
             className="px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
           >
