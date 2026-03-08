@@ -4,10 +4,13 @@ import logging
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
+from auth import is_auth_enabled, verify_token
 from routers import sessions, track, laps, results, replay, telemetry, sync
+from routers import auth_routes
 from services.auto_precompute import auto_precompute_loop
 
 load_dotenv()
@@ -47,7 +50,30 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Auth middleware (skip auth endpoints, health, and WebSocket upgrades)
+AUTH_SKIP_PATHS = {"/api/auth/status", "/api/auth/login", "/api/health"}
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    if not is_auth_enabled():
+        return await call_next(request)
+    if request.url.path in AUTH_SKIP_PATHS:
+        return await call_next(request)
+    # Let CORS preflight through — CORSMiddleware handles these
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    # WebSocket upgrades are handled separately in the replay router
+    if request.headers.get("upgrade", "").lower() == "websocket":
+        return await call_next(request)
+    token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+    if not verify_token(token):
+        return JSONResponse(status_code=401, content={"detail": "Unauthorized"})
+    return await call_next(request)
+
+
 # Routers
+app.include_router(auth_routes.router)
 app.include_router(sessions.router)
 app.include_router(track.router)
 app.include_router(laps.router)

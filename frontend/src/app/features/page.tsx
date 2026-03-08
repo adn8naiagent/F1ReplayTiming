@@ -134,21 +134,14 @@ export default function FeaturesPage() {
 
             {/* Flags */}
             <div className="flex items-center gap-3">
-              <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Flags</span>
+              <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Fastest lap</span>
               <span className="flex items-center gap-1.5 flex-shrink-0">
                 <svg className="w-3.5 h-3.5 text-purple-500" viewBox="0 0 24 24" fill="currentColor">
                   <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2.5" />
                   <path d="M12 6v7l4.5 2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
                 </svg>
-                <svg className="w-3.5 h-3.5 text-orange-400" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="M12 2L2 22h20L12 2zm0 6v7m0 2v2" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                </svg>
-                <svg className="w-3.5 h-3.5 text-red-500" viewBox="0 0 24 24" fill="currentColor">
-                  <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="2.5" />
-                  <path d="M12 7v6m0 3v1" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-                </svg>
               </span>
-              <span className="text-sm text-f1-text">Fastest lap, under investigation, and time penalties.</span>
+              <span className="text-sm text-f1-text">Purple clock icon shown next to the driver with the fastest lap.</span>
             </div>
           </div>
         </section>
@@ -261,9 +254,9 @@ export default function FeaturesPage() {
           <h2 className="text-lg font-bold text-white mb-1">Playback Controls</h2>
           <p className="text-xs font-bold text-f1-red uppercase tracking-wider mb-3">All sessions</p>
           <p className="text-f1-text leading-relaxed">
-            Control replay speed from 1x to 60x, skip forward and backward by 30 seconds, or jump
-            directly to any lap. A progress bar shows the current position within the session. For
-            qualifying and practice, elapsed and remaining session time are displayed.
+            Control replay speed from 0.5x to 20x, skip forward and backward by 5 seconds, 30 seconds,
+            1 minute, or 5 minutes, or jump directly to any lap. A progress bar shows the current position
+            within the session. For qualifying and practice, elapsed and remaining session time are displayed.
           </p>
         </section>
 

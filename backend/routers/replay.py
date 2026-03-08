@@ -148,7 +148,12 @@ async def replay_websocket(
     year: int,
     round_num: int,
     type: str = Query("R"),
+    token: str = Query(""),
 ):
+    from auth import is_auth_enabled, verify_token
+    if is_auth_enabled() and not verify_token(token):
+        await websocket.close(code=4401, reason="Unauthorized")
+        return
     await websocket.accept()
 
     try:

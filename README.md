@@ -4,7 +4,22 @@ https://github.com/user-attachments/assets/158de3d0-8bd5-41a5-a34d-a3a92471cf96
 
 > **Disclaimer:** This project is intended for **personal, non-commercial use only**. This website is unofficial and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.
 
-A web app that lets you replay Formula 1 race sessions with real timing data, car positions on track, telemetry, and more. Built with Next.js and FastAPI. Intended for personal, non-commercial use.
+A web app that lets you replay past Formula 1 sessions with real timing data, car positions on track, driver telemetry, and more. Built with Next.js and FastAPI.
+
+![F1 Replay Timing](https://github.com/user-attachments/assets/158de3d0-8bd5-41a5-a34d-a3a92471cf96)
+
+## Features
+
+- **Track map** with real-time car positions from GPS telemetry, updating every 0.5 seconds with smooth interpolation
+- **Driver leaderboard** sourced from the official F1 live timing feed, showing position, gap to leader, tyre compound and age, tyre history, pit stop count, grid position changes, and fastest lap indicator
+- **Pit position prediction** (Beta) estimates where a driver would rejoin if they pitted now, using precomputed pit loss times per circuit with Safety Car and Virtual Safety Car adjustments
+- **Telemetry** for any driver showing speed, throttle, brake, gear, and DRS (2025 and earlier) plotted against track distance
+- **Broadcast sync** lets you match the replay to a live broadcast or recording, either by uploading a screenshot of the timing tower (using AI vision) or by manually entering gap times
+- **Weather data** including air and track temperature, humidity, wind, and rainfall status
+- **Track status flags** for green, yellow, Safety Car, Virtual Safety Car, and red flag conditions
+- **Playback controls** with 0.5x to 20x speed, skip buttons (5s, 30s, 1m, 5m), lap jumping, and a progress bar
+- **Session support** for races, qualifying, sprint qualifying, and practice sessions from 2024 onwards
+- **Passphrase authentication** to optionally restrict access when publicly hosted
 
 ## Architecture
 
@@ -35,18 +50,22 @@ cd F1timing
 ```
 FRONTEND_URL=http://localhost:3000
 PORT=8000
-
-# Directory for processed session data
 DATA_DIR=./data
 
-# Optional - for photo sync feature
+# Optional - enables the photo sync feature
+# Get a key from https://openrouter.ai/
 OPENROUTER_API_KEY=
+
+# Optional - restrict access with a passphrase
+AUTH_ENABLED=false
+AUTH_PASSPHRASE=
 ```
 
 **Frontend** (`frontend/.env`):
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
+
 
 ### 3. Install dependencies and start
 

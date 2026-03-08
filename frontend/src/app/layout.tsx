@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import AuthGate from "@/components/AuthGate";
 
 export const metadata: Metadata = {
   title: "F1 Replay Timing",
@@ -16,7 +17,9 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="bg-f1-dark text-f1-text antialiased">{children}</body>
+      <body className="bg-f1-dark text-f1-text antialiased">
+        <AuthGate>{children}</AuthGate>
+      </body>
     </html>
   );
 }

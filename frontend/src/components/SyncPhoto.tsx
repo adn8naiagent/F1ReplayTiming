@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { getToken } from "@/lib/auth";
 
 interface Props {
   year: number;
@@ -87,9 +88,12 @@ export default function SyncPhoto({
 
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const headers: HeadersInit = {};
+      const token = getToken();
+      if (token) headers["Authorization"] = `Bearer ${token}`;
       const resp = await fetch(
         `${API_URL}/api/sessions/${year}/${round}/sync-photo?type=${sessionType}`,
-        { method: "POST", body: formData },
+        { method: "POST", body: formData, headers },
       );
 
       if (!resp.ok) {
@@ -142,11 +146,14 @@ export default function SyncPhoto({
 
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+      const manualHeaders: HeadersInit = { "Content-Type": "application/json" };
+      const manualToken = getToken();
+      if (manualToken) manualHeaders["Authorization"] = `Bearer ${manualToken}`;
       const resp = await fetch(
         `${API_URL}/api/sessions/${year}/${round}/sync-manual?type=${sessionType}`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: manualHeaders,
           body: JSON.stringify({ lap, drivers }),
         },
       );
