@@ -55,7 +55,14 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ### 3. Pre-compute race data
 
-This step downloads data from the F1 timing API via FastF1, processes it, and saves it locally. You only need to do this once per race - after that, the data is stored permanently.
+This step downloads data from the F1 timing API via FastF1, processes it, and saves it locally. You only need to do this once per session — after that, the data is stored permanently.
+
+**Timing estimates:**
+- A single session (e.g. one race) takes **3–5 minutes**
+- A full race weekend (FP1, FP2, FP3, Qualifying, Race) takes **15–25 minutes**
+- A complete season (~24 rounds, all sessions) takes **6–10 hours**
+
+We recommend starting with just the current season or specific rounds you're interested in, rather than processing everything upfront.
 
 ```bash
 cd backend
@@ -63,20 +70,20 @@ python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Process an entire season
-python precompute.py 2024
+# Recommended: process the current season only
+python precompute.py 2026 --skip-existing
 
-# Process a specific race
-python precompute.py 2024 --round 1
+# Process a specific race weekend
+python precompute.py 2026 --round 1
 
 # Process only the race session (skip practice/qualifying)
-python precompute.py 2024 --round 1 --session R
+python precompute.py 2026 --round 1 --session R
 
-# Skip races you've already processed
-python precompute.py 2024 --skip-existing
+# Process a full past season (will take several hours)
+python precompute.py 2025 --skip-existing
 ```
 
-This can take several minutes per race (FastF1 needs to download and parse telemetry data). Once processed, the backend never needs FastF1 again.
+Once processed, the backend never needs FastF1 again. The app also includes a background task that automatically checks for and processes new session data on race weekends (Friday–Monday), so you don't need to manually re-run the script after each race.
 
 ### 4. Start the backend
 

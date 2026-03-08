@@ -1,8 +1,10 @@
 import logging
+import time
+from copy import deepcopy
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, HTTPException
-from services.storage import get_json, exists
+from services.storage import get_json, exists, list_keys
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -20,21 +22,22 @@ SESSION_NAME_TO_TYPE = {
     "Practice 3": "FP3",
 }
 
-
-@router.get("/seasons")
-async def list_seasons():
-    now = datetime.now(timezone.utc)
-    return {"seasons": [s for s in AVAILABLE_SEASONS if s <= now.year]}
+# Cache: year -> (events_data, timestamp)
+_events_cache: dict[int, tuple[dict, float]] = {}
+_CACHE_TTL = 300  # 5 minutes
 
 
-@router.get("/seasons/{year}/events")
-async def list_events(year: int):
+def _build_events(year: int) -> dict:
+    """Build events response with availability checked against storage."""
     data = get_json(f"seasons/{year}/schedule.json")
     if data is None:
-        raise HTTPException(status_code=404, detail=f"No schedule data for {year}")
+        return None
 
-    # Recompute availability based on what actually exists in storage
+    data = deepcopy(data)
     events = data.get("events", [])
+
+    # Single scan to find all replay.json files for this year
+    all_keys = set(list_keys(f"sessions/{year}"))
     last_available_idx = None
 
     for i, evt in enumerate(events):
@@ -42,7 +45,7 @@ async def list_events(year: int):
         has_data = False
         for session in evt.get("sessions", []):
             st = SESSION_NAME_TO_TYPE.get(session["name"])
-            if st and exists(f"sessions/{year}/{round_num}/{st}/replay.json"):
+            if st and f"sessions/{year}/{round_num}/{st}/replay.json" in all_keys:
                 session["available"] = True
                 has_data = True
             else:
@@ -54,10 +57,30 @@ async def list_events(year: int):
         else:
             evt["status"] = "future"
 
-    # Mark the most recent available event as "latest"
     if last_available_idx is not None:
         events[last_available_idx]["status"] = "latest"
 
+    return data
+
+
+@router.get("/seasons")
+async def list_seasons():
+    now = datetime.now(timezone.utc)
+    return {"seasons": [s for s in AVAILABLE_SEASONS if s <= now.year]}
+
+
+@router.get("/seasons/{year}/events")
+async def list_events(year: int):
+    now = time.time()
+    cached = _events_cache.get(year)
+    if cached and (now - cached[1]) < _CACHE_TTL:
+        return cached[0]
+
+    data = _build_events(year)
+    if data is None:
+        raise HTTPException(status_code=404, detail=f"No schedule data for {year}")
+
+    _events_cache[year] = (data, now)
     return data
 
 

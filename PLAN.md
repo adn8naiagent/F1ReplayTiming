@@ -269,6 +269,48 @@ F1timing/
 }
 ```
 
+## Upcoming Work
+
+### 1. Pit Position Prediction (Leaderboard Feature)
+
+**Goal:** Show where a driver would rejoin the field if they pit now.
+
+**Precompute pit loss times per track** from 2025 data:
+- Average pit loss (green flag) = average pit lap time - average clean lap time
+- Average pit loss under Safety Car
+- Average pit loss under Virtual Safety Car
+- Store as static JSON per circuit (e.g. `pit_loss/{circuit_key}.json`)
+
+**Runtime calculation** (server-side, not baked per-frame):
+- For each driver: take gap-to-leader + pit loss for current track status
+- Find which position that projected gap falls into among other drivers' gaps
+- Return predicted position in the replay frame data
+
+**Frontend:**
+- New toggleable column on leaderboard showing predicted re-entry position (e.g. "P7")
+- Leaderboard width increases to accommodate the new column
+- Add toggle in settings under Leaderboard section
+
+**Prerequisite:** 2025 precompute must finish to have the pit stop data to analyze.
+
+### 2. 2026 Data Support
+
+**Problem:** FastF1 v3.7.0 crashes on 2026 data because F1 removed DRS from 2026 cars. The telemetry channel `'45'` (DRS) no longer exists in the live timing feed, causing a `KeyError` in FastF1's `_api.py` that silently kills all telemetry and position data loading.
+
+**What still works for 2026:** Session info, lap data, results, weather.
+**What's broken:** Telemetry, car positions on track, track map data.
+
+**Fix steps:**
+1. **Upgrade Python to 3.10+** — FastF1 v3.8.0+ requires Python 3.10 minimum. Current venv is Python 3.9.
+2. **Recreate virtualenv** with Python 3.10+ and reinstall all dependencies.
+3. **Upgrade FastF1 to v3.8.1** — contains the fix (uses `.get('45', 0)` instead of `['45']`).
+4. **Guard DRS references in `backend/services/f1_data.py`:**
+   - Line ~716: `drs = tel["DRS"].values[...]` — needs fallback when DRS column doesn't exist
+   - Line ~361: `result["drs"] = tel_sampled["DRS"].astype(int).tolist()` — same
+   - Line ~346 already has `has_drs = "DRS" in tel.columns` but not all code paths use it
+5. **Update frontend** `ReplayDriver` interface — `drs` field should be `number | null` instead of required
+6. **Re-precompute 2026 sessions** after the fix
+
 ## Notes
 
 - FastF1 data is only available for seasons 2018+
