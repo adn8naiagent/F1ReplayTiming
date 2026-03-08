@@ -2,9 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system deps for numpy/pandas
+# Install system deps for numpy/pandas and libheif for HEIC support
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ && \
+    gcc g++ libheif-dev && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
