@@ -124,6 +124,7 @@ export default function ReplayPage() {
     if (isRace && settings.showTyreHistory) w += 36;
     if (settings.showTyreType) w += 24;
     if (settings.showTyreAge) w += 20;
+    if (isRace && settings.showPitPrediction) w += 40;
     return w;
   })();
 

@@ -218,28 +218,26 @@ export default function PlaybackControls({
                 {formatTime(qualiPhase.remaining)}
               </span>
             </div>
+            <div className="text-center">
+              <span className="text-[10px] font-bold text-f1-muted uppercase block">Elapsed</span>
+              <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(currentTime)}</span>
+            </div>
             {showSessionTime && (
-              <>
-                <div className="text-center">
-                  <span className="text-[10px] font-bold text-f1-muted uppercase block">Elapsed</span>
-                  <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(currentTime)}</span>
-                </div>
-                <div className="text-center">
-                  <span className="text-[10px] font-bold text-f1-muted uppercase block">Total</span>
-                  <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(Math.max(0, totalTime - currentTime))}</span>
-                </div>
-              </>
+              <div className="text-center">
+                <span className="text-[10px] font-bold text-f1-muted uppercase block">Total</span>
+                <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(Math.max(0, totalTime - currentTime))}</span>
+              </div>
             )}
           </div>
         ) : (
           <div className="flex items-center gap-4 ml-auto">
             <div className="text-center">
-              <span className="text-[10px] font-bold text-f1-muted uppercase block">Elapsed</span>
-              <span className="text-sm font-extrabold text-white tabular-nums">{formatTime(currentTime)}</span>
-            </div>
-            <div className="text-center">
               <span className="text-[10px] font-bold text-f1-muted uppercase block">Remaining</span>
               <span className="text-sm font-extrabold text-white tabular-nums">{formatTime(Math.max(0, totalTime - currentTime))}</span>
+            </div>
+            <div className="text-center">
+              <span className="text-[10px] font-bold text-f1-muted uppercase block">Elapsed</span>
+              <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(currentTime)}</span>
             </div>
           </div>
         )}

@@ -29,6 +29,7 @@ export interface ReplayDriver {
   gear: number | null;
   rpm: number | null;
   drs: number | null;
+  pit_prediction: number | null;
 }
 
 export interface WeatherData {

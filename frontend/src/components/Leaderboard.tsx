@@ -153,6 +153,20 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                 </span>
               )}
 
+              {/* Pit prediction - 36px (race only) */}
+              {isRace && settings.showPitPrediction && (
+                <span className="w-9 flex-shrink-0 flex items-center justify-end gap-0.5 ml-1">
+                  {drv.pit_prediction != null && (
+                    <>
+                      <img src="/pit-return.png" alt="" className="w-3 h-3 opacity-50 invert" />
+                      <span className="text-[10px] font-bold text-f1-muted">
+                        P{drv.pit_prediction}
+                      </span>
+                    </>
+                  )}
+                </span>
+              )}
+
               {/* Tyre history - 36px (race only) */}
               {isRace && settings.showTyreHistory && (
                 <span className="w-9 flex-shrink-0 flex items-center justify-end gap-0.5">
@@ -198,6 +212,7 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                   {drv.tyre_life ?? ""}
                 </span>
               )}
+
             </button>
           );
         })}

@@ -37,7 +37,7 @@ export default function AboutPage() {
             All data is sourced from publicly available APIs. No proprietary or restricted data is used.
           </p>
           <p className="text-f1-text leading-relaxed">
-            This project relies heavily on{" "}
+            This project relies on underlying data provided by{" "}
             <a
               href="https://github.com/theOehrly/Fast-F1"
               target="_blank"
@@ -47,7 +47,7 @@ export default function AboutPage() {
               FastF1
             </a>
             , an open-source Python library for accessing Formula 1 timing and telemetry data.
-            Huge thanks to the FastF1 maintainers and contributors for making this possible.
+            Thanks to the FastF1 maintainers and contributors for making this possible.
           </p>
         </div>
 
