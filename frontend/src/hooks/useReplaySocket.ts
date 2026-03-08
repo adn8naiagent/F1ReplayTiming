@@ -14,6 +14,8 @@ export interface ReplayDriver {
   compound: string | null;
   tyre_life: number | null;
   pit_stops: number;
+  in_pit: boolean;
+  tyre_history: string[];
   gap: string | null;
   has_fastest_lap: boolean;
   flag: "investigation" | "penalty" | null;
@@ -29,12 +31,22 @@ export interface ReplayDriver {
   drs: number | null;
 }
 
+export interface WeatherData {
+  air_temp: number;
+  track_temp: number;
+  humidity: number;
+  rainfall: boolean;
+  wind_speed: number;
+  wind_direction: number;
+}
+
 export interface ReplayFrame {
   timestamp: number;
   lap: number;
   total_laps: number;
   drivers: ReplayDriver[];
   status: string;
+  weather?: WeatherData;
 }
 
 interface ReplayState {
@@ -103,6 +115,7 @@ export function useReplaySocket(year: number, round: number, sessionType: string
               total_laps: msg.total_laps,
               drivers: msg.drivers,
               status: msg.status,
+              weather: msg.weather,
             },
           }));
           break;

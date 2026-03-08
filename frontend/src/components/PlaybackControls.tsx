@@ -151,17 +151,13 @@ export default function PlaybackControls({
           {formatTime(currentTime)}{showSessionTime && ` / ${formatTime(totalTime)}`}
         </span>
 
-        {/* Sync with photo */}
+        {/* Sync with TV */}
         {isRace && onSyncPhoto && (
           <button
             onClick={onSyncPhoto}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-white/10 transition-colors text-f1-muted hover:text-white"
-            title="Sync with TV"
+            className="px-3 py-1.5 rounded border border-f1-border hover:bg-white/10 transition-colors text-f1-muted hover:text-white text-xs font-bold"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-              <circle cx="12" cy="13" r="3" />
-            </svg>
+            Sync
           </button>
         )}
 

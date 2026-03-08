@@ -7,23 +7,37 @@ export interface ReplaySettings {
   showTyreAge: boolean;
   showTyreType: boolean;
   showPitStops: boolean;
+  showTyreHistory: boolean;
   showGridChange: boolean;
   showGapToLeader: boolean;
   showSessionTime: boolean;
   showDriverNames: boolean;
+  showWeather: boolean;
+  showAirTemp: boolean;
+  showTrackTemp: boolean;
+  showHumidity: boolean;
+  showWind: boolean;
+  showRainfall: boolean;
 }
 
 const STORAGE_KEY = "f1replay_settings";
 
-const DEFAULTS: ReplaySettings = {
+export const DEFAULTS: ReplaySettings = {
   showLeaderboard: true,
   showTyreAge: true,
   showTyreType: true,
   showPitStops: true,
+  showTyreHistory: true,
   showGridChange: true,
   showGapToLeader: true,
   showSessionTime: false,
   showDriverNames: true,
+  showWeather: true,
+  showAirTemp: true,
+  showTrackTemp: true,
+  showHumidity: true,
+  showWind: true,
+  showRainfall: true,
 };
 
 function loadSettings(): ReplaySettings {

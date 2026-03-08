@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { ReplaySettings } from "@/hooks/useSettings";
+import { ReplaySettings, DEFAULTS as DEFAULT_SETTINGS } from "@/hooks/useSettings";
+import { WeatherData } from "@/hooks/useReplaySocket";
 
 interface Props {
   eventName: string;
@@ -9,8 +10,9 @@ interface Props {
   country: string;
   sessionType: string;
   year: number;
-  settings: ReplaySettings;
-  onSettingChange: (key: keyof ReplaySettings, value: boolean) => void;
+  settings?: ReplaySettings;
+  onSettingChange?: (key: keyof ReplaySettings, value: boolean) => void;
+  weather?: WeatherData;
 }
 
 const SESSION_LABELS: Record<string, string> = {
@@ -29,6 +31,15 @@ const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string }[] = [
   { key: "showPitStops", label: "Pit stops" },
   { key: "showTyreType", label: "Tyre type" },
   { key: "showTyreAge", label: "Tyre age" },
+  { key: "showTyreHistory", label: "Tyre history" },
+];
+
+const WEATHER_SETTINGS: { key: keyof ReplaySettings; label: string }[] = [
+  { key: "showAirTemp", label: "Air temperature" },
+  { key: "showTrackTemp", label: "Track temperature" },
+  { key: "showHumidity", label: "Humidity" },
+  { key: "showWind", label: "Wind" },
+  { key: "showRainfall", label: "Rainfall" },
 ];
 
 const OTHER_SETTINGS: { key: keyof ReplaySettings; label: string }[] = [
@@ -42,9 +53,11 @@ export default function SessionBanner({
   country,
   sessionType,
   year,
-  settings,
+  settings: settingsProp,
   onSettingChange,
+  weather,
 }: Props) {
+  const settings = settingsProp || DEFAULT_SETTINGS;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [infoOpen, setInfoOpen] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
@@ -78,6 +91,60 @@ export default function SessionBanner({
           </div>
         </div>
 
+        {/* Weather - positioned above track area, not leaderboard */}
+        {weather && settings.showWeather && (
+          <div className="flex items-center gap-3 text-xs text-f1-muted ml-auto mr-48">
+            {settings.showAirTemp && (
+              <span className="flex items-center gap-1" title="Air temperature">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+                  <path d="m15.98 11.52c-.33-.28-.51-.74-.51-1.26v-4.62c0-1.86-1.38-3.45-3.14-3.63-.98-.1-1.97.22-2.71.89-.73.66-1.15 1.61-1.15 2.6v4.79c0 .53-.19 1-.51 1.3-1.58 1.43-2.27 3.55-1.84 5.66.46 2.31 2.31 4.18 4.61 4.66.43.09.86.13 1.28.13 1.38 0 2.72-.46 3.8-1.34 1.42-1.15 2.23-2.86 2.23-4.68 0-1.72-.75-3.36-2.06-4.51zm-1.43 7.63c-.96.78-2.17 1.07-3.42.81-1.52-.32-2.75-1.56-3.06-3.1-.28-1.41.18-2.83 1.23-3.79.74-.67 1.17-1.69 1.17-2.78v-4.79c0-.43.18-.83.49-1.11.28-.25.63-.39 1.01-.39h.16c.75.08 1.34.79 1.34 1.64v4.62c0 1.09.44 2.1 1.2 2.77.87.76 1.37 1.86 1.37 3 0 1.22-.54 2.36-1.49 3.13z"/>
+                  <circle cx="12" cy="16" r="2.47"/>
+                </svg>
+                {weather.air_temp}°C
+              </span>
+            )}
+            {settings.showTrackTemp && (
+              <span className="flex items-center gap-1" title="Track temperature">
+                <svg className="w-3.5 h-3.5" viewBox="0 0 512 512" fill="currentColor">
+                  <path d="M162.9.4c-5.7-1.6-11.6 1.7-13.2 7.4L11.1 498.4c-1.6 5.7 1.7 11.6 7.4 13.2c.9.3 1.9.4 2.9.4c4.8 0 9-3.2 10.3-7.8L170.3 13.6c1.6-5.7-1.7-11.6-7.4-13.2z"/>
+                  <path d="M500.9 498.4L362.3 7.8c-1.6-5.7-7.5-9-13.2-7.4-5.7 1.6-9 7.5-7.4 13.2l138.7 490.7c1.3 4.6 5.5 7.8 10.3 7.8 1 0 2-.1 2.9-.4 5.7-1.6 9-7.5 7.4-13.2z"/>
+                  <path d="M256 405.3c-5.9 0-10.7 4.8-10.7 10.7v85.3c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7V416c0-5.9-4.8-10.7-10.7-10.7z"/>
+                  <path d="M256 234.7c-5.9 0-10.7 4.8-10.7 10.7v85.3c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7v-85.3c0-5.9-4.8-10.7-10.7-10.7z"/>
+                  <path d="M256 85.3c-5.9 0-10.7 4.8-10.7 10.7v64c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7v-64c0-5.9-4.8-10.7-10.7-10.7z"/>
+                  <path d="M256 0c-5.9 0-10.7 4.8-10.7 10.7V32c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7V10.7C266.7 4.8 261.9 0 256 0z"/>
+                </svg>
+                {weather.track_temp}°C
+              </span>
+            )}
+            {settings.showHumidity && (
+              <span className="flex items-center gap-1" title="Humidity">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3C12 3 5 11 5 15a7 7 0 0014 0c0-4-7-12-7-12z" />
+                </svg>
+                {weather.humidity}%
+              </span>
+            )}
+            {settings.showRainfall && (
+              <span className={`flex items-center gap-1 ${weather.rainfall ? "text-blue-400" : ""}`} title="Rainfall">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-4.584-7A6 6 0 003 15z" />
+                </svg>
+                {weather.rainfall ? "Rain" : "Dry"}
+              </span>
+            )}
+            {settings.showWind && (
+              <span className="flex items-center gap-1" title={`Wind direction: ${weather.wind_direction}°`}>
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                  style={{ transform: `rotate(${weather.wind_direction}deg)` }}
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-4 4m4-4l4 4" />
+                </svg>
+                {weather.wind_speed} m/s
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="flex items-center gap-3">
           <div className="bg-f1-red px-4 py-1 rounded text-white font-extrabold text-xs uppercase">
             {SESSION_LABELS[sessionType] || sessionType}
@@ -107,10 +174,10 @@ export default function SessionBanner({
             </button>
 
             {settingsOpen && (
-              <div className="absolute right-0 top-full mt-2 w-60 bg-f1-card border border-f1-border rounded-lg shadow-xl z-50 py-2">
+              <div className="fixed right-2 top-[52px] mt-2 w-72 bg-[#1A1A26] border border-f1-border rounded-lg shadow-xl z-50 py-2">
                 {/* Driver Leaderboard section */}
                 <button
-                  onClick={() => onSettingChange("showLeaderboard", !settings.showLeaderboard)}
+                  onClick={() => onSettingChange?.("showLeaderboard", !settings.showLeaderboard)}
                   className="w-full flex items-center justify-between px-4 py-2 hover:bg-white/5 transition-colors"
                 >
                   <span className="text-xs font-bold text-f1-muted uppercase tracking-wider">Driver Leaderboard</span>
@@ -129,7 +196,7 @@ export default function SessionBanner({
                 {LEADERBOARD_SETTINGS.map(({ key, label }) => (
                   <button
                     key={key}
-                    onClick={() => onSettingChange(key, !settings[key])}
+                    onClick={() => onSettingChange?.(key, !settings[key])}
                     disabled={!settings.showLeaderboard}
                     className={`w-full flex items-center justify-between pl-8 pr-4 py-1.5 hover:bg-white/5 transition-colors ${
                       !settings.showLeaderboard ? "opacity-40 pointer-events-none" : ""
@@ -153,11 +220,59 @@ export default function SessionBanner({
                 {/* Divider */}
                 <div className="border-t border-f1-border my-2" />
 
+                {/* Weather section */}
+                <button
+                  onClick={() => onSettingChange?.("showWeather", !settings.showWeather)}
+                  className="w-full flex items-center justify-between px-4 py-2 hover:bg-white/5 transition-colors"
+                >
+                  <span className="text-xs font-bold text-f1-muted uppercase tracking-wider">Weather</span>
+                  <div
+                    className={`relative w-9 h-5 rounded-full transition-colors ${
+                      settings.showWeather ? "bg-f1-red" : "bg-f1-border"
+                    }`}
+                  >
+                    <div
+                      className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                        settings.showWeather ? "translate-x-[18px]" : "translate-x-0.5"
+                      }`}
+                    />
+                  </div>
+                </button>
+                {WEATHER_SETTINGS.map(({ key, label }) => (
+                  <button
+                    key={key}
+                    onClick={() => onSettingChange?.(key, !settings[key])}
+                    disabled={!settings.showWeather}
+                    className={`w-full flex items-center justify-between pl-8 pr-4 py-1.5 hover:bg-white/5 transition-colors ${
+                      !settings.showWeather ? "opacity-40 pointer-events-none" : ""
+                    }`}
+                  >
+                    <span className="text-sm text-white">{label}</span>
+                    <div
+                      className={`relative w-9 h-5 rounded-full transition-colors ${
+                        settings[key] ? "bg-f1-red" : "bg-f1-border"
+                      }`}
+                    >
+                      <div
+                        className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                          settings[key] ? "translate-x-[18px]" : "translate-x-0.5"
+                        }`}
+                      />
+                    </div>
+                  </button>
+                ))}
+
+                {/* Divider */}
+                <div className="border-t border-f1-border my-2" />
+
                 {/* Other settings */}
+                <div className="px-4 py-2">
+                  <span className="text-xs font-bold text-f1-muted uppercase tracking-wider">Other</span>
+                </div>
                 {OTHER_SETTINGS.map(({ key, label }) => (
                   <button
                     key={key}
-                    onClick={() => onSettingChange(key, !settings[key])}
+                    onClick={() => onSettingChange?.(key, !settings[key])}
                     className="w-full flex items-center justify-between px-4 py-2 hover:bg-white/5 transition-colors"
                   >
                     <span className="text-sm text-white">{label}</span>
@@ -249,13 +364,25 @@ export default function SessionBanner({
                 </p>
               </div>
 
+              {/* Tyre history */}
+              <div>
+                <h3 className="text-sm font-bold text-f1-red uppercase tracking-wider mb-2">
+                  Tyre history
+                </h3>
+                <p className="text-sm text-f1-muted leading-relaxed">
+                  The leaderboard shows the last two tyre compounds used by each
+                  driver as smaller icons next to their current tyre. Tyre changes
+                  and pit stop counts update when the driver exits the pit lane.
+                </p>
+              </div>
+
               {/* Session time */}
               <div>
                 <h3 className="text-sm font-bold text-f1-red uppercase tracking-wider mb-2">
                   Session time
                 </h3>
                 <p className="text-sm text-f1-muted leading-relaxed">
-                  Total session time is hidden by default to avoid spoilers - a
+                  Total session time is hidden by default to avoid spoilers. A
                   longer-than-expected session can reveal red flags and
                   stoppages. You can enable it in the settings menu.
                 </p>

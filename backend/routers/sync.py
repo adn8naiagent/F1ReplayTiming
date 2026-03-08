@@ -8,7 +8,7 @@ import re
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, UploadFile, File, Query, HTTPException
+from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Body
 
 from routers.replay import _get_frames  # reads from R2
 
@@ -209,6 +209,33 @@ def _match_frame(frames: list[dict], extracted: dict) -> dict:
         "confidence": max(0, 100 - best_score),
         "extracted": extracted,
     }
+
+
+@router.post("/sessions/{year}/{round_num}/sync-manual")
+async def sync_manual(
+    year: int,
+    round_num: int,
+    type: str = Query("R"),
+    body: dict = Body(...),
+):
+    """Match manual leaderboard input against replay frames."""
+    if not body:
+        raise HTTPException(status_code=400, detail="Request body required")
+
+    lap = body.get("lap")
+    drivers = body.get("drivers", [])
+    if not lap or not drivers:
+        raise HTTPException(status_code=400, detail="Lap and at least one driver required")
+
+    extracted = {"lap": int(lap), "drivers": drivers}
+
+    frames = await _get_frames(year, round_num, type)
+    if not frames:
+        raise HTTPException(status_code=404, detail="No replay data available")
+
+    result = _match_frame(frames, extracted)
+    logger.info(f"Manual sync matched to timestamp={result['timestamp']:.1f}s, lap={result['lap']}")
+    return result
 
 
 @router.post("/sessions/{year}/{round_num}/sync-photo")

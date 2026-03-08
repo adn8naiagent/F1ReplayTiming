@@ -8,6 +8,7 @@ const config: Config = {
         f1: {
           red: "#E10600",
           dark: "#15151E",
+          surface: "#1A1A26",
           card: "#1E1E2E",
           border: "#2A2A3C",
           muted: "#6B7280",

@@ -110,6 +110,19 @@ export default function ReplayPage() {
   const rotation = trackData?.rotation || 0;
   const drivers = replay.frame?.drivers || [];
   const trackStatus = replay.frame?.status || "green";
+  const weather = replay.frame?.weather;
+
+  // Calculate leaderboard width based on active columns
+  const leaderboardWidth = (() => {
+    let w = 106; // base: position(24) + team bar(12) + driver(30) + flags(16) + padding(16) + right padding(8)
+    if (settings.showGridChange) w += 24;
+    if (settings.showGapToLeader) w += 56;
+    if (settings.showPitStops) w += 24;
+    if (settings.showTyreHistory) w += 36;
+    if (settings.showTyreType) w += 24;
+    if (settings.showTyreAge) w += 20;
+    return w;
+  })();
 
   return (
     <div className="h-screen flex flex-col bg-f1-dark overflow-hidden">
@@ -123,6 +136,7 @@ export default function ReplayPage() {
           year={year}
           settings={settings}
           onSettingChange={updateSetting}
+          weather={weather}
         />
       )}
 
@@ -195,7 +209,7 @@ export default function ReplayPage() {
 
         {/* Leaderboard sidebar */}
         {settings.showLeaderboard && (
-          <div className="w-72 flex-shrink-0">
+          <div className="flex-shrink-0" style={{ width: leaderboardWidth }}>
             <Leaderboard
               drivers={drivers}
               highlightedDrivers={selectedDrivers}

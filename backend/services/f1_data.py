@@ -580,23 +580,45 @@ def _get_driver_positions_by_time_sync(
         return current
 
     # Build lap lookup: for each driver, which lap are they on at a given time
+    # Also build pit lane intervals (session timedelta seconds) for in-pit detection
     driver_lap_lookup = {}
+    driver_pit_intervals: dict[str, list[tuple[float, float]]] = {}
     for drv in drivers_list:
         drv_laps_df = laps.pick_drivers(drv).sort_values("LapNumber")
         lap_entries = []
+        pit_intervals = []
         pit_count = 0
         for _, lap_row in drv_laps_df.iterrows():
+            lap_num = int(lap_row["LapNumber"])
             is_pit_in = lap_row.get("PitInTime") is not pd.NaT and pd.notna(lap_row.get("PitInTime"))
-            if is_pit_in:
-                pit_count += 1
+            is_pit_out = lap_row.get("PitOutTime") is not pd.NaT and pd.notna(lap_row.get("PitOutTime"))
+
+            # Record entry BEFORE incrementing pit_count so the pit stop
+            # only shows from the next lap (the out-lap), not the in-lap.
             lap_entries.append({
-                "lap": int(lap_row["LapNumber"]),
+                "lap": lap_num,
                 "compound": str(lap_row.get("Compound", "")) if pd.notna(lap_row.get("Compound")) else None,
                 "tyre_life": int(lap_row["TyreLife"]) if pd.notna(lap_row.get("TyreLife")) else None,
                 "position": int(lap_row["Position"]) if pd.notna(lap_row.get("Position")) else None,
                 "pit_stops": pit_count,
             })
+
+            # Build pit lane intervals and increment count after the entry
+            if is_pit_in:
+                pit_count += 1
+                pit_in_sec = lap_row["PitInTime"].total_seconds()
+                if is_pit_out:
+                    pit_out_sec = lap_row["PitOutTime"].total_seconds()
+                else:
+                    pit_out_sec = pit_in_sec + 30.0
+                pit_intervals.append((pit_in_sec, pit_out_sec))
+            elif is_pit_out and not is_pit_in:
+                # Out-lap only (pit_in was on previous lap row)
+                pit_out_sec = lap_row["PitOutTime"].total_seconds()
+                if pit_intervals and pit_intervals[-1][1] != pit_out_sec:
+                    pit_intervals[-1] = (pit_intervals[-1][0], pit_out_sec)
         driver_lap_lookup[drv] = lap_entries
+        driver_pit_intervals[drv] = pit_intervals
 
     # Compute session time offset: t_sec (from min_date) + session_time_offset = session timedelta
     # This is needed because gap data uses session timedeltas, not min_date offsets
@@ -624,6 +646,45 @@ def _get_driver_positions_by_time_sync(
             logger.info(f"Loaded {len(ts)} track status entries")
     except Exception as e:
         logger.error(f"Failed to load track status: {e}")
+
+    # Pre-compute weather data lookup
+    weather_times = np.array([], dtype=np.float64)
+    weather_air_temp = np.array([], dtype=np.float64)
+    weather_track_temp = np.array([], dtype=np.float64)
+    weather_humidity = np.array([], dtype=np.float64)
+    weather_rainfall = np.array([], dtype=bool)
+    weather_wind_speed = np.array([], dtype=np.float64)
+    weather_wind_dir = np.array([], dtype=np.float64)
+    try:
+        wd = session.weather_data
+        if wd is not None and len(wd) > 0:
+            weather_times = wd["Time"].dt.total_seconds().values.astype(np.float64)
+            weather_air_temp = wd["AirTemp"].values.astype(np.float64)
+            weather_track_temp = wd["TrackTemp"].values.astype(np.float64)
+            weather_humidity = wd["Humidity"].values.astype(np.float64)
+            weather_rainfall = wd["Rainfall"].values.astype(bool)
+            weather_wind_speed = wd["WindSpeed"].values.astype(np.float64)
+            weather_wind_dir = wd["WindDirection"].values.astype(np.float64)
+            logger.info(f"Loaded {len(wd)} weather entries")
+    except Exception as e:
+        logger.error(f"Failed to load weather data: {e}")
+
+    def _get_weather(t_sec: float) -> dict | None:
+        """Get weather data at time t_sec."""
+        if len(weather_times) == 0:
+            return None
+        session_t = t_sec + session_time_offset
+        idx = np.searchsorted(weather_times, session_t, side="right") - 1
+        if idx < 0:
+            idx = 0
+        return {
+            "air_temp": round(float(weather_air_temp[idx]), 1),
+            "track_temp": round(float(weather_track_temp[idx]), 1),
+            "humidity": round(float(weather_humidity[idx]), 0),
+            "rainfall": bool(weather_rainfall[idx]),
+            "wind_speed": round(float(weather_wind_speed[idx]), 1),
+            "wind_direction": int(weather_wind_dir[idx]),
+        }
 
     def _get_track_status(t_sec: float) -> str:
         """Get track status (green/yellow/sc/vsc/red) at time t_sec."""
@@ -759,6 +820,14 @@ def _get_driver_positions_by_time_sync(
             is_pit_lane_starter = grid_pos == 0
             show_pit_badge = is_pit_lane_starter and t_sec < 10
 
+            # Check if driver is currently in the pit lane
+            session_t = t_sec + session_time_offset
+            in_pit = False
+            for pit_in, pit_out in driver_pit_intervals.get(drv, []):
+                if pit_in <= session_t <= pit_out:
+                    in_pit = True
+                    break
+
             # Tyre/pit data filled in after current lap is determined (below)
 
             drv_data = {
@@ -770,6 +839,7 @@ def _get_driver_positions_by_time_sync(
                 "position": None,  # assigned after sorting by gap
                 "grid_position": grid_pos if not is_pit_lane_starter else None,
                 "pit_start": show_pit_badge,
+                "in_pit": in_pit,
                 "compound": None,
                 "tyre_life": None,
                 "pit_stops": 0,
@@ -828,31 +898,54 @@ def _get_driver_positions_by_time_sync(
                             d["has_fastest_lap"] = True
                             break
 
-        # Fill in tyre/pit data using real current lap
+        # Fill in tyre/pit data using timestamps for accuracy
+        session_t = t_sec + session_time_offset
         for d in frame_drivers:
             lap_info = driver_lap_lookup.get(d["abbr"], [])
-            compound = None
-            tyre_life = None
-            pit_stops = 0
+            intervals = driver_pit_intervals.get(d["abbr"], [])
+
+            # Count completed pit stops (driver has exited pit)
+            completed_pits = sum(1 for _, pit_out in intervals if session_t >= pit_out)
+            d["pit_stops"] = completed_pits
+
+            # Build tyre stints from lap data: each compound change is a stint
+            stints: list[str] = []
+            prev_compound = None
+            tyre_life_by_stint: list[int | None] = []
             for entry in lap_info:
                 if entry["lap"] <= current_lap:
-                    compound = entry["compound"]
-                    tyre_life = entry["tyre_life"]
-                    pit_stops = entry["pit_stops"]
-            if compound is None and lap_info:
-                compound = lap_info[0]["compound"]
-                tyre_life = lap_info[0]["tyre_life"]
+                    c = entry["compound"]
+                    if c and c != prev_compound:
+                        stints.append(c)
+                        prev_compound = c
+                    # Track tyre life for latest entry in current stint
+                    if stints:
+                        if len(tyre_life_by_stint) < len(stints):
+                            tyre_life_by_stint.append(entry["tyre_life"])
+                        else:
+                            tyre_life_by_stint[-1] = entry["tyre_life"]
+
+            # Only show stints up to completed_pits + 1 (current stint)
+            visible_stints = stints[:completed_pits + 1]
+            tyre_history = visible_stints[:-1] if len(visible_stints) > 1 else []
+            compound = visible_stints[-1] if visible_stints else (lap_info[0]["compound"] if lap_info else None)
+            tyre_life = tyre_life_by_stint[len(visible_stints) - 1] if len(visible_stints) > 0 and len(tyre_life_by_stint) >= len(visible_stints) else (lap_info[0]["tyre_life"] if lap_info else None)
+
             d["compound"] = compound
             d["tyre_life"] = tyre_life
-            d["pit_stops"] = pit_stops
+            d["tyre_history"] = tyre_history
 
-        frames.append({
+        frame = {
             "timestamp": i * sample_interval,
             "lap": current_lap,
             "total_laps": total_laps,
             "drivers": frame_drivers,
             "status": _get_track_status(i * sample_interval),
-        })
+        }
+        weather = _get_weather(i * sample_interval)
+        if weather:
+            frame["weather"] = weather
+        frames.append(frame)
 
     return frames
 
