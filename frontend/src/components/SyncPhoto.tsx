@@ -48,155 +48,20 @@ export default function SyncPhoto({
   const [manualGapMode, setManualGapMode] = useState<"leader" | "interval">("interval");
   const [manualProcessing, setManualProcessing] = useState(false);
 
-  const MAX_UPLOAD_BYTES = 2 * 1024 * 1024; // 2MB backend limit
-
-  function resizeToBlob(img: HTMLImageElement, maxDim: number, quality: number): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      let { width, height } = img;
-      if (width > maxDim || height > maxDim) {
-        const ratio = Math.min(maxDim / width, maxDim / height);
-        width = Math.round(width * ratio);
-        height = Math.round(height * ratio);
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) return reject(new Error("Canvas not supported"));
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob(
-        (blob) => (blob ? resolve(blob) : reject(new Error("Compression failed"))),
-        "image/jpeg",
-        quality,
-      );
-    });
-  }
-
-  function loadImage(file: File): Promise<HTMLImageElement> {
-    return new Promise((resolve, reject) => {
-      const url = URL.createObjectURL(file);
-      const img = new Image();
-      img.onload = () => {
-        URL.revokeObjectURL(url);
-        resolve(img);
-      };
-      img.onerror = () => {
-        URL.revokeObjectURL(url);
-        reject(new Error("Failed to load image"));
-      };
-      img.src = url;
-    });
-  }
-
-  function loadHeic2anyScript(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if ((window as any).heic2any) { resolve(); return; }
-      const existing = document.querySelector('script[data-heic2any]');
-      if (existing) {
-        existing.addEventListener("load", () => resolve());
-        existing.addEventListener("error", () => reject(new Error("Failed to load HEIC converter")));
-        return;
-      }
-      const script = document.createElement("script");
-      script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
-      script.setAttribute("data-heic2any", "true");
-      script.onload = () => resolve();
-      script.onerror = () => reject(new Error("Failed to load HEIC converter"));
-      document.head.appendChild(script);
-    });
-  }
-
-  async function convertHeicIfNeeded(file: File): Promise<File | Blob> {
-    const name = file.name.toLowerCase();
-    const isHeic = name.endsWith(".heic") || name.endsWith(".heif") || file.type === "image/heic" || file.type === "image/heif";
-    if (!isHeic) return file;
-    if (typeof window === "undefined") return file;
-    try {
-      await loadHeic2anyScript();
-      const heic2any = (window as any).heic2any;
-      if (typeof heic2any !== "function") {
-        throw new Error("heic2any not available after loading script");
-      }
-      const result = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
-      const converted = Array.isArray(result) ? result[0] : result;
-      if (!converted || converted.size === 0) {
-        throw new Error("heic2any returned empty result");
-      }
-      return converted;
-    } catch (e) {
-      console.error("HEIC conversion error:", e);
-      throw new Error(`HEIC conversion failed: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  }
-
-  async function compressImage(file: File): Promise<Blob> {
-    // Step 1: Try loading file directly (works for JPEG, PNG, and HEIC on Safari/macOS/iOS)
-    let img: HTMLImageElement | null = null;
-    try {
-      img = await loadImage(file);
-    } catch {
-      // Browser can't load this format natively — try HEIC conversion
-    }
-
-    // Step 2: If direct load failed and it looks like HEIC, try converting
-    if (!img) {
-      try {
-        const converted = await convertHeicIfNeeded(file);
-        const toLoad = converted instanceof File ? converted : new File([converted], "photo.jpg", { type: "image/jpeg" });
-        img = await loadImage(toLoad);
-      } catch {
-        // Both approaches failed
-        if (file.size <= MAX_UPLOAD_BYTES) return file;
-        throw new Error("Cannot process this image format.");
-      }
-    }
-
-    // Step 3: Resize to fit under 2MB
-    const attempts: [number, number][] = [
-      [1200, 0.8],
-      [800, 0.7],
-      [800, 0.5],
-      [600, 0.5],
-      [400, 0.4],
-    ];
-    for (const [maxDim, quality] of attempts) {
-      const blob = await resizeToBlob(img, maxDim, quality);
-      if (blob.size <= MAX_UPLOAD_BYTES) return blob;
-    }
-    return resizeToBlob(img, 400, 0.3);
-  }
+  const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20MB backend limit
 
   async function handleFile(file: File) {
     setStep("processing");
     setError(null);
 
-    let compressed: Blob;
-    try {
-      compressed = await compressImage(file);
-    } catch (e: any) {
-      console.error("Image compression failed:", e);
-      // Fall back to sending the original file if it's small enough
-      if (file.size <= MAX_UPLOAD_BYTES) {
-        compressed = file;
-      } else {
-        const isHeic = file.name.toLowerCase().match(/\.(heic|heif)$/) || file.type.includes("heic") || file.type.includes("heif");
-        setError(isHeic
-          ? "Could not convert HEIC/HEIF image. Try taking a screenshot or converting to JPEG first."
-          : "Image too large to process. Try a smaller photo or convert to JPEG."
-        );
-        setStep("capture");
-        return;
-      }
-    }
-
-    if (compressed.size > MAX_UPLOAD_BYTES) {
-      setError("Image is too large even after compression. Try a smaller photo.");
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError("Image is too large (max 20MB).");
       setStep("capture");
       return;
     }
 
     const formData = new FormData();
-    formData.append("photo", compressed, "photo.jpg");
+    formData.append("photo", file, file.name);
 
     try {
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";

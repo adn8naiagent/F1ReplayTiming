@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import io
 import json
 import logging
 import os
@@ -8,7 +9,11 @@ import re
 from typing import Optional
 
 import httpx
+from PIL import Image
+from pillow_heif import register_heif_opener
 from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Body
+
+register_heif_opener()
 
 from routers.replay import _get_frames  # reads from R2
 
@@ -50,6 +55,21 @@ Rules:
 - If tyre is not visible, set to null
 - Only include drivers you can clearly read
 - Do NOT guess - only extract what is clearly visible"""
+
+
+def _convert_to_jpeg(image_bytes: bytes, max_dim: int = 1200, quality: int = 80) -> bytes:
+    """Convert any image format to compressed JPEG."""
+    img = Image.open(io.BytesIO(image_bytes))
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    # Resize if needed
+    if max(img.size) > max_dim:
+        ratio = max_dim / max(img.size)
+        new_size = (int(img.width * ratio), int(img.height * ratio))
+        img = img.resize(new_size, Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=quality)
+    return buf.getvalue()
 
 
 async def _extract_leaderboard(image_bytes: bytes) -> dict:
@@ -253,8 +273,15 @@ async def sync_from_photo(
     image_bytes = await photo.read()
     if len(image_bytes) == 0:
         raise HTTPException(status_code=400, detail="Empty file")
-    if len(image_bytes) > 2 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="File too large (max 2MB)")
+    if len(image_bytes) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 20MB)")
+
+    # Convert to JPEG (handles HEIC, PNG, etc.)
+    try:
+        image_bytes = _convert_to_jpeg(image_bytes)
+    except Exception as e:
+        logger.error(f"Image conversion failed: {e}")
+        raise HTTPException(status_code=400, detail="Could not process image")
 
     # Extract leaderboard data from image
     extracted = await _extract_leaderboard(image_bytes)
