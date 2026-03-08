@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
 import { useReplaySocket } from "@/hooks/useReplaySocket";
@@ -44,6 +44,17 @@ export default function ReplayPage() {
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
   const [showTelemetry, setShowTelemetry] = useState(false);
   const [showSyncPhoto, setShowSyncPhoto] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [mobileTrackOpen, setMobileTrackOpen] = useState(true);
+  const [mobileLeaderboardOpen, setMobileLeaderboardOpen] = useState(true);
+  const [mobileTelemetryOpen, setMobileTelemetryOpen] = useState(false);
+
+  useEffect(() => {
+    function check() { setIsMobile(window.innerWidth < 640); }
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
 
   function handleDriverClick(abbr: string) {
     setSelectedDrivers((prev) => {
@@ -145,83 +156,142 @@ export default function ReplayPage() {
       )}
 
       {/* Main content */}
-      <div className="flex-1 flex min-h-0">
-        {/* Track */}
-        <div className="flex-1 relative">
-          {/* Flag badge */}
-          {trackStatus !== "green" && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
-              <div
-                className={`px-3 py-1 rounded text-xs font-extrabold uppercase ${
-                  trackStatus === "red"
-                    ? "bg-red-600 text-white"
-                    : trackStatus === "sc"
-                    ? "bg-yellow-500 text-black"
-                    : trackStatus === "vsc"
-                    ? "bg-yellow-500/80 text-black"
-                    : "bg-yellow-400 text-black"
-                }`}
-              >
-                {trackStatus === "red"
-                  ? "Red Flag"
-                  : trackStatus === "sc"
-                  ? "Safety Car"
-                  : trackStatus === "vsc"
-                  ? "Virtual Safety Car"
-                  : "Yellow Flag"}
-              </div>
-            </div>
+      <div className="flex-1 flex flex-col sm:flex-row min-h-0 overflow-y-auto sm:overflow-hidden">
+        {/* Track section */}
+        <div className="sm:flex-1 relative">
+          {/* Mobile section header */}
+          {isMobile && (
+            <button
+              onClick={() => setMobileTrackOpen(!mobileTrackOpen)}
+              className="w-full flex items-center justify-between px-3 py-2 bg-f1-card border-b border-f1-border"
+            >
+              <span className="text-[11px] font-bold text-f1-muted uppercase tracking-wider">Track Map</span>
+              <svg className={`w-4 h-4 text-f1-muted transition-transform ${mobileTrackOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
           )}
 
-          <TrackCanvas
-            trackPoints={trackPoints}
-            rotation={rotation}
-            trackStatus={trackStatus}
-            drivers={drivers.filter((d) => !d.retired).map((d) => ({
-              abbr: d.abbr,
-              x: d.x,
-              y: d.y,
-              color: d.color,
-              position: d.position,
-            }))}
-            highlightedDrivers={selectedDrivers}
-            playbackSpeed={replay.speed}
-            showDriverNames={settings.showDriverNames}
-          />
+          {(!isMobile || mobileTrackOpen) && (
+            <div className="h-[35vh] sm:h-full relative">
+              {/* Flag badge */}
+              {trackStatus !== "green" && (
+                <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
+                  <div
+                    className={`px-3 py-1 rounded text-xs font-extrabold uppercase ${
+                      trackStatus === "red"
+                        ? "bg-red-600 text-white"
+                        : trackStatus === "sc"
+                        ? "bg-yellow-500 text-black"
+                        : trackStatus === "vsc"
+                        ? "bg-yellow-500/80 text-black"
+                        : "bg-yellow-400 text-black"
+                    }`}
+                  >
+                    {trackStatus === "red"
+                      ? "Red Flag"
+                      : trackStatus === "sc"
+                      ? "Safety Car"
+                      : trackStatus === "vsc"
+                      ? "Virtual Safety Car"
+                      : "Yellow Flag"}
+                  </div>
+                </div>
+              )}
 
-          {/* Telemetry overlay */}
-          {showTelemetry && (
-            <div className="absolute bottom-2 left-8 z-10">
-              {selectedDrivers.map((abbr) => {
-                const drv = drivers.find((d) => d.abbr === abbr) || null;
-                return <TelemetryChart key={abbr} visible driver={drv} year={year} />;
-              })}
-              {selectedDrivers.length === 0 && (
+              <TrackCanvas
+                trackPoints={trackPoints}
+                rotation={rotation}
+                trackStatus={trackStatus}
+                drivers={drivers.filter((d) => !d.retired).map((d) => ({
+                  abbr: d.abbr,
+                  x: d.x,
+                  y: d.y,
+                  color: d.color,
+                  position: d.position,
+                }))}
+                highlightedDrivers={selectedDrivers}
+                playbackSpeed={replay.speed}
+                showDriverNames={settings.showDriverNames}
+              />
+
+              {/* Telemetry overlay - desktop only */}
+              {!isMobile && showTelemetry && (
+                <div className="absolute bottom-2 left-8 z-10">
+                  {selectedDrivers.map((abbr) => {
+                    const drv = drivers.find((d) => d.abbr === abbr) || null;
+                    return <TelemetryChart key={abbr} visible driver={drv} year={year} />;
+                  })}
+                  {selectedDrivers.length === 0 && (
+                    <TelemetryChart visible driver={null} year={year} />
+                  )}
+                </div>
+              )}
+
+              {/* Telemetry toggle - desktop only */}
+              {!isMobile && (
+                <button
+                  onClick={() => setShowTelemetry(!showTelemetry)}
+                  className="absolute bottom-2 right-2 z-20 px-2 py-1 bg-f1-card border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors"
+                >
+                  {showTelemetry ? "Hide" : "Show"} Telemetry
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Telemetry section - mobile only, collapsible like leaderboard */}
+        <div className="sm:hidden">
+          <button
+            onClick={() => setMobileTelemetryOpen(!mobileTelemetryOpen)}
+            className="w-full flex items-center justify-between px-3 py-2 bg-f1-card border-b border-f1-border"
+          >
+            <span className="text-[11px] font-bold text-f1-muted uppercase tracking-wider">Telemetry</span>
+            <svg className={`w-4 h-4 text-f1-muted transition-transform ${mobileTelemetryOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+          {mobileTelemetryOpen && (
+            <div className="bg-f1-card px-3 py-2 space-y-1">
+              {selectedDrivers.length > 0 ? (
+                selectedDrivers.map((abbr) => {
+                  const drv = drivers.find((d) => d.abbr === abbr) || null;
+                  return <TelemetryChart key={abbr} visible driver={drv} year={year} />;
+                })
+              ) : (
                 <TelemetryChart visible driver={null} year={year} />
               )}
             </div>
           )}
-
-          {/* Telemetry toggle */}
-          <button
-            onClick={() => setShowTelemetry(!showTelemetry)}
-            className="absolute bottom-2 right-2 px-2 py-1 bg-f1-card/80 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors"
-          >
-            {showTelemetry ? "Hide" : "Show"} Telemetry
-          </button>
         </div>
 
-        {/* Leaderboard sidebar */}
+        {/* Leaderboard section */}
         {settings.showLeaderboard && (
-          <div className="flex-shrink-0" style={{ width: leaderboardWidth }}>
-            <Leaderboard
-              drivers={drivers}
-              highlightedDrivers={selectedDrivers}
-              onDriverClick={handleDriverClick}
-              settings={settings}
-              currentTime={replay.frame?.timestamp || 0}
-              isRace={isRace}
-            />
+          <div className={`flex-shrink-0 ${isMobile ? "" : "border-l"} border-f1-border`} style={{ width: isMobile ? "100%" : leaderboardWidth }}>
+            {/* Mobile section header */}
+            {isMobile && (
+              <button
+                onClick={() => setMobileLeaderboardOpen(!mobileLeaderboardOpen)}
+                className="w-full flex items-center justify-between px-3 py-2 bg-f1-card border-b border-f1-border"
+              >
+                <span className="text-[11px] font-bold text-f1-muted uppercase tracking-wider">Leaderboard</span>
+                <svg className={`w-4 h-4 text-f1-muted transition-transform ${mobileLeaderboardOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            )}
+
+            {(!isMobile || mobileLeaderboardOpen) && (
+              <Leaderboard
+                drivers={drivers}
+                highlightedDrivers={selectedDrivers}
+                onDriverClick={handleDriverClick}
+                settings={settings}
+                currentTime={replay.frame?.timestamp || 0}
+                isRace={isRace}
+              />
+            )}
           </div>
         )}
       </div>

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import { ReplayDriver } from "@/hooks/useReplaySocket";
 import { ReplaySettings } from "@/hooks/useSettings";
 import { TYRE_COLORS, TYRE_SHORT, TEAM_ABBR } from "@/lib/constants";
@@ -23,13 +24,112 @@ function formatGap(gap: string | null): string {
   return gap;
 }
 
+function parseGapSeconds(gap: string | null): number | null {
+  if (!gap) return null;
+  if (gap.startsWith("LAP")) return 0;
+  const lapped = gap.match(/^(\d+)\s*L$/);
+  if (lapped) return null; // can't compute interval for lapped cars
+  try {
+    return parseFloat(gap.replace("+", ""));
+  } catch {
+    return null;
+  }
+}
+
+function computeIntervals(sorted: ReplayDriver[]): Map<string, string> {
+  const intervals = new Map<string, string>();
+  for (let i = 0; i < sorted.length; i++) {
+    const drv = sorted[i];
+    if (i === 0) {
+      intervals.set(drv.abbr, "Leader");
+      continue;
+    }
+    const currGap = parseGapSeconds(drv.gap);
+    const prevGap = parseGapSeconds(sorted[i - 1].gap);
+    // Lapped cars: show laps behind
+    const lapped = drv.gap?.match(/^(\d+)\s*L$/);
+    if (lapped) {
+      const prevLapped = sorted[i - 1].gap?.match(/^(\d+)\s*L$/);
+      if (prevLapped) {
+        const diff = parseInt(lapped[1]) - parseInt(prevLapped[1]);
+        if (diff > 0) {
+          intervals.set(drv.abbr, `+${diff} Lap${diff > 1 ? "s" : ""}`);
+        } else {
+          intervals.set(drv.abbr, "+0.000");
+        }
+      } else {
+        intervals.set(drv.abbr, `+${lapped[1]} Lap${parseInt(lapped[1]) > 1 ? "s" : ""}`);
+      }
+      continue;
+    }
+    if (currGap !== null && prevGap !== null) {
+      const diff = currGap - prevGap;
+      intervals.set(drv.abbr, `+${diff.toFixed(3)}`);
+    } else {
+      intervals.set(drv.abbr, formatGap(drv.gap));
+    }
+  }
+  return intervals;
+}
+
 export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick, settings, currentTime, isRace }: Props) {
+  const [showInterval, setShowInterval] = useState(true);
+  const [scale, setScale] = useState(1);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function updateScale() {
+      if (!containerRef.current || !contentRef.current) return;
+      // On mobile (< 640px), don't scale - let it scroll instead
+      if (window.innerWidth < 640) {
+        setScale(1);
+        return;
+      }
+      const containerH = containerRef.current.clientHeight;
+      const contentH = contentRef.current.scrollHeight;
+      if (contentH > containerH && contentH > 0) {
+        setScale(Math.max(0.55, containerH / contentH));
+      } else {
+        setScale(1);
+      }
+    }
+    updateScale();
+    window.addEventListener("resize", updateScale);
+    return () => window.removeEventListener("resize", updateScale);
+  }, [drivers.length, settings.showGapToLeader, isRace]);
+
   const sorted = [...drivers].sort(
     (a, b) => (a.position ?? 999) - (b.position ?? 999),
   );
 
+  const intervals = isRace && showInterval ? computeIntervals(sorted) : null;
+
   return (
-    <div className="bg-f1-card border-l border-f1-border h-full overflow-y-auto">
+    <div ref={containerRef} className="bg-f1-card border-f1-border h-full overflow-y-auto sm:overflow-hidden">
+      <div ref={contentRef} style={{ transform: `scale(${scale})`, transformOrigin: "top left", width: `${100 / scale}%` }}>
+      {/* Interval / Leader toggle - race only */}
+      {isRace && settings.showGapToLeader && (
+        <div className="flex border-b border-f1-border/50">
+          <button
+            onClick={() => setShowInterval(true)}
+            className={`flex-1 py-1 text-[9px] font-bold uppercase tracking-wider transition-colors ${
+              showInterval ? "text-white bg-white/5" : "text-f1-muted hover:text-white"
+            }`}
+          >
+            Interval
+          </button>
+          <button
+            onClick={() => setShowInterval(false)}
+            className={`flex-1 py-1 text-[9px] font-bold uppercase tracking-wider transition-colors ${
+              !showInterval ? "text-white bg-white/5" : "text-f1-muted hover:text-white"
+            }`}
+          >
+            Leader
+          </button>
+        </div>
+      )}
+
       <div className="divide-y divide-f1-border/50">
         {sorted.map((drv) => {
           const isHighlighted = highlightedDrivers.includes(drv.abbr);
@@ -37,6 +137,17 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
           const compound = drv.compound;
           const tyreColor = compound ? (TYRE_COLORS[compound] || "#888") : undefined;
           const tyreLabel = compound ? (TYRE_SHORT[compound] || "?") : null;
+
+          const displayGap = (() => {
+            if (drv.retired) return "Out";
+            if (drv.in_pit && isRace) return "PIT";
+            if (isRace && drv.position === 1) return showInterval ? "Interval" : "Leader";
+            if (drv.gap === "No time") return "No time";
+            if (isRace && intervals) {
+              return intervals.get(drv.abbr) || formatGap(drv.gap);
+            }
+            return formatGap(drv.gap);
+          })();
 
           return (
             <button
@@ -130,15 +241,7 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
               {/* Gap / best time - 56px */}
               {settings.showGapToLeader && (
                 <span className={`w-14 flex-shrink-0 text-xs font-bold text-right ${drv.in_pit && isRace ? "text-yellow-400" : isRace ? "text-f1-muted" : drv.position === 1 ? "text-purple-400" : "text-f1-muted"}`}>
-                  {drv.retired
-                    ? "Out"
-                    : drv.in_pit && isRace
-                    ? "PIT"
-                    : isRace && drv.position === 1
-                    ? "Leader"
-                    : drv.gap === "No time"
-                    ? "No time"
-                    : formatGap(drv.gap)}
+                  {displayGap}
                 </span>
               )}
 
@@ -216,6 +319,7 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
             </button>
           );
         })}
+      </div>
       </div>
     </div>
   );

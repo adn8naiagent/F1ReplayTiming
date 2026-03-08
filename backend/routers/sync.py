@@ -23,11 +23,14 @@ EXTRACT_PROMPT = """You are analyzing a photo of an F1 TV broadcast leaderboard/
 Extract the following data from the image:
 
 1. **Lap number**  - the current lap shown (e.g., "LAP 23/58" means lap 23)
-2. **Driver entries**  - for each visible driver, extract:
+2. **Gap mode** - check what is shown next to the P1 driver. The broadcast shows either "LEADER" (gaps are cumulative from P1) or "INTERVAL" (gaps are to the car directly ahead). This determines how to interpret the gap values.
+3. **Driver entries**  - for each visible driver, extract:
    - Position (1, 2, 3, etc.)
    - Driver abbreviation (3 letters, e.g., VER, NOR, LEC)
-   - Gap to leader (e.g., "+1.234", "+12.456", "1 LAP", "LEADER" or "INTERVAL" for P1)
+   - Gap value exactly as shown on screen
    - Tyre compound if visible (SOFT, MEDIUM, HARD, INTERMEDIATE, WET)
+
+You MUST always return gap to leader (cumulative gap from P1), regardless of what the broadcast shows. If the broadcast shows "INTERVAL" mode, convert to gap to leader by summing the intervals down the order. For example, if P2 shows +1.2 and P3 shows +0.8 in interval mode, return P2 gap as "+1.2" and P3 gap as "+2.0".
 
 Respond with ONLY valid JSON in this exact format, no markdown:
 {
@@ -41,11 +44,12 @@ Respond with ONLY valid JSON in this exact format, no markdown:
 
 Rules:
 - For the leader (P1), set gap to null
-- Keep gap as a string exactly as shown (e.g., "+1.234", "+12.456")
+- Always return gap to leader (cumulative), not interval - convert if needed
+- Keep gap as a string (e.g., "+1.234", "+12.456")
 - If a driver is lapped, use format "1 LAP" or "2 LAPS"
 - If tyre is not visible, set to null
 - Only include drivers you can clearly read
-- Do NOT guess  - only extract what is clearly visible"""
+- Do NOT guess - only extract what is clearly visible"""
 
 
 async def _extract_leaderboard(image_bytes: bytes) -> dict:

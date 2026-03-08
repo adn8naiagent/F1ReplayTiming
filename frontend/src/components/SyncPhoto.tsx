@@ -26,8 +26,6 @@ interface SyncResult {
   };
 }
 
-const isDev = process.env.NODE_ENV === "development";
-
 export default function SyncPhoto({
   year,
   round,
@@ -47,42 +45,156 @@ export default function SyncPhoto({
   const [manualP1, setManualP1] = useState({ abbr: "", gap: "" });
   const [manualP2, setManualP2] = useState({ abbr: "", gap: "" });
   const [manualP3, setManualP3] = useState({ abbr: "", gap: "" });
+  const [manualGapMode, setManualGapMode] = useState<"leader" | "interval">("interval");
   const [manualProcessing, setManualProcessing] = useState(false);
 
-  function compressImage(file: File): Promise<Blob> {
+  const MAX_UPLOAD_BYTES = 2 * 1024 * 1024; // 2MB backend limit
+
+  function resizeToBlob(img: HTMLImageElement, maxDim: number, quality: number): Promise<Blob> {
     return new Promise((resolve, reject) => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const ratio = Math.min(maxDim / width, maxDim / height);
+        width = Math.round(width * ratio);
+        height = Math.round(height * ratio);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return reject(new Error("Canvas not supported"));
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error("Compression failed"))),
+        "image/jpeg",
+        quality,
+      );
+    });
+  }
+
+  function loadImage(file: File): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(file);
       const img = new Image();
       img.onload = () => {
-        const MAX_WIDTH = 800;
-        const MAX_HEIGHT = 800;
-        let { width, height } = img;
-        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
-          const ratio = Math.min(MAX_WIDTH / width, MAX_HEIGHT / height);
-          width = Math.round(width * ratio);
-          height = Math.round(height * ratio);
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) return reject(new Error("Canvas not supported"));
-        ctx.drawImage(img, 0, 0, width, height);
-        canvas.toBlob(
-          (blob) => (blob ? resolve(blob) : reject(new Error("Compression failed"))),
-          "image/jpeg",
-          0.7,
-        );
+        URL.revokeObjectURL(url);
+        resolve(img);
       };
-      img.onerror = () => reject(new Error("Failed to load image"));
-      img.src = URL.createObjectURL(file);
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        reject(new Error("Failed to load image"));
+      };
+      img.src = url;
     });
+  }
+
+  function loadHeic2anyScript(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if ((window as any).heic2any) { resolve(); return; }
+      const existing = document.querySelector('script[data-heic2any]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve());
+        existing.addEventListener("error", () => reject(new Error("Failed to load HEIC converter")));
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
+      script.setAttribute("data-heic2any", "true");
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("Failed to load HEIC converter"));
+      document.head.appendChild(script);
+    });
+  }
+
+  async function convertHeicIfNeeded(file: File): Promise<File | Blob> {
+    const name = file.name.toLowerCase();
+    const isHeic = name.endsWith(".heic") || name.endsWith(".heif") || file.type === "image/heic" || file.type === "image/heif";
+    if (!isHeic) return file;
+    if (typeof window === "undefined") return file;
+    try {
+      await loadHeic2anyScript();
+      const heic2any = (window as any).heic2any;
+      if (typeof heic2any !== "function") {
+        throw new Error("heic2any not available after loading script");
+      }
+      const result = await heic2any({ blob: file, toType: "image/jpeg", quality: 0.85 });
+      const converted = Array.isArray(result) ? result[0] : result;
+      if (!converted || converted.size === 0) {
+        throw new Error("heic2any returned empty result");
+      }
+      return converted;
+    } catch (e) {
+      console.error("HEIC conversion error:", e);
+      throw new Error(`HEIC conversion failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function compressImage(file: File): Promise<Blob> {
+    // Step 1: Try loading file directly (works for JPEG, PNG, and HEIC on Safari/macOS/iOS)
+    let img: HTMLImageElement | null = null;
+    try {
+      img = await loadImage(file);
+    } catch {
+      // Browser can't load this format natively — try HEIC conversion
+    }
+
+    // Step 2: If direct load failed and it looks like HEIC, try converting
+    if (!img) {
+      try {
+        const converted = await convertHeicIfNeeded(file);
+        const toLoad = converted instanceof File ? converted : new File([converted], "photo.jpg", { type: "image/jpeg" });
+        img = await loadImage(toLoad);
+      } catch {
+        // Both approaches failed
+        if (file.size <= MAX_UPLOAD_BYTES) return file;
+        throw new Error("Cannot process this image format.");
+      }
+    }
+
+    // Step 3: Resize to fit under 2MB
+    const attempts: [number, number][] = [
+      [1200, 0.8],
+      [800, 0.7],
+      [800, 0.5],
+      [600, 0.5],
+      [400, 0.4],
+    ];
+    for (const [maxDim, quality] of attempts) {
+      const blob = await resizeToBlob(img, maxDim, quality);
+      if (blob.size <= MAX_UPLOAD_BYTES) return blob;
+    }
+    return resizeToBlob(img, 400, 0.3);
   }
 
   async function handleFile(file: File) {
     setStep("processing");
     setError(null);
 
-    const compressed = await compressImage(file).catch(() => file);
+    let compressed: Blob;
+    try {
+      compressed = await compressImage(file);
+    } catch (e: any) {
+      console.error("Image compression failed:", e);
+      // Fall back to sending the original file if it's small enough
+      if (file.size <= MAX_UPLOAD_BYTES) {
+        compressed = file;
+      } else {
+        const isHeic = file.name.toLowerCase().match(/\.(heic|heif)$/) || file.type.includes("heic") || file.type.includes("heif");
+        setError(isHeic
+          ? "Could not convert HEIC/HEIF image. Try taking a screenshot or converting to JPEG first."
+          : "Image too large to process. Try a smaller photo or convert to JPEG."
+        );
+        setStep("capture");
+        return;
+      }
+    }
+
+    if (compressed.size > MAX_UPLOAD_BYTES) {
+      setError("Image is too large even after compression. Try a smaller photo.");
+      setStep("capture");
+      return;
+    }
+
     const formData = new FormData();
     formData.append("photo", compressed, "photo.jpg");
 
@@ -117,6 +229,15 @@ export default function SyncPhoto({
       return;
     }
 
+    const p2Raw = manualP2.gap.trim() ? parseFloat(manualP2.gap.trim().replace(/^\+/, "")) : null;
+    const p3Raw = manualP3.gap.trim() ? parseFloat(manualP3.gap.trim().replace(/^\+/, "")) : null;
+
+    // Convert interval to gap-to-leader if needed
+    const p2Gap = p2Raw != null ? p2Raw : null;
+    const p3Gap = p3Raw != null
+      ? (manualGapMode === "interval" && p2Raw != null ? p2Raw + p3Raw : p3Raw)
+      : null;
+
     const drivers: Array<{ position: number; abbr: string; gap: string | null }> = [];
     if (manualP1.abbr.trim()) {
       drivers.push({ position: 1, abbr: manualP1.abbr.trim().toUpperCase(), gap: null });
@@ -125,14 +246,14 @@ export default function SyncPhoto({
       drivers.push({
         position: 2,
         abbr: manualP2.abbr.trim().toUpperCase(),
-        gap: manualP2.gap.trim() ? `+${manualP2.gap.trim().replace(/^\+/, "")}` : null,
+        gap: p2Gap != null ? `+${p2Gap}` : null,
       });
     }
     if (manualP3.abbr.trim()) {
       drivers.push({
         position: 3,
         abbr: manualP3.abbr.trim().toUpperCase(),
-        gap: manualP3.gap.trim() ? `+${manualP3.gap.trim().replace(/^\+/, "")}` : null,
+        gap: p3Gap != null ? `+${p3Gap}` : null,
       });
     }
 
@@ -320,14 +441,15 @@ export default function SyncPhoto({
                     Take Photo
                   </button>
 
-                  {isDev && (
-                    <button
-                      onClick={handleUpload}
-                      className="w-full py-3 bg-f1-border hover:bg-white/20 rounded-lg text-white font-bold text-sm transition-colors"
-                    >
-                      Upload Image (dev)
-                    </button>
-                  )}
+                  <button
+                    onClick={handleUpload}
+                    className="w-full py-3 bg-f1-border hover:bg-white/20 rounded-lg text-f1-muted hover:text-white font-bold text-sm transition-colors flex items-center justify-center gap-2"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    Upload Image
+                  </button>
 
                   <input
                     ref={cameraInputRef}
@@ -340,7 +462,7 @@ export default function SyncPhoto({
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/*"
+                    accept="image/*,.heic,.heif"
                     className="hidden"
                     onChange={handleInputChange}
                   />
@@ -458,6 +580,33 @@ export default function SyncPhoto({
                 />
               </div>
 
+              {/* Gap mode toggle */}
+              <div>
+                <label className="text-xs font-bold text-f1-muted uppercase tracking-wider block mb-1.5">
+                  Broadcast showing
+                </label>
+                <div className="flex border border-f1-border rounded-lg overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => setManualGapMode("interval")}
+                    className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+                      manualGapMode === "interval" ? "bg-f1-red text-white" : "bg-f1-dark text-f1-muted hover:text-white"
+                    }`}
+                  >
+                    Interval
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setManualGapMode("leader")}
+                    className={`flex-1 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${
+                      manualGapMode === "leader" ? "bg-f1-red text-white" : "bg-f1-dark text-f1-muted hover:text-white"
+                    }`}
+                  >
+                    Leader
+                  </button>
+                </div>
+              </div>
+
               {/* Driver entries */}
               <div className="space-y-3">
                 <label className="text-xs font-bold text-f1-muted uppercase tracking-wider block">
@@ -477,7 +626,7 @@ export default function SyncPhoto({
                     placeholder="VER"
                     className="w-20 bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red uppercase"
                   />
-                  <span className="text-xs text-f1-muted flex-1 text-right">Leader</span>
+                  <span className="text-xs text-f1-muted flex-1 text-right">{manualGapMode === "interval" ? "Interval" : "Leader"}</span>
                 </div>
 
                 {/* P2 */}

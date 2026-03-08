@@ -21,7 +21,7 @@ function BarPips({
 }) {
   const filled = Math.round((value / max) * pips);
   return (
-    <div className="flex items-end gap-[2px]">
+    <div className="flex items-end gap-[2px] h-[18px]">
       {Array.from({ length: pips }, (_, i) => {
         const h = 6 + i * 3; // ascending heights: 6, 9, 12, 15, 18
         const active = i < filled;
@@ -62,10 +62,10 @@ export default function TelemetryChart({ visible, driver, year }: Props) {
   const drs = driver.drs ?? 0;
 
   return (
-    <div className="bg-f1-card/90 border border-f1-border rounded px-4 py-1.5 backdrop-blur-sm">
-      <div className="flex items-center gap-4">
+    <div className="bg-f1-card/90 border border-f1-border rounded px-3 sm:px-4 py-1.5 backdrop-blur-sm">
+      <div className="flex items-center gap-2 sm:gap-4">
         {/* Driver */}
-        <div className="flex items-center gap-1.5 w-[42px] shrink-0">
+        <div className="w-[38px] sm:w-[42px] flex items-center gap-1 shrink-0">
           <span
             className="w-1 h-4 rounded-sm shrink-0"
             style={{ backgroundColor: driver.color }}
@@ -76,38 +76,39 @@ export default function TelemetryChart({ visible, driver, year }: Props) {
         </div>
 
         {/* Speed */}
-        <div className="flex items-center gap-1 w-[85px] shrink-0">
-          <span className="text-[9px] font-bold text-f1-muted uppercase">Spd</span>
-          <span className="text-xs font-extrabold text-white tabular-nums w-[26px] text-right">
+        <div className="w-[50px] sm:w-[85px] flex items-center shrink-0">
+          <span className="text-[9px] font-bold text-f1-muted uppercase w-[20px] sm:w-auto">Spd</span>
+          <span className="text-[11px] sm:text-xs font-extrabold text-white tabular-nums text-right w-[26px] sm:w-[26px]">
             {speed}
           </span>
-          <span className="text-[8px] text-f1-muted">km/h</span>
+          <span className="text-[8px] text-f1-muted hidden sm:inline ml-1">km/h</span>
         </div>
 
         {/* Throttle */}
-        <div className="flex items-center gap-1 w-[50px] shrink-0">
-          <span className="text-[9px] font-bold text-f1-muted uppercase">Thr</span>
+        <div className="w-[52px] sm:w-[50px] flex items-center gap-[3px] shrink-0">
+          <span className="text-[9px] font-bold text-f1-muted uppercase w-[20px] sm:w-auto">Thr</span>
           <BarPips value={throttle} max={100} color="#22C55E" />
         </div>
 
         {/* Brake */}
-        <div className="flex items-center gap-1 w-[48px] shrink-0">
-          <span className="text-[9px] font-bold text-f1-muted uppercase">Brk</span>
+        <div className="w-[52px] sm:w-[48px] flex items-center gap-[3px] shrink-0">
+          <span className="text-[9px] font-bold text-f1-muted uppercase w-[20px] sm:w-auto">Brk</span>
           <BarPips value={brake} max={100} color="#EF4444" />
         </div>
 
         {/* Gear */}
-        <div className="flex items-center gap-1 w-[38px] shrink-0">
-          <span className="text-[9px] font-bold text-f1-muted uppercase">Gear</span>
-          <span className="text-xs font-extrabold text-white tabular-nums w-[10px] text-center">
+        <div className="w-[26px] sm:w-[38px] flex items-center gap-[2px] shrink-0">
+          <span className="text-[9px] font-bold text-f1-muted uppercase w-[10px] sm:hidden">G</span>
+          <span className="text-[9px] font-bold text-f1-muted uppercase hidden sm:inline">Gear</span>
+          <span className="text-[11px] sm:text-xs font-extrabold text-white tabular-nums w-[10px] sm:w-[10px] text-center">
             {gear === 0 ? "N" : gear}
           </span>
         </div>
 
         {/* RPM */}
-        <div className="flex items-center gap-1 w-[90px] shrink-0">
-          <span className="text-[9px] font-bold text-f1-muted uppercase">RPM</span>
-          <span className="text-[10px] font-extrabold text-white tabular-nums w-[32px] text-right">
+        <div className="w-[62px] sm:w-[90px] flex items-center gap-[5px] shrink-0">
+          <span className="text-[9px] font-bold text-f1-muted uppercase hidden sm:inline">RPM</span>
+          <span className="text-[10px] font-extrabold text-white tabular-nums text-right w-[28px] sm:w-[32px]">
             {Math.round(rpm / 100) / 10}k
           </span>
           <BarPips value={rpm} max={15000} color="#F59E0B" />
@@ -116,7 +117,7 @@ export default function TelemetryChart({ visible, driver, year }: Props) {
         {/* DRS (not available from 2026) */}
         {hasDrs && (
           <span
-            className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded ${
+            className={`w-[28px] sm:w-[32px] text-center text-[9px] font-extrabold py-0.5 rounded shrink-0 ${
               drs >= 10
                 ? "text-green-400 bg-green-400/10 border border-green-400/30"
                 : "text-f1-muted/40 border border-f1-border"

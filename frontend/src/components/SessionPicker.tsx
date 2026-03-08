@@ -28,6 +28,38 @@ interface SeasonsResponse {
   seasons: number[];
 }
 
+const COUNTRY_FLAGS: Record<string, string> = {
+  "Australia": "🇦🇺",
+  "Austria": "🇦🇹",
+  "Azerbaijan": "🇦🇿",
+  "Bahrain": "🇧🇭",
+  "Belgium": "🇧🇪",
+  "Brazil": "🇧🇷",
+  "Canada": "🇨🇦",
+  "China": "🇨🇳",
+  "Hungary": "🇭🇺",
+  "Italy": "🇮🇹",
+  "Japan": "🇯🇵",
+  "Mexico": "🇲🇽",
+  "Monaco": "🇲🇨",
+  "Netherlands": "🇳🇱",
+  "Qatar": "🇶🇦",
+  "Saudi Arabia": "🇸🇦",
+  "Singapore": "🇸🇬",
+  "Spain": "🇪🇸",
+  "United Arab Emirates": "🇦🇪",
+  "United Kingdom": "🇬🇧",
+  "United States": "🇺🇸",
+  "Portugal": "🇵🇹",
+  "France": "🇫🇷",
+  "Germany": "🇩🇪",
+  "Russia": "🇷🇺",
+  "Turkey": "🇹🇷",
+  "South Africa": "🇿🇦",
+  "Las Vegas": "🇺🇸",
+  "Miami": "🇺🇸",
+};
+
 const SESSION_LABELS: Record<string, string> = {
   Race: "R",
   Qualifying: "Q",
@@ -66,7 +98,9 @@ export default function SessionPicker() {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
   const latestRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const { data: seasonsData } = useApi<SeasonsResponse>("/api/seasons");
   const { data: eventsData, loading: eventsLoading } = useApi<EventsResponse>(
@@ -82,6 +116,18 @@ export default function SessionPicker() {
     () => year === currentYear ? displayEvents.find((e) => e.status === "latest") || null : null,
     [displayEvents, year, currentYear],
   );
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    function handleClick(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [menuOpen]);
 
   // Scroll to latest card when events load
   useEffect(() => {
@@ -117,7 +163,10 @@ export default function SessionPicker() {
             </span>
             <StatusPill status={isLatest ? "latest" : displayEvt.status === "latest" ? "available" : displayEvt.status} />
           </div>
-          <h3 className="text-white font-bold mb-1">{evt.event_name}</h3>
+          <h3 className="text-white font-bold mb-1">
+            {COUNTRY_FLAGS[evt.country] && <span className="mr-1.5">{COUNTRY_FLAGS[evt.country]}</span>}
+            {evt.event_name}
+          </h3>
           <p className="text-sm text-f1-muted">
             {evt.location}, {evt.country}
           </p>
@@ -163,24 +212,52 @@ export default function SessionPicker() {
     <div className="min-h-screen bg-f1-dark">
       {/* Header */}
       <div className="bg-f1-card border-b border-f1-border">
-        <div className="max-w-7xl mx-auto px-6 py-8 flex items-center gap-4">
-          <img src="/logo.png" alt="F1 Replay" className="w-[72px] h-[72px] rounded-lg" />
-          <div className="flex-1">
-            <h1 className="text-3xl font-bold text-white mb-1">F1 Replay Timing</h1>
-            <p className="text-f1-muted">Select a session to replay</p>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-8 flex items-center gap-3 sm:gap-4">
+          <img src="/logo.png" alt="F1 Replay" className="w-12 h-12 sm:w-[72px] sm:h-[72px] rounded-lg" />
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl sm:text-3xl font-bold text-white mb-0.5 sm:mb-1">F1 Replay Timing</h1>
+            <p className="text-f1-muted text-xs sm:text-base">Select a session to replay</p>
           </div>
+          {/* Desktop: text buttons */}
           <a
             href="/features"
-            className="px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
+            className="hidden sm:block px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
           >
             Features
           </a>
           <a
             href="/about"
-            className="px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
+            className="hidden sm:block px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
           >
             About
           </a>
+          {/* Mobile: hamburger menu */}
+          <div className="relative sm:hidden" ref={menuRef}>
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="w-9 h-9 flex items-center justify-center rounded bg-f1-border text-f1-muted hover:text-white transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            {menuOpen && (
+              <div className="absolute right-0 top-11 w-40 bg-f1-card border border-f1-border rounded-lg shadow-xl z-50 py-1">
+                <a
+                  href="/features"
+                  className="block px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Features
+                </a>
+                <a
+                  href="/about"
+                  className="block px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  About
+                </a>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

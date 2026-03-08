@@ -28,7 +28,7 @@ const SESSION_LABELS: Record<string, string> = {
 const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string; raceOnly?: boolean; badge?: string }[] = [
   { key: "showTeamAbbr", label: "Team" },
   { key: "showGridChange", label: "Grid position change", raceOnly: true },
-  { key: "showGapToLeader", label: "Gap to leader" },
+  { key: "showGapToLeader", label: "Gap" },
   { key: "showPitStops", label: "Pit stops", raceOnly: true },
   { key: "showTyreType", label: "Tyre type" },
   { key: "showTyreAge", label: "Tyre age" },
@@ -77,86 +77,92 @@ export default function SessionBanner({
     return () => document.removeEventListener("mousedown", handleClick);
   }, [settingsOpen]);
 
+  const weatherBar = weather && settings.showWeather ? (
+    <div className="flex items-center gap-3 text-xs text-f1-muted flex-wrap">
+      {settings.showAirTemp && (
+        <span className="flex items-center gap-1" title="Air temperature">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
+            <path d="m15.98 11.52c-.33-.28-.51-.74-.51-1.26v-4.62c0-1.86-1.38-3.45-3.14-3.63-.98-.1-1.97.22-2.71.89-.73.66-1.15 1.61-1.15 2.6v4.79c0 .53-.19 1-.51 1.3-1.58 1.43-2.27 3.55-1.84 5.66.46 2.31 2.31 4.18 4.61 4.66.43.09.86.13 1.28.13 1.38 0 2.72-.46 3.8-1.34 1.42-1.15 2.23-2.86 2.23-4.68 0-1.72-.75-3.36-2.06-4.51zm-1.43 7.63c-.96.78-2.17 1.07-3.42.81-1.52-.32-2.75-1.56-3.06-3.1-.28-1.41.18-2.83 1.23-3.79.74-.67 1.17-1.69 1.17-2.78v-4.79c0-.43.18-.83.49-1.11.28-.25.63-.39 1.01-.39h.16c.75.08 1.34.79 1.34 1.64v4.62c0 1.09.44 2.1 1.2 2.77.87.76 1.37 1.86 1.37 3 0 1.22-.54 2.36-1.49 3.13z"/>
+            <circle cx="12" cy="16" r="2.47"/>
+          </svg>
+          {weather.air_temp}°C
+        </span>
+      )}
+      {settings.showTrackTemp && (
+        <span className="flex items-center gap-1" title="Track temperature">
+          <svg className="w-3.5 h-3.5" viewBox="0 0 512 512" fill="currentColor">
+            <path d="M162.9.4c-5.7-1.6-11.6 1.7-13.2 7.4L11.1 498.4c-1.6 5.7 1.7 11.6 7.4 13.2c.9.3 1.9.4 2.9.4c4.8 0 9-3.2 10.3-7.8L170.3 13.6c1.6-5.7-1.7-11.6-7.4-13.2z"/>
+            <path d="M500.9 498.4L362.3 7.8c-1.6-5.7-7.5-9-13.2-7.4-5.7 1.6-9 7.5-7.4 13.2l138.7 490.7c1.3 4.6 5.5 7.8 10.3 7.8 1 0 2-.1 2.9-.4 5.7-1.6 9-7.5 7.4-13.2z"/>
+            <path d="M256 405.3c-5.9 0-10.7 4.8-10.7 10.7v85.3c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7V416c0-5.9-4.8-10.7-10.7-10.7z"/>
+            <path d="M256 234.7c-5.9 0-10.7 4.8-10.7 10.7v85.3c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7v-85.3c0-5.9-4.8-10.7-10.7-10.7z"/>
+            <path d="M256 85.3c-5.9 0-10.7 4.8-10.7 10.7v64c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7v-64c0-5.9-4.8-10.7-10.7-10.7z"/>
+            <path d="M256 0c-5.9 0-10.7 4.8-10.7 10.7V32c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7V10.7C266.7 4.8 261.9 0 256 0z"/>
+          </svg>
+          {weather.track_temp}°C
+        </span>
+      )}
+      {settings.showHumidity && (
+        <span className="flex items-center gap-1" title="Humidity">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 3C12 3 5 11 5 15a7 7 0 0014 0c0-4-7-12-7-12z" />
+          </svg>
+          {weather.humidity}%
+        </span>
+      )}
+      {settings.showRainfall && (
+        <span className={`flex items-center gap-1 ${weather.rainfall ? "text-blue-400" : ""}`} title="Rainfall">
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-4.584-7A6 6 0 003 15z" />
+          </svg>
+          {weather.rainfall ? "Rain" : "Dry"}
+        </span>
+      )}
+      {settings.showWind && (
+        <span className="flex items-center gap-1" title={`Wind direction: ${weather.wind_direction}°`}>
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+            style={{ transform: `rotate(${weather.wind_direction}deg)` }}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-4 4m4-4l4 4" />
+          </svg>
+          {weather.wind_speed} m/s
+        </span>
+      )}
+    </div>
+  ) : null;
+
   return (
     <>
-      <div className="bg-f1-card border-b border-f1-border px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="bg-f1-card border-b border-f1-border px-3 sm:px-6 py-2 sm:py-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
           <a href="/" className="flex-shrink-0">
-            <img src="/logo.png" alt="Home" className="w-10 h-10 rounded-lg hover:opacity-80 transition-opacity" />
+            <img src="/logo.png" alt="Home" className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg hover:opacity-80 transition-opacity" />
           </a>
-          <div>
-            <h1 className="text-sm font-extrabold text-white">
+          <div className="min-w-0">
+            <h1 className="text-xs sm:text-sm font-extrabold text-white truncate">
               {year} {eventName}
             </h1>
-            <p className="text-xs font-bold text-f1-muted">
+            <p className="text-[10px] sm:text-xs font-bold text-f1-muted truncate">
               {circuit}, {country}
             </p>
           </div>
         </div>
 
-        {/* Weather - positioned above track area, not leaderboard */}
-        {weather && settings.showWeather && (
-          <div className="flex items-center gap-3 text-xs text-f1-muted ml-auto mr-48">
-            {settings.showAirTemp && (
-              <span className="flex items-center gap-1" title="Air temperature">
-                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="currentColor">
-                  <path d="m15.98 11.52c-.33-.28-.51-.74-.51-1.26v-4.62c0-1.86-1.38-3.45-3.14-3.63-.98-.1-1.97.22-2.71.89-.73.66-1.15 1.61-1.15 2.6v4.79c0 .53-.19 1-.51 1.3-1.58 1.43-2.27 3.55-1.84 5.66.46 2.31 2.31 4.18 4.61 4.66.43.09.86.13 1.28.13 1.38 0 2.72-.46 3.8-1.34 1.42-1.15 2.23-2.86 2.23-4.68 0-1.72-.75-3.36-2.06-4.51zm-1.43 7.63c-.96.78-2.17 1.07-3.42.81-1.52-.32-2.75-1.56-3.06-3.1-.28-1.41.18-2.83 1.23-3.79.74-.67 1.17-1.69 1.17-2.78v-4.79c0-.43.18-.83.49-1.11.28-.25.63-.39 1.01-.39h.16c.75.08 1.34.79 1.34 1.64v4.62c0 1.09.44 2.1 1.2 2.77.87.76 1.37 1.86 1.37 3 0 1.22-.54 2.36-1.49 3.13z"/>
-                  <circle cx="12" cy="16" r="2.47"/>
-                </svg>
-                {weather.air_temp}°C
-              </span>
-            )}
-            {settings.showTrackTemp && (
-              <span className="flex items-center gap-1" title="Track temperature">
-                <svg className="w-3.5 h-3.5" viewBox="0 0 512 512" fill="currentColor">
-                  <path d="M162.9.4c-5.7-1.6-11.6 1.7-13.2 7.4L11.1 498.4c-1.6 5.7 1.7 11.6 7.4 13.2c.9.3 1.9.4 2.9.4c4.8 0 9-3.2 10.3-7.8L170.3 13.6c1.6-5.7-1.7-11.6-7.4-13.2z"/>
-                  <path d="M500.9 498.4L362.3 7.8c-1.6-5.7-7.5-9-13.2-7.4-5.7 1.6-9 7.5-7.4 13.2l138.7 490.7c1.3 4.6 5.5 7.8 10.3 7.8 1 0 2-.1 2.9-.4 5.7-1.6 9-7.5 7.4-13.2z"/>
-                  <path d="M256 405.3c-5.9 0-10.7 4.8-10.7 10.7v85.3c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7V416c0-5.9-4.8-10.7-10.7-10.7z"/>
-                  <path d="M256 234.7c-5.9 0-10.7 4.8-10.7 10.7v85.3c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7v-85.3c0-5.9-4.8-10.7-10.7-10.7z"/>
-                  <path d="M256 85.3c-5.9 0-10.7 4.8-10.7 10.7v64c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7v-64c0-5.9-4.8-10.7-10.7-10.7z"/>
-                  <path d="M256 0c-5.9 0-10.7 4.8-10.7 10.7V32c0 5.9 4.8 10.7 10.7 10.7s10.7-4.8 10.7-10.7V10.7C266.7 4.8 261.9 0 256 0z"/>
-                </svg>
-                {weather.track_temp}°C
-              </span>
-            )}
-            {settings.showHumidity && (
-              <span className="flex items-center gap-1" title="Humidity">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 3C12 3 5 11 5 15a7 7 0 0014 0c0-4-7-12-7-12z" />
-                </svg>
-                {weather.humidity}%
-              </span>
-            )}
-            {settings.showRainfall && (
-              <span className={`flex items-center gap-1 ${weather.rainfall ? "text-blue-400" : ""}`} title="Rainfall">
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 15a4 4 0 004 4h9a5 5 0 10-4.584-7A6 6 0 003 15z" />
-                </svg>
-                {weather.rainfall ? "Rain" : "Dry"}
-              </span>
-            )}
-            {settings.showWind && (
-              <span className="flex items-center gap-1" title={`Wind direction: ${weather.wind_direction}°`}>
-                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                  style={{ transform: `rotate(${weather.wind_direction}deg)` }}
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 19V5m0 0l-4 4m4-4l4 4" />
-                </svg>
-                {weather.wind_speed} m/s
-              </span>
-            )}
+        {/* Weather - desktop only (inline in header) */}
+        {weatherBar && (
+          <div className="hidden sm:flex items-center gap-3 ml-auto mr-48">
+            {weatherBar}
           </div>
         )}
 
-        <div className="flex items-center gap-3">
-          <div className="bg-f1-red px-4 py-1 rounded text-white font-extrabold text-xs uppercase">
+        <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
+          <div className="bg-f1-red px-2 sm:px-4 py-1 rounded text-white font-extrabold text-[10px] sm:text-xs uppercase">
             {SESSION_LABELS[sessionType] || sessionType}
           </div>
 
-          {/* Features link */}
+          {/* Features link - hidden on mobile */}
           <a
             href="/features"
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-white/10 transition-colors text-f1-muted hover:text-white"
+            className="hidden sm:flex w-9 h-9 items-center justify-center rounded hover:bg-white/10 transition-colors text-f1-muted hover:text-white"
             title="Features"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -164,10 +170,10 @@ export default function SessionBanner({
             </svg>
           </a>
 
-          {/* Info button */}
+          {/* Info button - hidden on mobile */}
           <button
             onClick={() => setInfoOpen(true)}
-            className="w-9 h-9 flex items-center justify-center rounded hover:bg-white/10 transition-colors text-f1-muted hover:text-white"
+            className="hidden sm:flex w-9 h-9 items-center justify-center rounded hover:bg-white/10 transition-colors text-f1-muted hover:text-white"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <circle cx="12" cy="12" r="10" />
@@ -179,9 +185,9 @@ export default function SessionBanner({
           <div className="relative" ref={settingsRef}>
             <button
               onClick={() => setSettingsOpen(!settingsOpen)}
-              className="w-9 h-9 flex items-center justify-center rounded hover:bg-white/10 transition-colors text-f1-muted hover:text-white"
+              className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center rounded hover:bg-white/10 transition-colors text-f1-muted hover:text-white"
             >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4 sm:w-5 sm:h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
@@ -315,6 +321,13 @@ export default function SessionBanner({
           </div>
         </div>
       </div>
+
+      {/* Weather bar - mobile only (separate row below header) */}
+      {weatherBar && (
+        <div className="sm:hidden bg-f1-card border-b border-f1-border px-3 py-1.5">
+          {weatherBar}
+        </div>
+      )}
 
       {/* Info modal */}
       {infoOpen && (
