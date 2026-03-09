@@ -22,16 +22,19 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Start background auto-precompute task
-    task = asyncio.create_task(auto_precompute_loop())
-    logger.info("Auto-precompute background task scheduled")
+    task = None
+    if not os.environ.get("DISABLE_AUTO_PRECOMPUTE", "").lower() in ("1", "true", "yes"):
+        task = asyncio.create_task(auto_precompute_loop())
+        logger.info("Auto-precompute background task scheduled")
+    else:
+        logger.info("Auto-precompute DISABLED via DISABLE_AUTO_PRECOMPUTE env var")
     yield
-    # Cancel on shutdown
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(
@@ -95,6 +98,11 @@ app.include_router(replay.router)
 app.include_router(telemetry.router)
 app.include_router(sync.router)
 app.include_router(live_router.router)
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "F1 Replay Timing API"}
 
 
 @app.get("/api/health")
