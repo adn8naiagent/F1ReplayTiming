@@ -24,7 +24,24 @@ jobs:
         run: |
           git remote add upstream https://github.com/adn8naiagent/F1ReplayTiming.git
           git fetch upstream
-          git merge upstream/main --no-edit --allow-unrelated-histories || true
+
+          # Merge upstream, preferring OUR changes on conflict (ours strategy)
+          git merge upstream/main --no-edit --allow-unrelated-histories \
+            -X ours \
+            --message "chore: sync upstream (ours strategy on conflicts)" || true
+
+          # Always restore files we own exclusively (never let upstream overwrite them)
+          git checkout HEAD -- \
+            backend/routers/live.py \
+            backend/services/openf1.py \
+            backend/services/auto_precompute.py \
+            backend/main.py \
+            frontend/src/app/live/page.tsx \
+            frontend/src/hooks/useLiveTiming.ts \
+            frontend/src/components/SessionBanner.tsx \
+            frontend/src/components/SessionPicker.tsx \
+            .github/workflows/sync-upstream.yml \
+            2>/dev/null || true
 
       - name: Push
         run: git push origin main
