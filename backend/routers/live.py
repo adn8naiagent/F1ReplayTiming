@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -54,9 +54,14 @@ async def live_status():
     elif date_start and date_end:
         try:
             end_dt = datetime.fromisoformat(date_end.replace("Z", "+00:00"))
-            is_active = now <= end_dt
+            # Consider session live up to 30 min after official end
+            is_active = now <= end_dt + timedelta(minutes=30)
         except (ValueError, AttributeError):
             pass
+
+    # Only report as live if the session is actually ongoing
+    if not is_active:
+        return {"live": False, "active": False, "session": None}
 
     return {
         "live": True,
