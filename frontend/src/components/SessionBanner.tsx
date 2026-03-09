@@ -13,6 +13,7 @@ interface Props {
   settings?: ReplaySettings;
   onSettingChange?: (key: keyof ReplaySettings, value: boolean) => void;
   weather?: WeatherData;
+  isLive?: boolean;
 }
 
 const SESSION_LABELS: Record<string, string> = {
@@ -61,6 +62,7 @@ export default function SessionBanner({
   settings: settingsProp,
   onSettingChange,
   weather,
+  isLive,
 }: Props) {
   const settings = settingsProp || DEFAULT_SETTINGS;
   const isRace = sessionType === "R" || sessionType === "S";
@@ -159,6 +161,12 @@ export default function SessionBanner({
         )}
 
         <div className="flex items-center gap-1 sm:gap-3 flex-shrink-0">
+          {isLive && (
+            <div className="flex items-center gap-1.5 px-2 sm:px-3 py-1 bg-red-600 rounded text-white font-extrabold text-[10px] sm:text-xs uppercase">
+              <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+              LIVE
+            </div>
+          )}
           <div className="bg-f1-red px-2 sm:px-4 py-1 rounded text-white font-extrabold text-[10px] sm:text-xs uppercase">
             {SESSION_LABELS[sessionType] || sessionType}
           </div>

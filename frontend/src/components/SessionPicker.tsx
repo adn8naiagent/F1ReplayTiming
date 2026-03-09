@@ -234,6 +234,13 @@ export default function SessionPicker() {
           </div>
           {/* Desktop: text buttons */}
           <a
+            href="/live"
+            className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-red-600 text-white text-sm font-bold rounded hover:bg-red-700 transition-colors"
+          >
+            <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+            Live
+          </a>
+          <a
             href="/features"
             className="hidden sm:block px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
           >
@@ -257,6 +264,13 @@ export default function SessionPicker() {
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-11 w-40 bg-f1-card border border-f1-border rounded-lg shadow-xl z-50 py-1">
+                <a
+                  href="/live"
+                  className="flex items-center gap-1.5 px-4 py-2.5 text-sm font-bold text-red-400 hover:text-red-300 hover:bg-white/5 transition-colors"
+                >
+                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" />
+                  Live
+                </a>
                 <a
                   href="/features"
                   className="block px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"

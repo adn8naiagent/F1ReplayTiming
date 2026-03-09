@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from auth import is_auth_enabled, verify_token
 from routers import sessions, track, laps, results, replay, telemetry, sync
 from routers import auth_routes
+from routers import live as live_router
 from services.auto_precompute import auto_precompute_loop
 
 load_dotenv()
@@ -93,6 +94,7 @@ app.include_router(results.router)
 app.include_router(replay.router)
 app.include_router(telemetry.router)
 app.include_router(sync.router)
+app.include_router(live_router.router)
 
 
 @app.get("/api/health")
