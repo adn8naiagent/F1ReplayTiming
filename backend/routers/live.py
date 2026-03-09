@@ -222,7 +222,7 @@ async def live_ws(websocket: WebSocket):
         drivers_raw = await asyncio.to_thread(get_session_drivers, session_key)
         driver_map = _build_driver_map(drivers_raw)
 
-        # Send session info
+        # Send session info with track data
         await websocket.send_json({
             "type": "session_info",
             "data": {
@@ -232,6 +232,7 @@ async def live_ws(websocket: WebSocket):
                 "circuit": session.get("circuit_short_name", ""),
                 "country": session.get("country_name", ""),
                 "session_type": session.get("session_type", "Race"),
+                "track_points": track_points,
                 "drivers": [
                     {
                         "abbreviation": info["abbr"],
@@ -250,8 +251,9 @@ async def live_ws(websocket: WebSocket):
         last_interval_date = None
         track_norm = None
 
-        # Build track normalization from first batch of location data
+        # Build track normalization and track outline from location data
         initial_locs = await asyncio.to_thread(get_car_locations, session_key)
+        track_points = []
         if initial_locs:
             xs = [loc.get("x", 0) for loc in initial_locs if loc.get("x") is not None]
             ys = [loc.get("y", 0) for loc in initial_locs if loc.get("y") is not None]
@@ -262,6 +264,27 @@ async def live_ws(websocket: WebSocket):
                 if scale == 0:
                     scale = 1
                 track_norm = {"x_min": x_min, "y_min": y_min, "scale": scale}
+
+                # Build track outline from one driver's full lap of locations
+                # Pick the driver with the most location entries
+                from collections import defaultdict
+                driver_locs: dict[int, list[dict]] = defaultdict(list)
+                for loc in initial_locs:
+                    num = loc.get("driver_number")
+                    if num is not None and loc.get("x") is not None and loc.get("y") is not None:
+                        driver_locs[num].append(loc)
+                
+                if driver_locs:
+                    # Pick driver with most points
+                    best_driver = max(driver_locs, key=lambda k: len(driver_locs[k]))
+                    raw_pts = driver_locs[best_driver]
+                    
+                    # Normalize to 0-1 and subsample to keep it reasonable
+                    step = max(1, len(raw_pts) // 500)
+                    for pt in raw_pts[::step]:
+                        nx = (pt["x"] - x_min) / scale
+                        ny = (pt["y"] - y_min) / scale
+                        track_points.append({"x": round(nx, 4), "y": round(ny, 4)})
 
         while True:
             try:

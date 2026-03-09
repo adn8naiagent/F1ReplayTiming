@@ -11,6 +11,7 @@ interface LiveSessionInfo {
   circuit: string;
   country: string;
   session_type: string;
+  track_points?: Array<{ x: number; y: number }>;
   drivers: Array<{
     abbreviation: string;
     driver_number: string;
@@ -24,6 +25,7 @@ interface UseLiveTimingResult {
   connected: boolean;
   sessionInfo: LiveSessionInfo | null;
   frame: ReplayFrame | null;
+  trackPoints: Array<{ x: number; y: number }>;
   error: string | null;
 }
 
@@ -82,5 +84,6 @@ export function useLiveTiming(): UseLiveTimingResult {
     };
   }, [connect]);
 
-  return { connected, sessionInfo, frame, error };
+  const trackPoints = sessionInfo?.track_points || [];
+  return { connected, sessionInfo, frame, trackPoints, error };
 }

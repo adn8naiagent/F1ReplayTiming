@@ -26,7 +26,7 @@ interface LiveStatus {
 
 export default function LivePage() {
   const { data: status, loading } = useApi<LiveStatus>("/api/live/status");
-  const { connected, sessionInfo, frame, error } = useLiveTiming();
+  const { connected, sessionInfo, frame, trackPoints, error } = useLiveTiming();
   const { settings, update: updateSetting } = useSettings();
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
   const [isMobile, setIsMobile] = useState(false);
@@ -189,7 +189,7 @@ export default function LivePage() {
               )}
 
               <TrackCanvas
-                trackPoints={[]}
+                trackPoints={trackPoints}
                 rotation={0}
                 trackStatus={trackStatus}
                 drivers={drivers
