@@ -7,6 +7,7 @@ Uses locks to prevent duplicate processing of the same session.
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 import traceback
 
@@ -18,6 +19,7 @@ from services.f1_data import (
     _get_race_results_sync,
     _get_driver_positions_by_time_sync,
     _get_driver_telemetry_sync,
+    _free_session,
 )
 
 logger = logging.getLogger(__name__)
@@ -92,12 +94,14 @@ def process_session_sync(
         frames = _get_driver_positions_by_time_sync(year, round_num, session_type)
         storage.put_json(f"{base}/replay.json", frames)
         logger.info(f"[{prefix}] Uploaded {len(frames)} replay frames")
+        del frames
+        gc.collect()
     except Exception as e:
         logger.warning(f"[{prefix}] No replay data: {e}")
 
     status("Processing telemetry...")
 
-    # Telemetry per driver
+    # Telemetry per driver - process one at a time to limit peak memory
     try:
         drivers = info.get("drivers", [])
         total_laps_set = set()
@@ -119,9 +123,17 @@ def process_session_sync(
                     continue
             if drv_telemetry:
                 storage.put_json(f"{base}/telemetry/{abbr}.json", drv_telemetry)
+            del drv_telemetry
+            gc.collect()
         logger.info(f"[{prefix}] Uploaded telemetry for {len(drivers)} drivers")
     except Exception as e:
         logger.warning(f"[{prefix}] Telemetry upload issue: {e}")
+
+    # Free the session from RAM now that all data is stored
+    try:
+        _free_session(year, round_num, session_type)
+    except Exception:
+        pass
 
     status("Done")
     logger.info(f"[{prefix}] Done")

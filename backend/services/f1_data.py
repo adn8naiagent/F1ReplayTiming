@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import os
 import logging
 import threading
@@ -211,6 +212,15 @@ def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.S
 
         logger.info(f"Session {year}/{round_num}/{session_type} loaded.")
         return session
+
+
+def _free_session(year: int, round_num: int, session_type: str) -> None:
+    """Remove a session from the in-memory cache to free RAM after processing."""
+    key = _cache_key(year, round_num, session_type)
+    with _session_lock:
+        _session_cache.pop(key, None)
+    gc.collect()
+    logger.info(f"Session {year}/{round_num}/{session_type} freed from cache.")
 
 
 def _get_session_info_sync(year: int, round_num: int, session_type: str = "R") -> dict:
