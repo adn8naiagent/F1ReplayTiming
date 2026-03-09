@@ -1,0 +1,30 @@
+name: Sync with upstream
+
+on:
+  schedule:
+    - cron: "0 6 * * *"  # ogni giorno alle 06:00 UTC
+  workflow_dispatch:       # avviabile anche manualmente da GitHub
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream and merge
+        run: |
+          git remote add upstream https://github.com/adn8naiagent/F1ReplayTiming.git
+          git fetch upstream
+          git merge upstream/main --no-edit --allow-unrelated-histories || true
+
+      - name: Push
+        run: git push origin main
