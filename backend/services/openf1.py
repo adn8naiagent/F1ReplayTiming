@@ -84,13 +84,15 @@ def get_intervals(session_key: int, date_gt: str | None = None) -> list[dict]:
         return []
 
 
-def get_car_locations(session_key: int, date_gt: str | None = None) -> list[dict]:
+def get_car_locations(session_key: int, date_gt: str | None = None, driver_number: int | None = None) -> list[dict]:
     """Get car GPS positions on track."""
     try:
         client = _get_client()
         params: dict = {"session_key": session_key}
         if date_gt:
             params["date>"] = date_gt
+        if driver_number is not None:
+            params["driver_number"] = driver_number
         resp = client.get("/location", params=params)
         resp.raise_for_status()
         return resp.json()

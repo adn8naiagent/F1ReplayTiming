@@ -249,42 +249,44 @@ async def live_ws(websocket: WebSocket):
         # Main polling loop
         last_position_date = None
         last_interval_date = None
+        last_location_date = None
         track_norm = None
 
-        # Build track normalization and track outline from location data
-        initial_locs = await asyncio.to_thread(get_car_locations, session_key)
+        # Build track normalization and track outline from ONE driver's locations
+        # Fetching all drivers would be hundreds of thousands of points -> OOM
         track_points = []
-        if initial_locs:
-            xs = [loc.get("x", 0) for loc in initial_locs if loc.get("x") is not None]
-            ys = [loc.get("y", 0) for loc in initial_locs if loc.get("y") is not None]
-            if xs and ys:
-                x_min, x_max = min(xs), max(xs)
-                y_min, y_max = min(ys), max(ys)
-                scale = max(x_max - x_min, y_max - y_min)
-                if scale == 0:
-                    scale = 1
-                track_norm = {"x_min": x_min, "y_min": y_min, "scale": scale}
+        track_driver = next(iter(driver_map), None)
+        if track_driver is not None:
+            track_locs = await asyncio.to_thread(
+                get_car_locations, session_key, None, track_driver
+            )
+            if track_locs:
+                xs = [loc.get("x", 0) for loc in track_locs if loc.get("x") is not None]
+                ys = [loc.get("y", 0) for loc in track_locs if loc.get("y") is not None]
+                if xs and ys:
+                    x_min, x_max = min(xs), max(xs)
+                    y_min, y_max = min(ys), max(ys)
+                    scale = max(x_max - x_min, y_max - y_min)
+                    if scale == 0:
+                        scale = 1
+                    track_norm = {"x_min": x_min, "y_min": y_min, "scale": scale}
 
-                # Build track outline from one driver's full lap of locations
-                # Pick the driver with the most location entries
-                from collections import defaultdict
-                driver_locs: dict[int, list[dict]] = defaultdict(list)
-                for loc in initial_locs:
-                    num = loc.get("driver_number")
-                    if num is not None and loc.get("x") is not None and loc.get("y") is not None:
-                        driver_locs[num].append(loc)
-                
-                if driver_locs:
-                    # Pick driver with most points
-                    best_driver = max(driver_locs, key=lambda k: len(driver_locs[k]))
-                    raw_pts = driver_locs[best_driver]
-                    
-                    # Normalize to 0-1 and subsample to keep it reasonable
-                    step = max(1, len(raw_pts) // 500)
-                    for pt in raw_pts[::step]:
-                        nx = (pt["x"] - x_min) / scale
-                        ny = (pt["y"] - y_min) / scale
-                        track_points.append({"x": round(nx, 4), "y": round(ny, 4)})
+                    # Subsample to ~400 points for the track outline
+                    step = max(1, len(track_locs) // 400)
+                    for pt in track_locs[::step]:
+                        if pt.get("x") is not None and pt.get("y") is not None:
+                            nx = (pt["x"] - x_min) / scale
+                            ny = (pt["y"] - y_min) / scale
+                            track_points.append({"x": round(nx, 4), "y": round(ny, 4)})
+
+                # Seed last_location_date from track data so the poll loop
+                # only fetches incremental location updates
+                if track_locs:
+                    for loc in reversed(track_locs):
+                        d = loc.get("date")
+                        if d:
+                            last_location_date = d
+                            break
 
         while True:
             try:
@@ -300,8 +302,8 @@ async def live_ws(websocket: WebSocket):
                     )
                 )
 
-                # Get latest car locations (separate, can be large)
-                locations_raw = await asyncio.to_thread(get_car_locations, session_key, last_position_date)
+                # Get latest car locations (incremental only)
+                locations_raw = await asyncio.to_thread(get_car_locations, session_key, last_location_date)
 
                 # Build latest position map (most recent per driver)
                 positions: dict[int, int] = {}
@@ -332,6 +334,9 @@ async def live_ws(websocket: WebSocket):
                     num = loc.get("driver_number")
                     if num is not None:
                         locations[num] = {"x": loc.get("x", 0), "y": loc.get("y", 0)}
+                    date = loc.get("date")
+                    if date:
+                        last_location_date = date
 
                 # Build stints map (latest stint per driver)
                 stints: dict[int, dict] = {}
