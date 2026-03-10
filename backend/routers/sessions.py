@@ -3,7 +3,7 @@ import time
 from copy import deepcopy
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query, HTTPException
+from fastapi import APIRouter, Query, HTTPException, Response
 from services.storage import get_json, put_json
 from services.process import ensure_session_data
 
@@ -71,13 +71,15 @@ def _build_events(year: int) -> dict:
 
 
 @router.get("/seasons")
-async def list_seasons():
+async def list_seasons(response: Response):
+    response.headers["Cache-Control"] = "public, max-age=3600, stale-while-revalidate=86400"
     now = datetime.now(timezone.utc)
     return {"seasons": [s for s in AVAILABLE_SEASONS if s <= now.year]}
 
 
 @router.get("/seasons/{year}/events")
-async def list_events(year: int):
+async def list_events(year: int, response: Response):
+    response.headers["Cache-Control"] = "public, max-age=120, stale-while-revalidate=600"
     now = time.time()
     cached = _events_cache.get(year)
     if cached and (now - cached[1]) < _CACHE_TTL:
