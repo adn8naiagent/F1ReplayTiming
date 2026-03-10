@@ -14,36 +14,38 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch(apiUrl("/api/auth/status"))
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    fetch(apiUrl("/api/auth/status"), { signal: controller.signal })
       .then((res) => res.json())
-      .then((data) => {
+      .then(async (data) => {
         if (!data.auth_enabled) {
           setAuthenticated(true);
+          setChecking(false);
         } else {
           setAuthRequired(true);
-          // Check if we have a cached token that still works
           const token = getToken();
           if (token) {
-            fetch(apiUrl("/api/health"), {
-              headers: { Authorization: `Bearer ${token}` },
-            }).then((res) => {
-              if (res.ok) {
-                setAuthenticated(true);
-              }
-              setChecking(false);
-            }).catch(() => setChecking(false));
-          } else {
-            setChecking(false);
+            try {
+              const res = await fetch(apiUrl("/api/health"), {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (res.ok) setAuthenticated(true);
+            } catch { /* token invalid or network error */ }
           }
+          setChecking(false);
         }
       })
       .catch(() => {
-        // Can't reach backend — assume auth is required so we don't bypass it
-        setAuthRequired(true);
+        // Backend unreachable or timeout — let the user through
+        // (content will show errors naturally if backend is truly down)
+        setAuthenticated(true);
+        setChecking(false);
       })
-      .finally(() => {
-        if (!authRequired) setChecking(false);
-      });
+      .finally(() => clearTimeout(timeout));
+
+    return () => { controller.abort(); clearTimeout(timeout); };
   }, []);
 
   const handleSubmit = async (e: FormEvent) => {
