@@ -71,6 +71,17 @@ const SESSION_LABELS: Record<string, string> = {
   "Practice 3": "FP3",
 };
 
+function formatLocalTime(dateUtc: string | null): string | null {
+  if (!dateUtc) return null;
+  try {
+    const date = new Date(dateUtc);
+    if (isNaN(date.getTime())) return null;
+    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  } catch {
+    return null;
+  }
+}
+
 function StatusPill({ status }: { status: Event["status"] }) {
   switch (status) {
     case "latest":
@@ -180,28 +191,37 @@ export default function SessionPicker() {
             {evt.sessions.map((session) => {
               const code = SESSION_LABELS[session.name];
               if (!code) return null;
+              const localTime = formatLocalTime(session.date_utc);
               if (session.available) {
                 return (
-                  <a
-                    key={session.name}
-                    href={`/replay/${year}/${evt.round_number}?type=${code}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setNavigating(true);
-                    }}
-                    className="px-3 py-1.5 bg-f1-border text-white text-xs font-bold rounded hover:bg-f1-red transition-colors"
-                  >
-                    {session.name}
-                  </a>
+                  <div key={session.name} className="flex flex-col items-center">
+                    {localTime && (
+                      <span className="text-[10px] text-f1-muted mb-1">{localTime}</span>
+                    )}
+                    <a
+                      href={`/replay/${year}/${evt.round_number}?type=${code}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNavigating(true);
+                      }}
+                      className="px-3 py-1.5 bg-f1-border text-white text-xs font-bold rounded hover:bg-f1-red transition-colors"
+                    >
+                      {session.name}
+                    </a>
+                  </div>
                 );
               }
               return (
-                <span
-                  key={session.name}
-                  className="px-3 py-1.5 bg-f1-border/40 text-f1-muted/50 text-xs font-bold rounded cursor-not-allowed"
-                >
-                  {session.name}
-                </span>
+                <div key={session.name} className="flex flex-col items-center">
+                  {localTime && (
+                    <span className="text-[10px] text-f1-muted/50 mb-1">{localTime}</span>
+                  )}
+                  <span
+                    className="px-3 py-1.5 bg-f1-border/40 text-f1-muted/50 text-xs font-bold rounded cursor-not-allowed"
+                  >
+                    {session.name}
+                  </span>
+                </div>
               );
             })}
             {isFuture && (
