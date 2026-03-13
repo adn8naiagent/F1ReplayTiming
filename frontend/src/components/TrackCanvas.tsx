@@ -27,6 +27,10 @@ interface PosEntry {
   duration: number;
 }
 
+function getCanvasWindow(canvas: HTMLCanvasElement | null): Window {
+  return canvas?.ownerDocument?.defaultView || window;
+}
+
 
 export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers, playbackSpeed = 1, showDriverNames = true, sectorOverlay = null }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -83,22 +87,23 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
       if (!running) return;
 
       const canvas = canvasRef.current;
+      const hostWindow = getCanvasWindow(canvas);
       if (!canvas) {
-        requestAnimationFrame(animate);
+        hostWindow.requestAnimationFrame(animate);
         return;
       }
 
       const ctx = canvas.getContext("2d");
       if (!ctx) {
-        requestAnimationFrame(animate);
+        hostWindow.requestAnimationFrame(animate);
         return;
       }
 
-      const dpr = window.devicePixelRatio || 1;
+      const dpr = hostWindow.devicePixelRatio || 1;
       const { w, h } = sizeRef.current;
 
       if (w === 0 || h === 0) {
-        requestAnimationFrame(animate);
+        hostWindow.requestAnimationFrame(animate);
         return;
       }
 
@@ -128,10 +133,11 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
 
       drawDrivers(ctx, interpolated, trackPoints, w, h, rotation, highlightedDrivers, showNamesRef.current);
 
-      requestAnimationFrame(animate);
+      hostWindow.requestAnimationFrame(animate);
     }
 
-    requestAnimationFrame(animate);
+    const hostWindow = getCanvasWindow(canvasRef.current);
+    hostWindow.requestAnimationFrame(animate);
     return () => { running = false; };
   }, [trackPoints, rotation, highlightedDrivers]);
 
@@ -139,11 +145,12 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+    const hostWindow = el.ownerDocument?.defaultView || window;
 
     const rect = el.getBoundingClientRect();
     sizeRef.current = { w: rect.width, h: rect.height };
 
-    const observer = new ResizeObserver((entries) => {
+    const observer = new hostWindow.ResizeObserver((entries) => {
       const entry = entries[0];
       if (entry) {
         sizeRef.current = { w: entry.contentRect.width, h: entry.contentRect.height };
