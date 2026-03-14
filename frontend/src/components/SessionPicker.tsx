@@ -85,7 +85,15 @@ const SESSION_LABELS: Record<string, string> = {
 function formatLocalTime(dateUtc: string | null): string | null {
   if (!dateUtc) return null;
   try {
-    const date = new Date(dateUtc);
+    // Ensure the date string is treated as UTC by appending Z if no timezone indicator
+    let utcStr = dateUtc.trim();
+    if (!utcStr.endsWith("Z") && !utcStr.includes("+") && !utcStr.includes("T")) {
+      // Format like "2026-03-15 03:00:00" → "2026-03-15T03:00:00Z"
+      utcStr = utcStr.replace(" ", "T") + "Z";
+    } else if (utcStr.includes("T") && !utcStr.endsWith("Z") && !utcStr.includes("+")) {
+      utcStr += "Z";
+    }
+    const date = new Date(utcStr);
     if (isNaN(date.getTime())) return null;
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   } catch {
