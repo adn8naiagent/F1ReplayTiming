@@ -209,18 +209,25 @@ export default function SessionPicker() {
               const isLive = liveSession?.year === year && liveSession?.round_number === evt.round_number && liveSession?.session_type === code;
               if (isLive) {
                 return (
-                  <a
-                    key={session.name}
-                    href={`/live/${year}/${evt.round_number}?type=${code}`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setNavigating(true);
-                    }}
-                    className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-700 transition-colors flex items-center gap-1.5"
-                  >
-                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                    {session.name} — LIVE
-                  </a>
+                  <div key={session.name} className="flex flex-col items-center">
+                    {localTime && (
+                      <span className="text-[10px] text-red-400 mb-1 font-medium">{localTime}</span>
+                    )}
+                    <a
+                      href={`/live/${year}/${evt.round_number}?type=${code}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setNavigating(true);
+                      }}
+                      className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-500 transition-colors flex items-center gap-1.5"
+                    >
+                      <span className="relative flex h-1.5 w-1.5">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                        <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-white" />
+                      </span>
+                      {session.name}
+                    </a>
+                  </div>
                 );
               }
               if (session.available) {
@@ -357,11 +364,14 @@ export default function SessionPicker() {
                 <a
                   href={`/live/${liveSession.year}/${liveSession.round_number}?type=${liveSession.session_type}`}
                   onClick={() => setNavigating(true)}
-                  className="block bg-f1-card border border-red-500/50 rounded-xl overflow-hidden hover:border-red-500 transition-all group"
+                  className="block bg-f1-card border border-f1-red/50 rounded-xl overflow-hidden hover:border-f1-red transition-all group"
                 >
                   <div className="px-4 py-4 flex items-center gap-4">
                     <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 rounded text-sm font-extrabold text-white uppercase flex-shrink-0">
-                      <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-white" />
+                      </span>
                       LIVE
                     </div>
                     <div className="flex-1 min-w-0">
