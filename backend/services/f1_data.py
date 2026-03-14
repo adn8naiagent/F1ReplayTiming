@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import os
 import logging
 import threading
+from collections import OrderedDict
 from datetime import datetime, timezone
 from functools import lru_cache
 
@@ -27,8 +29,9 @@ except OSError:
     os.makedirs(CACHE_DIR, exist_ok=True)
     fastf1.Cache.enable_cache(CACHE_DIR)
 
-# In-memory cache for loaded sessions (with lock to prevent concurrent duplicate loads)
-_session_cache: dict[str, fastf1.core.Session] = {}
+# In-memory LRU cache for loaded sessions (evicts oldest when exceeding limit)
+_SESSION_CACHE_MAX = int(os.environ.get("SESSION_CACHE_MAX", "2"))
+_session_cache: OrderedDict[str, fastf1.core.Session] = OrderedDict()
 _session_lock = threading.Lock()
 
 
@@ -189,11 +192,13 @@ async def get_season_events(year: int) -> list[dict]:
 def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.Session:
     key = _cache_key(year, round_num, session_type)
     if key in _session_cache:
+        _session_cache.move_to_end(key)
         return _session_cache[key]
 
     with _session_lock:
         # Double-check after acquiring lock
         if key in _session_cache:
+            _session_cache.move_to_end(key)
             return _session_cache[key]
 
         logger.info(f"Loading session {year}/{round_num}/{session_type} from FastF1...")
@@ -208,9 +213,25 @@ def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.S
         # Only cache if we actually got meaningful data
         if len(session.laps) > 0:
             _session_cache[key] = session
+            # Evict oldest entries if over limit
+            while len(_session_cache) > _SESSION_CACHE_MAX:
+                evicted_key, _ = _session_cache.popitem(last=False)
+                logger.info(f"Session cache evicted: {evicted_key} (limit={_SESSION_CACHE_MAX})")
+            gc.collect()
 
         logger.info(f"Session {year}/{round_num}/{session_type} loaded.")
         return session
+
+
+def clear_session_cache():
+    """Clear all cached sessions and force garbage collection."""
+    with _session_lock:
+        count = len(_session_cache)
+        _session_cache.clear()
+    _availability_cache.clear()
+    gc.collect()
+    logger.info(f"Session cache cleared ({count} sessions evicted)")
+    return count
 
 
 def _get_session_info_sync(year: int, round_num: int, session_type: str = "R") -> dict:

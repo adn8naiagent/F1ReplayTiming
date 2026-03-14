@@ -1,7 +1,10 @@
 import asyncio
+import gc
 import logging
 import math
+import os
 import re
+from collections import OrderedDict
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from services.storage import get_json
@@ -10,8 +13,9 @@ from services.process import ensure_session_data_ws
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["replay"])
 
-# In-memory cache for replay frames loaded from R2
-_replay_cache: dict[str, list[dict]] = {}
+# In-memory LRU cache for replay frames (evicts oldest when exceeding limit)
+_REPLAY_CACHE_MAX = int(os.environ.get("REPLAY_CACHE_MAX", "3"))
+_replay_cache: OrderedDict[str, list[dict]] = OrderedDict()
 
 # In-memory cache for pit loss data
 _pit_loss_cache: dict | None = None
@@ -146,14 +150,29 @@ def _sanitize_frame(frame: dict) -> dict:
 
 def _get_frames_sync(year: int, round_num: int, session_type: str) -> list[dict]:
     key = f"{year}_{round_num}_{session_type}"
-    if key not in _replay_cache:
-        frames = get_json(f"sessions/{year}/{round_num}/{session_type}/replay.json")
-        if frames is None:
-            frames = []
-        for f in frames:
-            _sanitize_frame(f)
-        _replay_cache[key] = frames
+    if key in _replay_cache:
+        _replay_cache.move_to_end(key)
+        return _replay_cache[key]
+    frames = get_json(f"sessions/{year}/{round_num}/{session_type}/replay.json")
+    if frames is None:
+        frames = []
+    for f in frames:
+        _sanitize_frame(f)
+    _replay_cache[key] = frames
+    # Evict oldest entries if over limit
+    while len(_replay_cache) > _REPLAY_CACHE_MAX:
+        evicted_key, _ = _replay_cache.popitem(last=False)
+        logger.info(f"Replay cache evicted: {evicted_key} (limit={_REPLAY_CACHE_MAX})")
     return _replay_cache[key]
+
+
+def clear_replay_cache():
+    """Clear all cached replay frames and force garbage collection."""
+    count = len(_replay_cache)
+    _replay_cache.clear()
+    gc.collect()
+    logger.info(f"Replay cache cleared ({count} entries evicted)")
+    return count
 
 
 async def _get_frames(year: int, round_num: int, session_type: str) -> list[dict]:

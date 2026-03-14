@@ -100,3 +100,21 @@ app.include_router(live_status.router)
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.post("/api/admin/cache/clear")
+async def clear_caches():
+    """Release all in-memory caches to free RAM."""
+    import gc
+    from services.f1_data import clear_session_cache
+    from routers.replay import clear_replay_cache
+
+    sessions_cleared = clear_session_cache()
+    replay_cleared = clear_replay_cache()
+    gc.collect()
+
+    return {
+        "status": "ok",
+        "sessions_cleared": sessions_cleared,
+        "replay_entries_cleared": replay_cleared,
+    }
