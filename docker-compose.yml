@@ -10,7 +10,7 @@ services:
       DATA_DIR: /data
       OPENWEBIF_URL: *openwebif_url  # Optional default OpenWebIF box URL for auto sync
       # Optional - uncomment to enable features
-      OPENROUTER_API_KEY: "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"  # enables photo/screenshot sync (manual entry sync works without this)
+      OPENROUTER_API_KEY: ""  # enables photo/screenshot sync (manual entry sync works without this)
       # AUTH_ENABLED: "true"
       # AUTH_PASSPHRASE: your-passphrase
     volumes:
