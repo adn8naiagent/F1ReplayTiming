@@ -6,12 +6,15 @@ import json
 import logging
 import os
 import re
+import time
 from typing import Optional
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from PIL import Image
 from pillow_heif import register_heif_opener
 from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Body
+from pydantic import BaseModel, Field
 
 register_heif_opener()
 
@@ -57,6 +60,16 @@ Rules:
 - Do NOT guess - only extract what is clearly visible"""
 
 
+class OpenWebifRequest(BaseModel):
+    openwebif_url: str = ""
+    username: str = ""
+    password: str = ""
+
+
+class OpenWebifPlaybackRequest(OpenWebifRequest):
+    action: str = Field(..., pattern="^(play|pause)$")
+
+
 def _convert_to_jpeg(image_bytes: bytes, max_dim: int = 1200, quality: int = 80) -> bytes:
     """Convert any image format to compressed JPEG."""
     img = Image.open(io.BytesIO(image_bytes))
@@ -70,6 +83,81 @@ def _convert_to_jpeg(image_bytes: bytes, max_dim: int = 1200, quality: int = 80)
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=quality)
     return buf.getvalue()
+
+
+def _normalise_openwebif_url(raw_url: str) -> str:
+    value = raw_url.strip() or os.environ.get("OPENWEBIF_URL", "").strip()
+    if not value:
+        raise HTTPException(status_code=400, detail="OpenWebIF IP or URL is required")
+    if not re.match(r"^https?://", value, re.IGNORECASE):
+        value = f"http://{value}"
+
+    parsed = urlparse(value)
+    if not parsed.scheme or not parsed.netloc:
+        raise HTTPException(status_code=400, detail="Enter a valid OpenWebIF IP or URL")
+    if parsed.query or parsed.fragment:
+        raise HTTPException(status_code=400, detail="OpenWebIF URL must not include query or fragment values")
+
+    path = parsed.path.rstrip("/")
+    return urlunparse((parsed.scheme, parsed.netloc, path, "", "", "")).rstrip("/")
+
+
+def _openwebif_auth(username: str, password: str) -> httpx.BasicAuth | None:
+    if username or password:
+        return httpx.BasicAuth(username, password)
+    return None
+
+
+async def _fetch_openwebif_grab(
+    base_url: str,
+    username: str = "",
+    password: str = "",
+) -> tuple[bytes, int, int]:
+    request_started = time.perf_counter()
+    auth = _openwebif_auth(username, password)
+    try:
+        async with httpx.AsyncClient(timeout=15.0, follow_redirects=True, auth=auth) as client:
+            grab_started = time.perf_counter()
+            resp = await client.get(f"{base_url}/grab")
+            grab_finished = time.perf_counter()
+    except httpx.HTTPError as e:
+        logger.error(f"OpenWebIF grab failed for {base_url}: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach OpenWebIF screenshot endpoint")
+
+    if resp.status_code in (401, 403):
+        raise HTTPException(status_code=502, detail="OpenWebIF rejected the screenshot request")
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"OpenWebIF screenshot request failed with status {resp.status_code}",
+        )
+    if not resp.content:
+        raise HTTPException(status_code=502, detail="OpenWebIF returned an empty screenshot")
+
+    capture_offset_ms = max(0, int((((grab_started + grab_finished) / 2) - request_started) * 1000))
+    capture_duration_ms = max(0, int((grab_finished - grab_started) * 1000))
+    return resp.content, capture_offset_ms, capture_duration_ms
+
+
+async def _match_sync_image(year: int, round_num: int, session_type: str, image_bytes: bytes) -> dict:
+    try:
+        image_bytes = _convert_to_jpeg(image_bytes)
+    except Exception as e:
+        logger.error(f"Image conversion failed: {e}")
+        raise HTTPException(status_code=400, detail="Could not process image")
+
+    extracted = await _extract_leaderboard(image_bytes)
+    logger.info(f"Extracted leaderboard: {json.dumps(extracted)}")
+
+    frames = await _get_frames(year, round_num, session_type)
+    if not frames:
+        raise HTTPException(status_code=404, detail="No replay data available")
+
+    result = _match_frame(frames, extracted)
+    logger.info(
+        f"Matched to timestamp={result['timestamp']:.1f}s, lap={result['lap']}, confidence={result['confidence']:.0f}"
+    )
+    return result
 
 
 async def _extract_leaderboard(image_bytes: bytes) -> dict:
@@ -276,24 +364,65 @@ async def sync_from_photo(
     if len(image_bytes) > 20 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="File too large (max 20MB)")
 
-    # Convert to JPEG (handles HEIC, PNG, etc.)
-    try:
-        image_bytes = _convert_to_jpeg(image_bytes)
-    except Exception as e:
-        logger.error(f"Image conversion failed: {e}")
-        raise HTTPException(status_code=400, detail="Could not process image")
+    return await _match_sync_image(year, round_num, type, image_bytes)
 
-    # Extract leaderboard data from image
-    extracted = await _extract_leaderboard(image_bytes)
-    logger.info(f"Extracted leaderboard: {json.dumps(extracted)}")
 
-    # Load replay frames
-    frames = await _get_frames(year, round_num, type)
-    if not frames:
-        raise HTTPException(status_code=404, detail="No replay data available")
-
-    # Match against frames
-    result = _match_frame(frames, extracted)
-    logger.info(f"Matched to timestamp={result['timestamp']:.1f}s, lap={result['lap']}, confidence={result['confidence']:.0f}")
-
+@router.post("/sessions/{year}/{round_num}/sync-auto")
+async def sync_from_openwebif(
+    year: int,
+    round_num: int,
+    body: OpenWebifRequest = Body(...),
+    type: str = Query("R"),
+):
+    base_url = _normalise_openwebif_url(body.openwebif_url)
+    image_bytes, capture_offset_ms, capture_duration_ms = await _fetch_openwebif_grab(
+        base_url,
+        body.username,
+        body.password,
+    )
+    result = await _match_sync_image(year, round_num, type, image_bytes)
+    result["capture_offset_ms"] = capture_offset_ms
+    result["capture_duration_ms"] = capture_duration_ms
+    result["source"] = "openwebif"
     return result
+
+
+@router.post("/openwebif/playback")
+async def control_openwebif_playback(body: OpenWebifPlaybackRequest):
+    base_url = _normalise_openwebif_url(body.openwebif_url)
+    auth = _openwebif_auth(body.username, body.password)
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True, auth=auth) as client:
+            resp = await client.get(
+                f"{base_url}/api/mediaplayercmd",
+                params={"command": body.action},
+            )
+    except httpx.HTTPError as e:
+        logger.error(f"OpenWebIF playback command failed for {base_url}: {e}")
+        raise HTTPException(status_code=502, detail="Could not reach OpenWebIF playback controls")
+
+    if resp.status_code in (401, 403):
+        raise HTTPException(status_code=502, detail="OpenWebIF rejected the playback command")
+    if resp.status_code != 200:
+        raise HTTPException(
+            status_code=502,
+            detail=f"OpenWebIF playback command failed with status {resp.status_code}",
+        )
+
+    try:
+        data = resp.json()
+    except ValueError:
+        data = {}
+
+    if isinstance(data, dict) and data.get("result") is False:
+        raise HTTPException(
+            status_code=502,
+            detail=data.get("message") or f"OpenWebIF could not {body.action} playback",
+        )
+
+    return {
+        "result": True,
+        "action": body.action,
+        "message": data.get("message") if isinstance(data, dict) else None,
+    }

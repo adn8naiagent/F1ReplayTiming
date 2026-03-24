@@ -4,6 +4,8 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
 import { useReplaySocket } from "@/hooks/useReplaySocket";
+import { useAutoSyncSettings } from "@/hooks/useAutoSyncSettings";
+import { useReplayAutoSync } from "@/hooks/useReplayAutoSync";
 import { useSettings } from "@/hooks/useSettings";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
@@ -13,7 +15,7 @@ import TelemetryChart from "@/components/TelemetryChart";
 import SyncPhoto from "@/components/SyncPhoto";
 import PiPWindow from "@/components/PiPWindow";
 import type { SectorOverlay } from "@/lib/trackRenderer";
-import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
+import { ArrowUpRight } from "lucide-react";
 
 interface TrackData {
   track_points: { x: number; y: number }[];
@@ -130,6 +132,7 @@ export default function ReplayPage() {
     });
   }
   const { settings, update: updateSetting } = useSettings();
+  const { settings: autoSyncSettings, save: saveAutoSyncSettings } = useAutoSyncSettings();
 
   const { data: sessionData, loading: sessionLoading, error: sessionError } = useApi<SessionData>(
     `/api/sessions/${year}/${round}?type=${sessionType}`,
@@ -140,6 +143,49 @@ export default function ReplayPage() {
   );
 
   const replay = useReplaySocket(year, round, sessionType);
+  const {
+    status: autoSyncStatus,
+    syncNow: forceAutoSync,
+    syncPlaybackState,
+  } = useReplayAutoSync({
+    year,
+    round,
+    sessionType,
+    settings: autoSyncSettings,
+    replay: {
+      ready: replay.ready,
+      playing: replay.playing,
+      speed: replay.speed,
+      currentTime: replay.frame?.timestamp || 0,
+      totalTime: replay.totalTime,
+      play: replay.play,
+      pause: replay.pause,
+      seek: replay.seek,
+    },
+  });
+
+  const prevAutoEnabledRef = useRef(autoSyncSettings.enabled);
+  useEffect(() => {
+    if (
+      autoSyncSettings.enabled &&
+      !prevAutoEnabledRef.current &&
+      autoSyncSettings.openwebifUrl.trim() &&
+      replay.ready
+    ) {
+      void forceAutoSync();
+    }
+    prevAutoEnabledRef.current = autoSyncSettings.enabled;
+  }, [autoSyncSettings.enabled, autoSyncSettings.openwebifUrl, forceAutoSync, replay.ready]);
+
+  const handlePlay = useCallback(() => {
+    replay.play();
+    void syncPlaybackState("play");
+  }, [replay.play, syncPlaybackState]);
+
+  const handlePause = useCallback(() => {
+    replay.pause();
+    void syncPlaybackState("pause");
+  }, [replay.pause, syncPlaybackState]);
 
   // RC sound notification
   const lastRcCountRef = useRef(0);
@@ -731,14 +777,18 @@ export default function ReplayPage() {
         totalLaps={replay.totalLaps}
         finished={replay.finished}
         showSessionTime={settings.showSessionTime}
-        onPlay={replay.play}
-        onPause={replay.pause}
+        onPlay={handlePlay}
+        onPause={handlePause}
         onSpeedChange={replay.setSpeed}
         onSeek={replay.seek}
         onSeekToLap={replay.seekToLap}
         onReset={replay.reset}
         isRace={isRace}
         onSyncPhoto={() => setShowSyncPhoto(true)}
+        onForceAutoSync={autoSyncSettings.enabled ? () => { void forceAutoSync(); } : undefined}
+        autoSyncEnabled={isRace && autoSyncSettings.enabled}
+        autoSyncLabel={autoSyncStatus.label}
+        autoSyncState={autoSyncStatus.state}
         onPiP={!isMobile && !isIOS ? () => setPipActive(true) : undefined}
         pipActive={pipActive}
         onFullscreen={!isMobile ? () => {
@@ -915,8 +965,8 @@ export default function ReplayPage() {
                 totalLaps={replay.totalLaps}
                 finished={replay.finished}
                 showSessionTime={settings.showSessionTime}
-                onPlay={replay.play}
-                onPause={replay.pause}
+                onPlay={handlePlay}
+                onPause={handlePause}
                 onSpeedChange={replay.setSpeed}
                 onSeek={replay.seek}
                 onSeekToLap={replay.seekToLap}
@@ -937,6 +987,10 @@ export default function ReplayPage() {
           round={round}
           sessionType={sessionType}
           onSync={(timestamp) => replay.seek(timestamp)}
+          autoSyncSettings={autoSyncSettings}
+          autoSyncStatus={autoSyncStatus}
+          onAutoSyncSettingsSave={saveAutoSyncSettings}
+          onAutoSyncNow={(settingsOverride) => forceAutoSync("manual", settingsOverride)}
           onClose={() => setShowSyncPhoto(false)}
         />
       )}

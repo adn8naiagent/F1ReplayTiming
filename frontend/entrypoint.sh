@@ -1,12 +1,21 @@
 #!/bin/sh
-# Replace the build-time placeholder with the runtime NEXT_PUBLIC_API_URL.
-# If NEXT_PUBLIC_API_URL is not set, default to http://localhost:8000.
-RUNTIME_URL="${NEXT_PUBLIC_API_URL:-http://localhost:8000}"
-PLACEHOLDER="__NEXT_PUBLIC_API_URL__"
+# Replace build-time placeholders with runtime public env values.
 
-if [ "$RUNTIME_URL" != "$PLACEHOLDER" ]; then
-  find /app/.next -name "*.js" -exec sed -i "s|$PLACEHOLDER|$RUNTIME_URL|g" {} +
-  echo "Configured API URL: $RUNTIME_URL"
-fi
+escape_sed_replacement() {
+  printf '%s' "$1" | sed 's/[|&]/\\&/g'
+}
+
+replace_public_env() {
+  PLACEHOLDER="$1"
+  VALUE="$2"
+  LABEL="$3"
+  ESCAPED_VALUE=$(escape_sed_replacement "$VALUE")
+
+  find /app/.next -name "*.js" -exec sed -i "s|$PLACEHOLDER|$ESCAPED_VALUE|g" {} +
+  echo "Configured $LABEL: ${VALUE:-<empty>}"
+}
+
+replace_public_env "__NEXT_PUBLIC_API_URL__" "${NEXT_PUBLIC_API_URL:-http://localhost:8000}" "API URL"
+replace_public_env "__NEXT_PUBLIC_OPENWEBIF_URL__" "${NEXT_PUBLIC_OPENWEBIF_URL:-}" "OpenWebIF URL"
 
 exec "$@"

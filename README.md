@@ -20,7 +20,7 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 - **Pit position prediction** (Beta) estimates where a driver would rejoin if they pitted now, with predicted gap ahead and behind, using precomputed pit loss times per circuit with Safety Car and Virtual Safety Car adjustments
 - **Telemetry** for any driver showing speed, throttle, brake, gear, and DRS (2025 and earlier) plotted against track distance
 - **Picture-in-Picture** mode for a compact floating window with track map, race control, leaderboard, and telemetry
-- **Broadcast sync** - match the replay to a recording of a session, either by uploading a screenshot of the timing tower (using AI vision) or by manually entering gap times
+- **Broadcast sync** - match the replay to a recording of a session by uploading a screenshot, entering gap times manually, or auto-syncing live from OpenWebIF
 - **Weather data** including air and track temperature, humidity, wind, and rainfall status
 - **Track status flags** for green, yellow, Safety Car, Virtual Safety Car, and red flag conditions
 - **Playback controls** with 0.5x to 20x speed, skip buttons (5s, 30s, 1m, 5m), lap jumping, and a progress bar
@@ -44,14 +44,17 @@ Requires [Docker](https://docs.docker.com/get-docker/) and Docker Compose.
 Create a `docker-compose.yml` file:
 
 ```yaml
+x-openwebif-url: &openwebif_url ""  # Optional default OpenWebIF box URL, for example http://192.168.1.50
+
 services:
   backend:
     image: ghcr.io/adn8naiagent/f1replaytiming-backend:latest
     ports:
       - "8000:8000"
     environment:
-      - FRONTEND_URL=http://localhost:3000
-      - DATA_DIR=/data
+      FRONTEND_URL: http://localhost:3000
+      DATA_DIR: /data
+      OPENWEBIF_URL: *openwebif_url
     volumes:
       - f1data:/data
       - f1cache:/data/fastf1-cache
@@ -61,7 +64,8 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://localhost:8000  # Change to your backend URL if not using localhost
+      NEXT_PUBLIC_API_URL: http://localhost:8000  # Change to your backend URL if not using localhost
+      NEXT_PUBLIC_OPENWEBIF_URL: *openwebif_url
     depends_on:
       - backend
 
@@ -94,7 +98,7 @@ Open http://localhost:3000. Select any past session and it will be processed on 
 
 #### Network & URL configuration
 
-Two environment variables control how the frontend and backend find each other:
+Two required environment variables control how the frontend and backend find each other:
 
 | Variable | Set on | Purpose |
 |---|---|---|
@@ -127,8 +131,20 @@ frontend:
 
 In this setup your reverse proxy routes `f1.example.com` to the frontend container (port 3000) and `api.f1.example.com` to the backend container (port 8000).
 
+#### OpenWebIF auto-sync configuration
+
+If you want the Auto Sync tab to start with your OpenWebIF box URL already filled in, and to let the backend fall back to that same URL, set these optional variables:
+
+| Variable | Set on | Purpose |
+|---|---|---|
+| `NEXT_PUBLIC_OPENWEBIF_URL` | frontend | Prefills the Auto Sync form with your default OpenWebIF URL |
+| `OPENWEBIF_URL` | backend | Default OpenWebIF URL used when the request body omits it |
+
+If you use the `x-openwebif-url` anchor from the example `docker-compose.yml`, you only need to edit that one line.
+
 #### Optional features
 
+- `OPENWEBIF_URL` / `NEXT_PUBLIC_OPENWEBIF_URL` - optional default OpenWebIF URL for the Auto Sync feature
 - `OPENROUTER_API_KEY` - enables the photo sync feature ([get a key](https://openrouter.ai/))
 - `AUTH_ENABLED` / `AUTH_PASSPHRASE` - restricts access with a passphrase
 
@@ -175,6 +191,9 @@ FRONTEND_URL=http://localhost:3000
 PORT=8000
 DATA_DIR=./data
 
+# Optional - default OpenWebIF URL for Auto Sync
+OPENWEBIF_URL=http://192.168.1.50
+
 # Optional - enables photo/screenshot sync (manual entry sync works without this)
 # Get a key from https://openrouter.ai/
 OPENROUTER_API_KEY=
@@ -187,6 +206,9 @@ AUTH_PASSPHRASE=
 **Frontend** (`frontend/.env`):
 ```
 NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# Optional - prefill the Auto Sync form with your OpenWebIF box URL
+NEXT_PUBLIC_OPENWEBIF_URL=http://192.168.1.50
 ```
 
 
@@ -244,9 +266,15 @@ python precompute.py 2024 2025 --skip-existing
 
 The app also includes a background task that automatically checks for and processes new session data on race weekends (Friday–Monday).
 
-#### Photo Sync Feature
+#### Broadcast Sync Features
 
-The broadcast sync feature lets you match the replay to a recording of a session. You can always sync manually by entering gap times directly. To also enable photo/screenshot sync (where the app reads the timing tower from an image), set an [OpenRouter](https://openrouter.ai/) API key as `OPENROUTER_API_KEY`. It uses a vision model (Gemini Flash) to read the leaderboard from the photo. Any OpenRouter-compatible API key will work.
+The broadcast sync feature supports three modes:
+
+- Manual entry, which works without any extra configuration
+- Photo/screenshot sync, which requires an [OpenRouter](https://openrouter.ai/) API key as `OPENROUTER_API_KEY`
+- OpenWebIF auto sync, which can be preconfigured with `OPENWEBIF_URL` and `NEXT_PUBLIC_OPENWEBIF_URL`
+
+Photo/screenshot sync uses a vision model (Gemini Flash) to read the leaderboard from the image. Any OpenRouter-compatible API key will work.
 
 ## Acknowledgements
 

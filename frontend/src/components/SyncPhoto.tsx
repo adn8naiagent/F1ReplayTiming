@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { getToken } from "@/lib/auth";
+import type { AutoSyncSettings } from "@/hooks/useAutoSyncSettings";
+import type { AutoSyncStatus } from "@/hooks/useReplayAutoSync";
 
 interface Props {
   year: number;
@@ -9,6 +11,10 @@ interface Props {
   sessionType: string;
   onSync: (timestamp: number) => void;
   onClose: () => void;
+  autoSyncSettings: AutoSyncSettings;
+  autoSyncStatus: AutoSyncStatus;
+  onAutoSyncSettingsSave: (settings: AutoSyncSettings) => void;
+  onAutoSyncNow: (settings?: AutoSyncSettings) => void | Promise<void>;
 }
 
 interface SyncResult {
@@ -32,11 +38,17 @@ export default function SyncPhoto({
   sessionType,
   onSync,
   onClose,
+  autoSyncSettings,
+  autoSyncStatus,
+  onAutoSyncSettingsSave,
+  onAutoSyncNow,
 }: Props) {
-  const [tab, setTab] = useState<"photo" | "manual">("photo");
+  const [tab, setTab] = useState<"photo" | "manual" | "auto">("photo");
   const [step, setStep] = useState<"instructions" | "capture" | "processing" | "result">("instructions");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SyncResult | null>(null);
+  const [autoDraft, setAutoDraft] = useState<AutoSyncSettings>(autoSyncSettings);
+  const [autoError, setAutoError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
 
@@ -212,6 +224,34 @@ export default function SyncPhoto({
     setError(null);
   }
 
+  async function handleAutoSave(runSync: boolean = false) {
+    setAutoError(null);
+    const nextSettings: AutoSyncSettings = {
+      ...autoDraft,
+      openwebifUrl: autoDraft.openwebifUrl.trim(),
+      username: autoDraft.username.trim(),
+      intervalSeconds: Math.max(5, Math.round(Number(autoDraft.intervalSeconds) || 60)),
+    };
+
+    if ((nextSettings.enabled || runSync) && !nextSettings.openwebifUrl) {
+      setAutoError("Enter your OpenWebIF IP or URL");
+      return;
+    }
+
+    onAutoSyncSettingsSave(nextSettings);
+    if (runSync) {
+      await onAutoSyncNow(nextSettings);
+    }
+  }
+
+  const autoStatusTone = autoSyncStatus.state === "error"
+    ? "border-red-500/30 bg-red-500/10 text-red-300"
+    : autoSyncStatus.state === "paused"
+      ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+      : autoSyncStatus.state === "synced"
+        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+        : "border-f1-border bg-white/5 text-white";
+
   return (
     <div
       className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4"
@@ -255,6 +295,16 @@ export default function SyncPhoto({
               }`}
             >
               Manual Entry
+            </button>
+            <button
+              onClick={() => { setTab("auto"); resetToStart(); }}
+              className={`flex-1 py-2.5 text-sm font-bold transition-colors ${
+                tab === "auto"
+                  ? "text-white border-b-2 border-f1-red"
+                  : "text-f1-muted hover:text-white"
+              }`}
+            >
+              Auto
             </button>
           </div>
         )}
@@ -585,6 +635,131 @@ export default function SyncPhoto({
               >
                 {manualProcessing ? "Matching..." : "Find Moment"}
               </button>
+            </div>
+          )}
+
+          {tab === "auto" && step !== "result" && (
+            <div className="space-y-4">
+              <p className="text-sm text-f1-muted leading-relaxed">
+                Grab the current frame directly from OpenWebIF and keep the replay aligned while it is playing.
+              </p>
+
+              {autoError && (
+                <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3">
+                  <p className="text-sm text-red-400">{autoError}</p>
+                </div>
+              )}
+
+              <div>
+                <label className="text-xs font-bold text-f1-muted uppercase tracking-wider block mb-1.5">
+                  OpenWebIF IP or URL
+                </label>
+                <input
+                  type="text"
+                  value={autoDraft.openwebifUrl}
+                  onChange={(e) => setAutoDraft({ ...autoDraft, openwebifUrl: e.target.value })}
+                  placeholder="192.168.1.50"
+                  className="w-full bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-bold text-f1-muted uppercase tracking-wider block mb-1.5">
+                    Username
+                  </label>
+                  <input
+                    type="text"
+                    value={autoDraft.username}
+                    onChange={(e) => setAutoDraft({ ...autoDraft, username: e.target.value })}
+                    placeholder="Optional"
+                    className="w-full bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-f1-muted uppercase tracking-wider block mb-1.5">
+                    Password
+                  </label>
+                  <input
+                    type="password"
+                    value={autoDraft.password}
+                    onChange={(e) => setAutoDraft({ ...autoDraft, password: e.target.value })}
+                    placeholder="Optional"
+                    className="w-full bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-f1-muted uppercase tracking-wider block mb-1.5">
+                  Refresh Interval (seconds)
+                </label>
+                <input
+                  type="number"
+                  min="5"
+                  step="5"
+                  value={autoDraft.intervalSeconds}
+                  onChange={(e) => setAutoDraft({ ...autoDraft, intervalSeconds: Number(e.target.value) || 60 })}
+                  className="w-full bg-f1-dark border border-f1-border rounded-lg px-3 py-2 text-sm text-white placeholder:text-f1-muted/50 focus:outline-none focus:border-f1-red"
+                />
+                <p className="text-xs text-f1-muted mt-1">Default is 60 seconds.</p>
+              </div>
+
+              <label className="flex items-start gap-3 rounded-lg border border-f1-border bg-f1-dark px-3 py-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoDraft.syncPause}
+                  onChange={(e) => setAutoDraft({ ...autoDraft, syncPause: e.target.checked })}
+                  className="mt-1 accent-f1-red"
+                />
+                <div>
+                  <p className="text-sm font-bold text-white">Sync pause</p>
+                  <p className="text-xs text-f1-muted mt-1">
+                    Pause the replay when the TV stops advancing, and send play/pause commands back to OpenWebIF when you use the app controls.
+                  </p>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-3 rounded-lg border border-f1-border bg-f1-dark px-3 py-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoDraft.enabled}
+                  onChange={(e) => setAutoDraft({ ...autoDraft, enabled: e.target.checked })}
+                  className="mt-1 accent-f1-red"
+                />
+                <div>
+                  <p className="text-sm font-bold text-white">Enable auto sync</p>
+                  <p className="text-xs text-f1-muted mt-1">
+                    When enabled, the replay will re-check OpenWebIF on the chosen interval while playback is active.
+                  </p>
+                </div>
+              </label>
+
+              <div className={`rounded-lg border px-4 py-3 ${autoStatusTone}`}>
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-bold">{autoSyncStatus.label}</span>
+                  {autoSyncStatus.lastSyncAt && (
+                    <span className="text-xs opacity-80">{new Date(autoSyncStatus.lastSyncAt).toLocaleTimeString()}</span>
+                  )}
+                </div>
+                <p className="text-xs mt-1 opacity-90">{autoSyncStatus.detail}</p>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  onClick={() => handleAutoSave(false)}
+                  className="flex-1 py-3 bg-f1-red hover:bg-red-700 rounded-lg text-white font-bold text-sm transition-colors"
+                >
+                  Save Auto Sync
+                </button>
+                <button
+                  onClick={() => handleAutoSave(true)}
+                  disabled={autoSyncStatus.state === "syncing"}
+                  className="flex-1 py-3 bg-f1-border hover:bg-white/20 rounded-lg text-white font-bold text-sm transition-colors disabled:opacity-50"
+                >
+                  {autoSyncStatus.state === "syncing" ? "Syncing..." : "Sync Now"}
+                </button>
+              </div>
             </div>
           )}
         </div>

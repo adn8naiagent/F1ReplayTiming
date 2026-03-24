@@ -29,6 +29,10 @@ interface Props {
   onSeekToLap?: (lap: number) => void;
   isRace?: boolean;
   onSyncPhoto?: () => void;
+  onForceAutoSync?: () => void;
+  autoSyncEnabled?: boolean;
+  autoSyncLabel?: string;
+  autoSyncState?: "disabled" | "idle" | "syncing" | "synced" | "paused" | "error";
   onPiP?: () => void;
   pipActive?: boolean;
   onFullscreen?: () => void;
@@ -54,6 +58,10 @@ export default function PlaybackControls({
   onSeekToLap,
   isRace,
   onSyncPhoto,
+  onForceAutoSync,
+  autoSyncEnabled,
+  autoSyncLabel,
+  autoSyncState,
   onPiP,
   pipActive,
   onFullscreen,
@@ -75,6 +83,55 @@ export default function PlaybackControls({
   function skip(delta: number) {
     const target = Math.max(0, Math.min(totalTime, currentTime + delta));
     onSeek(target);
+  }
+
+  function nudgeSync(delta: number) {
+    const target = Math.max(0, Math.min(totalTime, currentTime + delta));
+    onSeek(target);
+  }
+
+  function renderSyncControls() {
+    if (!onSyncPhoto) return null;
+
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => nudgeSync(-1)}
+          className="px-3 py-1.5 rounded border border-f1-border hover:bg-white/10 transition-colors text-f1-muted hover:text-white text-xs font-bold"
+          title="Move replay back 1 second"
+        >
+          -1s
+        </button>
+        <button
+          onClick={onSyncPhoto}
+          className="px-3 py-1.5 rounded border border-f1-border hover:bg-white/10 transition-colors text-f1-muted hover:text-white text-xs font-bold"
+        >
+          Sync
+        </button>
+        <button
+          onClick={() => nudgeSync(1)}
+          className="px-3 py-1.5 rounded border border-f1-border hover:bg-white/10 transition-colors text-f1-muted hover:text-white text-xs font-bold"
+          title="Move replay forward 1 second"
+        >
+          +1s
+        </button>
+      </div>
+    );
+  }
+
+  function autoSyncButtonClass() {
+    switch (autoSyncState) {
+      case "synced":
+        return "border-emerald-500/40 text-emerald-200 hover:bg-emerald-500/10";
+      case "paused":
+        return "border-amber-500/40 text-amber-200 hover:bg-amber-500/10";
+      case "error":
+        return "border-red-500/40 text-red-300 hover:bg-red-500/10";
+      case "syncing":
+        return "border-sky-500/40 text-sky-200 hover:bg-sky-500/10";
+      default:
+        return "border-f1-border text-f1-muted hover:text-white hover:bg-white/10";
+    }
   }
 
   // Play/pause button (shared between mobile compact and full views)
@@ -219,12 +276,14 @@ export default function PlaybackControls({
           {/* Race: Sync + Lap selector */}
           {isRace && (
             <div className="flex items-center justify-center gap-3">
-              {onSyncPhoto && (
+              {renderSyncControls()}
+              {autoSyncEnabled && onForceAutoSync && (
                 <button
-                  onClick={onSyncPhoto}
-                  className="px-3 py-1.5 rounded border border-f1-border hover:bg-white/10 transition-colors text-f1-muted hover:text-white text-xs font-bold"
+                  onClick={onForceAutoSync}
+                  disabled={autoSyncState === "syncing"}
+                  className={`px-3 py-1.5 rounded border transition-colors text-xs font-bold disabled:opacity-60 ${autoSyncButtonClass()}`}
                 >
-                  Sync
+                  Auto: {autoSyncLabel || "Sync"}
                 </button>
               )}
               {onSeekToLap && (
@@ -336,12 +395,14 @@ export default function PlaybackControls({
                 {formatTime(currentTime)}{showSessionTime && ` / ${formatTime(totalTime)}`}
               </span>
 
-              {onSyncPhoto && (
+              {renderSyncControls()}
+              {autoSyncEnabled && onForceAutoSync && (
                 <button
-                  onClick={onSyncPhoto}
-                  className="px-3 py-1.5 rounded border border-f1-border hover:bg-white/10 transition-colors text-f1-muted hover:text-white text-xs font-bold"
+                  onClick={onForceAutoSync}
+                  disabled={autoSyncState === "syncing"}
+                  className={`px-3 py-1.5 rounded border transition-colors text-xs font-bold disabled:opacity-60 ${autoSyncButtonClass()}`}
                 >
-                  Sync
+                  Auto: {autoSyncLabel || "Sync"}
                 </button>
               )}
 
