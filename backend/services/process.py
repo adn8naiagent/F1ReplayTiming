@@ -17,7 +17,7 @@ from services.f1_data import (
     _get_lap_data_sync,
     _get_race_results_sync,
     _get_driver_positions_by_time_sync,
-    _get_driver_telemetry_sync,
+    _get_driver_telemetry_bulk_sync,
 )
 
 logger = logging.getLogger(__name__)
@@ -151,21 +151,22 @@ def process_session_sync(
             for lap in laps:
                 total_laps_set.add(lap["lap_number"])
 
+        lap_numbers = sorted(total_laps_set)
+        saved = 0
         for drv in drivers:
             abbr = drv["abbreviation"]
-            drv_telemetry = {}
-            for lap_num in sorted(total_laps_set):
-                try:
-                    tel = _get_driver_telemetry_sync(
-                        year, round_num, session_type, abbr, lap_num
-                    )
-                    if tel:
-                        drv_telemetry[str(lap_num)] = tel
-                except Exception:
-                    continue
+            try:
+                drv_telemetry = _get_driver_telemetry_bulk_sync(
+                    year, round_num, session_type, abbr, lap_numbers
+                )
+            except Exception:
+                drv_telemetry = {}
             if drv_telemetry:
                 storage.put_json(f"{base}/telemetry/{abbr}.json", drv_telemetry)
-        logger.info(f"[{prefix}] Uploaded telemetry for {len(drivers)} drivers")
+                saved += 1
+            else:
+                logger.warning(f"[{prefix}] No telemetry for {abbr}")
+        logger.info(f"[{prefix}] Uploaded telemetry for {saved}/{len(drivers)} drivers")
     except Exception as e:
         logger.warning(f"[{prefix}] Telemetry upload issue: {e}")
 

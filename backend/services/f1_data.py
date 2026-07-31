@@ -452,6 +452,10 @@ def _get_driver_telemetry_sync(
     if tel is None or len(tel) == 0:
         return None
 
+    return _format_lap_telemetry(tel, driver, lap_number)
+
+
+def _format_lap_telemetry(tel: "pd.DataFrame", driver: str, lap_number: int) -> dict:
     # Build arrays  - use Distance as x-axis (relative to lap)
     has_distance = "Distance" in tel.columns
     has_drs = "DRS" in tel.columns
@@ -476,6 +480,36 @@ def _get_driver_telemetry_sync(
     # Include relative distance for position marker mapping
     if "RelativeDistance" in tel_sampled.columns:
         result["relative_distance"] = tel_sampled["RelativeDistance"].astype(float).tolist()
+    return result
+
+
+def _get_driver_telemetry_bulk_sync(
+    year: int, round_num: int, session_type: str, driver: str, lap_numbers: list[int]
+) -> dict[str, dict]:
+    """Return telemetry for multiple laps of a driver in a single FastF1 call."""
+    session = _load_session(year, round_num, session_type)
+    laps_df = session.laps
+
+    drv_laps = laps_df.pick_drivers(driver)
+    drv_laps = drv_laps[drv_laps["LapNumber"].isin(lap_numbers)]
+    if len(drv_laps) == 0:
+        return {}
+
+    try:
+        tel_all = drv_laps.get_telemetry()
+    except Exception:
+        return {}
+
+    if tel_all is None or len(tel_all) == 0:
+        return {}
+
+    result = {}
+    for _, lap_row in drv_laps.iterrows():
+        lap_num = int(lap_row["LapNumber"])
+        if lap_num not in lap_numbers:
+            continue
+        tel_lap = tel_all.slice_by_lap(lap_row, interpolate_edges=True)
+        result[str(lap_num)] = _format_lap_telemetry(tel_lap, driver, lap_num)
 
     return result
 
