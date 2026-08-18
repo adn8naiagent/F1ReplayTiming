@@ -2,6 +2,14 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
+## 2.1.2
+
+### Fixes
+
+- **Jagged track map** — circuits drew as a coarse polygon when a session's position feed repeated coordinates instead of updating them (the 2026 Hungarian race gave 26 usable points a lap, against ~300 in qualifying). The outline lap is now chosen by position detail rather than lap time, falling back to another session from the same weekend. Requires re-compute for affected sessions. (reported by [@starscream10](https://github.com/starscream10))
+
+- **`PORT` ignored in Docker** — setting `PORT` published one port but left the container listening on 8000, so the app was unreachable and only 8000 worked. Compose now maps the same port on both sides. (reported by [@guilleortas](https://github.com/guilleortas))
+
 ## 2.1.1
 
 ### Improvements
