@@ -152,6 +152,9 @@ You can also use pre-built images instead of building from source:
 ```bash
 # Pull and run directly
 docker run -d -p 8000:8000 --env-file .env -v f1data:/data -v f1cache:/data/fastf1-cache ghcr.io/adn8naiagent/f1replaytiming:latest
+
+# On a different port, pass PORT and map the same port on both sides
+docker run -d -e PORT=9000 -p 9000:9000 --env-file .env -v f1data:/data -v f1cache:/data/fastf1-cache ghcr.io/adn8naiagent/f1replaytiming:latest
 ```
 
 Or with docker-compose:
@@ -161,8 +164,10 @@ services:
   f1timing:
     image: ghcr.io/adn8naiagent/f1replaytiming:latest
     ports:
-      - "${PORT:-8000}:8000"
+      - "${PORT:-8000}:${PORT:-8000}"
     env_file: .env
+    environment:
+      PORT: ${PORT:-8000}
     volumes:
       - f1data:/data
       - f1cache:/data/fastf1-cache

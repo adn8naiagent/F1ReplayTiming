@@ -242,6 +242,94 @@ async def get_session_info(year: int, round_num: int, session_type: str = "R") -
     return await asyncio.to_thread(_get_session_info_sync, year, round_num, session_type)
 
 
+# The track outline is drawn from one lap's position trace. The F1 position feed
+# sometimes repeats a car's previous coordinate instead of sending a new one, so a
+# lap can have a full complement of samples but only a handful of distinct points,
+# and it renders as a coarse polygon rather than the circuit. Below this many
+# distinct points, look for a better lap elsewhere in the weekend.
+MIN_OUTLINE_POSITION_POINTS = 150
+
+# Preference order when borrowing an outline from another session of the same
+# weekend. Track geometry does not change between sessions, so any of them will do.
+_OUTLINE_SESSION_PREFERENCE = ("Q", "FP3", "FP2", "FP1", "SQ", "S", "R")
+
+
+def _distinct_position_points(lap) -> int:
+    """Count the position samples on `lap` where the car actually moved.
+
+    Repeated coordinates contribute no shape to the outline, so they don't count
+    towards whether a lap is dense enough to draw.
+    """
+    try:
+        pos = lap.get_pos_data()
+    except Exception:
+        return 0
+    if pos is None or len(pos) < 2:
+        return 0
+    x = pos["X"].values.astype(float)
+    y = pos["Y"].values.astype(float)
+    repeats = int(((np.diff(x) == 0) & (np.diff(y) == 0)).sum())
+    return len(x) - repeats
+
+
+@lru_cache(maxsize=64)
+def _outline_source_session(year: int, round_num: int, session_type: str) -> str | None:
+    """Session type whose fastest lap should draw the track for this session.
+
+    Normally the session's own fastest lap. When a session's position feed was
+    degraded every lap in it traces the same coarse polygon (the 2026 Hungarian
+    race gives 26 distinct points against ~300 in qualifying), so fall back to
+    another session from the same weekend.
+    """
+    candidates = [session_type] + [s for s in _OUTLINE_SESSION_PREFERENCE if s != session_type]
+    own_points = None
+    best_type, best_points = None, -1
+
+    for st in candidates:
+        try:
+            lap = _load_session(year, round_num, st).laps.pick_fastest()
+        except Exception:
+            continue
+        if lap is None:
+            continue
+
+        points = _distinct_position_points(lap)
+        if st == session_type:
+            own_points = points
+        if points > best_points:
+            best_type, best_points = st, points
+
+        if points >= MIN_OUTLINE_POSITION_POINTS:
+            if st != session_type:
+                logger.warning(
+                    f"[{year} R{round_num} {session_type}] outline lap has only {own_points} "
+                    f"distinct position points, drawing the track from {st} instead ({points} points)"
+                )
+            return st
+
+    if best_type is not None:
+        logger.warning(
+            f"[{year} R{round_num} {session_type}] no session this weekend has a clean position "
+            f"trace, falling back to {best_type} with {best_points} distinct points"
+        )
+    return best_type
+
+
+def _pick_outline_lap(year: int, round_num: int, session_type: str):
+    """The lap that draws the track outline and normalises replay coordinates.
+
+    Both uses must share one lap, otherwise the driver dots are scaled against a
+    different bounding box than the track they're drawn on.
+    """
+    src = _outline_source_session(year, round_num, session_type)
+    if src is None:
+        return None
+    try:
+        return _load_session(year, round_num, src).laps.pick_fastest()
+    except Exception:
+        return None
+
+
 def _get_track_data_sync(year: int, round_num: int, session_type: str = "R") -> dict:
     session = _load_session(year, round_num, session_type)
 
@@ -258,9 +346,9 @@ def _get_track_data_sync(year: int, round_num: int, session_type: str = "R") -> 
     except Exception:
         pass
 
-    # Get track coordinates from fastest lap telemetry
-    fastest_lap = session.laps.pick_fastest()
-    telemetry = fastest_lap.get_telemetry()
+    # Get track coordinates from the outline reference lap
+    fastest_lap = _pick_outline_lap(year, round_num, session_type)
+    telemetry = fastest_lap.get_telemetry() if fastest_lap is not None else None
 
     if telemetry is None or "X" not in telemetry.columns or len(telemetry) == 0:
         raise ValueError("Telemetry data not available for this session")
@@ -573,10 +661,10 @@ def _get_driver_positions_by_time_sync(
     sample_interval = 0.5
     num_samples = int(total_seconds / sample_interval)
 
-    # Use the same normalization as the track outline (fastest lap)
+    # Use the same normalization as the track outline (same reference lap)
     # so driver dots align exactly with the drawn track
-    fastest_lap = laps.pick_fastest()
-    fastest_tel = fastest_lap.get_telemetry()
+    fastest_lap = _pick_outline_lap(year, round_num, session_type)
+    fastest_tel = fastest_lap.get_telemetry() if fastest_lap is not None else None
     if fastest_tel is not None and "X" in fastest_tel.columns and len(fastest_tel) > 0:
         x_min = float(fastest_tel["X"].min())
         x_max = float(fastest_tel["X"].max())
