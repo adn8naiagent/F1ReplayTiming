@@ -2,8 +2,10 @@ services:
   f1timing:
     build: .  # Uses root Dockerfile (unified FE+BE)
     ports:
-      - "${PORT:-8000}:8000"
+      - "${PORT:-8000}:${PORT:-8000}"
     env_file: .env
+    environment:
+      PORT: ${PORT:-8000}
     volumes:
       - f1data:/data
       - f1cache:/data/fastf1-cache
