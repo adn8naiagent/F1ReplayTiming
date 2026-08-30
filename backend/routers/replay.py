@@ -37,6 +37,15 @@ _eviction_tasks: dict[str, asyncio.Task] = {}  # key -> pending eviction task
 
 CACHE_EVICTION_SECONDS = 300  # 5 minutes after last client disconnects
 
+# Idle gap after which the server sends a keep-alive frame. Proxies and tunnels
+# that only count data frames towards their idle timeout (commonly 60s or 300s)
+# will close the socket otherwise — a paused replay sends nothing at all.
+HEARTBEAT_SECONDS = 20
+
+# Queued by the reader task when the client goes away, so the playback loop can
+# raise WebSocketDisconnect from wherever it happens to be waiting.
+_DISCONNECTED = object()
+
 # In-memory cache for pit loss data
 _pit_loss_cache: dict | None = None
 
@@ -206,6 +215,20 @@ async def _client_disconnect(key: str):
             _eviction_tasks[key] = task
 
 
+def evict_cached_session(year: int, round_num: int, session_type: str) -> None:
+    """Drop a session's frames from memory immediately.
+
+    Called when stored data is deleted; without it the frames stay resident
+    until the normal eviction delay elapses.
+    """
+    key = f"{year}_{round_num}_{session_type}"
+    task = _eviction_tasks.pop(key, None)
+    if task:
+        task.cancel()
+    if _replay_cache.pop(key, None) is not None:
+        logger.info(f"[memory] Evicted {key} after delete — {_log_memory()}")
+
+
 async def _evict_after_delay(key: str):
     """Wait, then evict a cached session if no new clients have connected."""
     try:
@@ -231,6 +254,8 @@ async def replay_websocket(
         await websocket.close(code=4401, reason="Unauthorized")
         return
     await websocket.accept()
+
+    receiver_task: asyncio.Task | None = None
 
     try:
         async def send_status(msg: str):
@@ -311,8 +336,20 @@ async def replay_websocket(
                 _add_pit_predictions(f, pit_loss_green, pit_loss_sc, pit_loss_vsc)
             return f
 
+        last_send = time.monotonic()
+
+        async def send_json(payload: dict) -> None:
+            """Send, recording the time so the heartbeat only fires when idle."""
+            nonlocal last_send
+            await websocket.send_json(payload)
+            last_send = time.monotonic()
+
+        async def beat_if_idle() -> None:
+            if time.monotonic() - last_send >= HEARTBEAT_SECONDS:
+                await send_json({"type": "ping"})
+
         # Send first frame immediately so cars are visible before play
-        await websocket.send_json({"type": "frame", **prepare_frame(frames[0])})
+        await send_json({"type": "frame", **prepare_frame(frames[0])})
 
         # Playback state
         playing = False
@@ -338,7 +375,7 @@ async def replay_websocket(
                     frame_index = i
                     break
             if frame_index < len(frames):
-                await websocket.send_json({"type": "frame", **prepare_frame(frames[frame_index])})
+                await send_json({"type": "frame", **prepare_frame(frames[frame_index])})
 
         async def handle_command(cmd: str):
             nonlocal playing, speed, frame_index
@@ -370,32 +407,48 @@ async def replay_websocket(
                             frame_index = i
                             break
                     if frame_index < len(frames):
-                        await websocket.send_json({"type": "frame", **prepare_frame(frames[frame_index])})
+                        await send_json({"type": "frame", **prepare_frame(frames[frame_index])})
                     reset_anchor()
                 except ValueError:
                     pass
             elif cmd == "reset":
                 frame_index = 0
                 playing = False
-                await websocket.send_json({"type": "frame", **prepare_frame(frames[0])})
+                await send_json({"type": "frame", **prepare_frame(frames[0])})
                 reset_anchor()
+
+        # One long-lived reader feeding a queue. The playback loop polls the
+        # queue on a 50ms tick; cancelling a queue.get() is safe, whereas
+        # cancelling websocket.receive_text() that often can drop commands.
+        commands: asyncio.Queue = asyncio.Queue()
+
+        async def receive_commands():
+            try:
+                while True:
+                    await commands.put(await websocket.receive_text())
+            except Exception:
+                await commands.put(_DISCONNECTED)
+
+        receiver_task = asyncio.create_task(receive_commands())
 
         async def check_command(timeout: float) -> bool:
             try:
-                msg = await asyncio.wait_for(websocket.receive_text(), timeout=timeout)
-                await handle_command(msg.strip().lower())
-                return True
+                msg = await asyncio.wait_for(commands.get(), timeout=timeout)
             except asyncio.TimeoutError:
                 return False
+            if msg is _DISCONNECTED:
+                raise WebSocketDisconnect(1006)
+            await handle_command(msg.strip().lower())
+            return True
 
         while True:
             if playing and frame_index < len(frames):
-                await websocket.send_json({"type": "frame", **prepare_frame(frames[frame_index])})
+                await send_json({"type": "frame", **prepare_frame(frames[frame_index])})
                 frame_index += 1
 
                 if frame_index >= len(frames):
                     playing = False
-                    await websocket.send_json({"type": "finished"})
+                    await send_json({"type": "finished"})
                     continue
 
                 # Sleep until the next frame is due per wall clock.
@@ -408,9 +461,13 @@ async def replay_websocket(
                 while sleep_remaining > 0 and playing:
                     chunk = min(sleep_remaining, 0.05)
                     await check_command(chunk)
+                    # Covers long gaps between frames: red flags, and slow speeds.
+                    await beat_if_idle()
                     sleep_remaining = target_wall - time.monotonic()
             else:
+                # Paused, or waiting to start — nothing else is sent here.
                 await check_command(1.0)
+                await beat_if_idle()
 
     except WebSocketDisconnect:
         cache_key = f"{year}_{round_num}_{type}"
@@ -424,3 +481,6 @@ async def replay_websocket(
             await websocket.close()
         except Exception:
             pass
+    finally:
+        if receiver_task is not None:
+            receiver_task.cancel()

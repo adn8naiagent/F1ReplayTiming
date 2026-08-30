@@ -62,7 +62,7 @@ async def _check_and_process():
     from services.f1_data import _fetch_schedule_sync, SESSION_NAME_TO_TYPE
     from services import storage
 
-    from services.process import process_session_sync as process_session
+    from services.process import process_session_sync as process_session, is_deleted
 
     now = datetime.now(timezone.utc)
     year = now.year
@@ -106,6 +106,11 @@ async def _check_and_process():
             # Check if already processed
             base = f"sessions/{year}/{round_num}/{session_type}"
             if storage.exists(f"{base}/replay.json"):
+                continue
+
+            # Respect an explicit delete — don't silently re-download data the
+            # user removed. Cleared automatically if they reprocess it.
+            if is_deleted(year, round_num, session_type):
                 continue
 
             # New session data might be available - try to process it

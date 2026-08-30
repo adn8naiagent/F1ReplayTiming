@@ -2,10 +2,13 @@ services:
   f1timing:
     build: .  # Uses root Dockerfile (unified FE+BE)
     ports:
-      - "${PORT:-8000}:${PORT:-8000}"
+      - "${PORT:-8000}:8000"
     env_file: .env
     environment:
-      PORT: ${PORT:-8000}
+      # The container always listens on 8000 so reverse proxies have a stable
+      # target. PORT sets the published host port only (overrides any PORT
+      # in .env, which would otherwise move the port proxies point at).
+      PORT: 8000
     volumes:
       - f1data:/data
       - f1cache:/data/fastf1-cache
