@@ -13,6 +13,7 @@ from auth import is_auth_enabled, verify_token
 from routers import sessions, track, laps, results, replay, telemetry, sync, live, live_status
 from routers import auth_routes
 from services.auto_precompute import auto_precompute_loop, get_allowed_session_types
+from services.retention import retention_loop
 
 load_dotenv()
 
@@ -29,13 +30,19 @@ async def lifespan(app: FastAPI):
         logger.info(f"Auto-precompute scheduled for session types: {sorted(allowed)}")
     else:
         logger.info("Auto-precompute disabled (AUTO_PRECOMPUTE=off)")
+    # Runs regardless of AUTO_PRECOMPUTE: someone who turned auto-download off
+    # is exactly who is most likely to be managing disk space.
+    retention_task = asyncio.create_task(retention_loop())
+
     yield
-    if task is not None:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+
+    for t in (task, retention_task):
+        if t is not None:
+            t.cancel()
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(

@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 from copy import deepcopy
@@ -5,7 +6,19 @@ from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, HTTPException
 from services.storage import get_json, put_json, list_sizes
-from services.process import ensure_session_data, start_reprocess, get_reprocess_status
+from services.process import (
+    ensure_session_data,
+    start_reprocess,
+    get_reprocess_status,
+    delete_session,
+)
+from services.retention import (
+    RetentionError,
+    get_retention,
+    save_retention,
+    session_index,
+    sweep,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["sessions"])
@@ -192,3 +205,54 @@ async def reprocess_session(year: int, round_num: int, type: str = Query("R")):
 @router.get("/sessions/{year}/{round_num}/reprocess/status")
 async def reprocess_session_status(year: int, round_num: int, type: str = Query("R")):
     return get_reprocess_status(year, round_num, type)
+
+
+@router.get("/storage")
+async def storage_usage():
+    """Stored size of every downloaded session, plus the retention setting."""
+    sessions, total = session_index()
+    return {
+        "total_bytes": total,
+        "session_count": len(sessions),
+        "sessions": sessions,
+        "retention": get_retention(),
+    }
+
+
+@router.delete("/sessions/{year}/{round_num}")
+async def delete_session_data(year: int, round_num: int, type: str = Query("R")):
+    """Delete one session's stored data. Auth is enforced by the /api middleware."""
+    if type not in SESSION_NAME_TO_TYPE.values():
+        raise HTTPException(status_code=400, detail=f"Unknown session type: {type}")
+    freed = delete_session(year, round_num, type)
+    _events_cache.clear()
+    return {"deleted": 1, "freed_bytes": freed}
+
+
+@router.put("/storage/retention")
+async def update_retention(
+    enabled: bool = Query(...),
+    amount: int = Query(...),
+    unit: str = Query("months"),
+    dry_run: bool = Query(False, description="Report what would be deleted, change nothing"),
+):
+    """Set the retention policy, applying it immediately.
+
+    Call with dry_run=true first to show the user what saving would remove;
+    saving then deletes everything already older than the threshold, and the
+    daily sweep keeps it that way.
+    """
+    try:
+        if dry_run:
+            return sweep(amount, unit, dry_run=True)
+
+        config = save_retention(enabled, amount, unit)
+        if not enabled:
+            return {"retention": config, "count": 0, "freed_bytes": 0}
+
+        result = await asyncio.to_thread(sweep, amount, unit)
+    except RetentionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    _events_cache.clear()
+    return {"retention": get_retention(), **result}

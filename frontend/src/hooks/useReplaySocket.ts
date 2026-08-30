@@ -84,6 +84,7 @@ export interface QualiPhaseInfo {
 
 interface ReplayState {
   connected: boolean;
+  reconnecting: boolean;
   ready: boolean;
   loading: boolean;
   playing: boolean;
@@ -99,8 +100,16 @@ interface ReplayState {
 
 export function useReplaySocket(year: number, round: number, sessionType: string = "R") {
   const wsRef = useRef<WebSocket | null>(null);
+  // Reconnect bookkeeping. Without this a dropped socket — a proxy idle
+  // timeout, a network blip — freezes the UI permanently with no feedback.
+  const unmountedRef = useRef(false);
+  const attemptRef = useRef(0);
+  const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTimestampRef = useRef(0);
+  const wasPlayingRef = useRef(false);
   const [state, setState] = useState<ReplayState>({
     connected: false,
+    reconnecting: false,
     ready: false,
     loading: true,
     playing: false,
@@ -115,18 +124,28 @@ export function useReplaySocket(year: number, round: number, sessionType: string
   });
 
   useEffect(() => {
+    unmountedRef.current = false;
+    attemptRef.current = 0;
+    lastTimestampRef.current = 0;
+    wasPlayingRef.current = false;
+
+    const connect = () => {
     const url = wsUrl(`/ws/replay/${year}/${round}?type=${sessionType}`);
     const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      setState((s) => ({ ...s, connected: true }));
+      attemptRef.current = 0;
+      setState((s) => ({ ...s, connected: true, reconnecting: false }));
     };
 
     ws.onmessage = (event) => {
       const msg = JSON.parse(event.data);
 
       switch (msg.type) {
+        case "ping":
+          // Server keep-alive so proxies don't time the socket out. Nothing to do.
+          break;
         case "status":
           setState((s) => ({ ...s, loading: true, statusMessage: msg.message || null }));
           break;
@@ -140,12 +159,15 @@ export function useReplaySocket(year: number, round: number, sessionType: string
             totalLaps: msg.total_laps,
             qualiPhases: msg.quali_phases || [],
           }));
-          // Request first frame so cars are visible before play
+          // Seek to where we were so a reconnect resumes in place; 0 on a
+          // first connect, which also makes cars visible before play.
           if (ws.readyState === WebSocket.OPEN) {
-            ws.send("seek:0");
+            ws.send(`seek:${lastTimestampRef.current}`);
+            if (wasPlayingRef.current) ws.send("play");
           }
           break;
         case "frame":
+          lastTimestampRef.current = msg.timestamp;
           setState((s) => ({
             ...s,
             frame: {
@@ -164,6 +186,7 @@ export function useReplaySocket(year: number, round: number, sessionType: string
           }));
           break;
         case "finished":
+          wasPlayingRef.current = false;
           setState((s) => ({ ...s, playing: false, finished: true }));
           break;
         case "error":
@@ -173,15 +196,28 @@ export function useReplaySocket(year: number, round: number, sessionType: string
     };
 
     ws.onerror = () => {
-      setState((s) => ({ ...s, error: "WebSocket connection error", loading: false }));
+      // onclose always follows, and handles retrying.
+      setState((s) => ({ ...s, loading: false }));
     };
 
     ws.onclose = () => {
-      setState((s) => ({ ...s, connected: false }));
+      wsRef.current = null;
+      if (unmountedRef.current) return;
+
+      // Retry with backoff, capped, so a transient drop recovers on its own.
+      const delay = Math.min(1000 * 2 ** attemptRef.current, 15000);
+      attemptRef.current += 1;
+      setState((s) => ({ ...s, connected: false, reconnecting: true }));
+      retryTimerRef.current = setTimeout(connect, delay);
+    };
     };
 
+    connect();
+
     return () => {
-      ws.close();
+      unmountedRef.current = true;
+      if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+      wsRef.current?.close();
     };
   }, [year, round, sessionType]);
 
@@ -192,11 +228,13 @@ export function useReplaySocket(year: number, round: number, sessionType: string
   }, []);
 
   const play = useCallback(() => {
+    wasPlayingRef.current = true;
     send("play");
     setState((s) => ({ ...s, playing: true, finished: false }));
   }, [send]);
 
   const pause = useCallback(() => {
+    wasPlayingRef.current = false;
     send("pause");
     setState((s) => ({ ...s, playing: false }));
   }, [send]);
@@ -217,6 +255,8 @@ export function useReplaySocket(year: number, round: number, sessionType: string
   }, [send]);
 
   const reset = useCallback(() => {
+    wasPlayingRef.current = false;
+    lastTimestampRef.current = 0;
     send("reset");
     setState((s) => ({ ...s, playing: false, finished: false }));
   }, [send]);
