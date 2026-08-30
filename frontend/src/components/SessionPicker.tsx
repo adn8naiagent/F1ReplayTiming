@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { useApi } from "@/hooks/useApi";
 import { getToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
+import StorageManager from "./StorageManager";
 
 interface SessionMenu {
   x: number;
@@ -14,6 +15,8 @@ interface SessionMenu {
   year: number;
   round: number;
   code: string;
+  precomputed: boolean;
+  sizeBytes?: number;
 }
 
 interface SessionEntry {
@@ -148,6 +151,7 @@ export default function SessionPicker() {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [storageOpen, setStorageOpen] = useState(false);
   const [navigating, setNavigating] = useState(false);
   useEffect(() => {
     setNavigating(false);
@@ -166,6 +170,7 @@ export default function SessionPicker() {
   const [ctxMenu, setCtxMenu] = useState<SessionMenu | null>(null);
   const [reprocessing, setReprocessing] = useState<Set<string>>(new Set());
   const [reprocessModal, setReprocessModal] = useState<{ label: string; key: string; state: "running" | "done" | "error"; message: string } | null>(null);
+  const [deleteModal, setDeleteModal] = useState<{ label: string; year: number; round: number; code: string; sizeLabel: string | null; state: "confirm" | "deleting" | "done" | "error"; message: string } | null>(null);
   const longPressRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const suppressClickRef = useRef(false);
   const ctxMenuRef = useRef<HTMLDivElement>(null);
@@ -224,6 +229,27 @@ export default function SessionPicker() {
       setTimeout(poll, 1500);
     } catch {
       finish("error", "Failed to start reprocessing.");
+    }
+  }
+
+  async function confirmDelete() {
+    if (!deleteModal) return;
+    const m = deleteModal;
+    setDeleteModal({ ...m, state: "deleting" });
+    try {
+      const res = await authFetch(
+        `/api/sessions/${m.year}/${m.round}?type=${m.code}`,
+        { method: "DELETE" },
+      );
+      if (!res.ok) throw new Error();
+      const body = await res.json();
+      setDeleteModal({
+        ...m,
+        state: "done",
+        message: `Freed ${formatSize(body.freed_bytes) || "0 KB"}.`,
+      });
+    } catch {
+      setDeleteModal({ ...m, state: "error", message: "Failed to delete this session's data." });
     }
   }
 
@@ -373,7 +399,7 @@ export default function SessionPicker() {
                 const sKey = `${year}_${evt.round_number}_${code}`;
                 const busy = reprocessing.has(sKey);
                 const openMenu = (x: number, y: number) =>
-                  setCtxMenu({ x, y, href, label: session.name, key: sKey, year, round: evt.round_number, code });
+                  setCtxMenu({ x, y, href, label: session.name, key: sKey, year, round: evt.round_number, code, precomputed: !!session.precomputed, sizeBytes: session.size_bytes });
                 return (
                   <div key={session.name} className="flex flex-col items-center">
                     {localTime && (
@@ -476,6 +502,85 @@ export default function SessionPicker() {
           >
             ↻ Reprocess
           </button>
+          {ctxMenu.precomputed && (
+            <button
+              onClick={() => {
+                setDeleteModal({
+                  label: ctxMenu.label,
+                  year: ctxMenu.year,
+                  round: ctxMenu.round,
+                  code: ctxMenu.code,
+                  sizeLabel: formatSize(ctxMenu.sizeBytes),
+                  state: "confirm",
+                  message: "",
+                });
+                setCtxMenu(null);
+              }}
+              className="block w-full text-left px-4 py-2 text-red-400 hover:bg-white/5 transition-colors"
+            >
+              Delete data{ctxMenu.sizeBytes ? ` (${formatSize(ctxMenu.sizeBytes)})` : ""}
+            </button>
+          )}
+        </div>
+      )}
+
+      {storageOpen && <StorageManager onClose={() => setStorageOpen(false)} />}
+
+      {/* Delete confirmation */}
+      {deleteModal && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4">
+          <div className="bg-f1-card border border-f1-border rounded-xl shadow-xl w-full max-w-sm p-6">
+            <h3 className="text-white font-bold text-base mb-1">
+              {deleteModal.state === "done" ? "Data deleted" : `Delete ${deleteModal.label} data?`}
+            </h3>
+            {deleteModal.state === "confirm" && (
+              <>
+                <p className="text-f1-muted text-sm mb-4">
+                  Removes the stored data for this session
+                  {deleteModal.sizeLabel ? `, freeing ${deleteModal.sizeLabel}` : ""}. Open the
+                  session to download it again.
+                </p>
+                <div className="flex justify-end gap-2">
+                  <button
+                    onClick={() => setDeleteModal(null)}
+                    className="px-4 py-2 bg-f1-border text-white text-sm font-bold rounded hover:bg-white/10 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={confirmDelete}
+                    className="px-4 py-2 bg-f1-red text-white text-sm font-bold rounded hover:bg-red-700 transition-colors"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </>
+            )}
+            {deleteModal.state === "deleting" && (
+              <div className="flex items-center gap-3 mt-3">
+                <span className="w-5 h-5 border-2 border-f1-muted border-t-f1-red rounded-full animate-spin flex-shrink-0" />
+                <span className="text-white text-sm">Deleting…</span>
+              </div>
+            )}
+            {(deleteModal.state === "done" || deleteModal.state === "error") && (
+              <>
+                <p className={`text-sm mb-2 ${deleteModal.state === "done" ? "text-green-400" : "text-red-400"}`}>
+                  {deleteModal.message}
+                </p>
+                <div className="flex justify-end mt-5">
+                  <button
+                    onClick={() => {
+                      setDeleteModal(null);
+                      if (deleteModal.state === "done") window.location.reload();
+                    }}
+                    className="px-4 py-2 bg-f1-border text-white text-sm font-bold rounded hover:bg-f1-red transition-colors"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -536,6 +641,12 @@ export default function SessionPicker() {
           >
             About
           </a>
+          <button
+            onClick={() => setStorageOpen(true)}
+            className="hidden sm:block px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
+          >
+            Storage
+          </button>
           {/* Mobile: hamburger menu */}
           <div className="relative sm:hidden" ref={menuRef}>
             <button
@@ -560,6 +671,12 @@ export default function SessionPicker() {
                 >
                   About
                 </a>
+                <button
+                  onClick={() => { setMenuOpen(false); setStorageOpen(true); }}
+                  className="block w-full text-left px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"
+                >
+                  Storage
+                </button>
               </div>
             )}
           </div>

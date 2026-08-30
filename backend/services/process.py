@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import traceback
+from datetime import datetime, timezone
 
 from services import storage
 from services.f1_data import (
@@ -28,6 +29,11 @@ _locks: dict[str, asyncio.Lock] = {}
 # State of user-triggered reprocess jobs: key -> {"state": ..., "message": ...}
 # state is "running" | "done" | "error"
 _reprocess_status: dict[str, dict] = {}
+
+# Written when a user deletes a session. auto_precompute skips sessions carrying
+# one, so an explicit delete isn't undone by the background downloader; any
+# successful reprocess clears it.
+TOMBSTONE = "deleted.json"
 
 
 def get_reprocess_status(year: int, round_num: int, session_type: str) -> dict:
@@ -169,6 +175,20 @@ def process_session_sync(
     except Exception as e:
         logger.warning(f"[{prefix}] Telemetry upload issue: {e}")
 
+    # Session is back — drop any delete tombstone so auto-precompute resumes.
+    try:
+        storage.delete(f"{base}/{TOMBSTONE}")
+    except Exception:
+        pass
+
+    # Invalidate the cached events listing so the picker shows the downloaded
+    # marker straight away, rather than after the 5 minute cache expires.
+    try:
+        from routers.sessions import _events_cache
+        _events_cache.clear()
+    except Exception:
+        pass
+
     status("Processing complete")
     logger.info(f"[{prefix}] Done")
     return True
@@ -288,3 +308,39 @@ async def ensure_session_data_ws(
         except Exception as e:
             logger.error(f"On-demand processing failed for {key}: {e}")
             return False
+
+
+def is_deleted(year: int, round_num: int, session_type: str) -> bool:
+    """True if the user explicitly deleted this session's data."""
+    base = f"sessions/{year}/{round_num}/{session_type}"
+    return storage.exists(f"{base}/{TOMBSTONE}")
+
+
+def delete_session(year: int, round_num: int, session_type: str) -> int:
+    """Delete a session's stored data. Returns the number of bytes freed.
+
+    replay.json is removed first, because every availability check in the app
+    keys off it. If the delete is interrupted the session then reads as "not
+    downloaded" and reprocesses cleanly, rather than being left present but
+    incomplete — the failure mode people hit deleting these files by hand.
+    """
+    base = f"sessions/{year}/{round_num}/{session_type}"
+
+    freed = storage.delete(f"{base}/replay.json")
+    freed += storage.delete_prefix(base)
+
+    storage.put_json(
+        f"{base}/{TOMBSTONE}",
+        {"deleted_at": datetime.now(timezone.utc).isoformat()},
+    )
+
+    # Frames stay resident until the cache evicts them, so drop them now —
+    # otherwise deleting from disk frees no memory for up to 5 minutes.
+    try:
+        from routers.replay import evict_cached_session
+        evict_cached_session(year, round_num, session_type)
+    except Exception as e:
+        logger.warning(f"Could not evict replay cache for {base}: {e}")
+
+    logger.info(f"Deleted {base} — freed {freed} bytes")
+    return freed

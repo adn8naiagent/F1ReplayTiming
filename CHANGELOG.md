@@ -2,6 +2,18 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
+## 2.1.3
+
+### Improvements
+
+- **Storage management** — a **Storage** button in the header shows total disk use and sets a retention policy: sessions older than a chosen number of weeks or months are deleted, immediately and then daily. Individual sessions can be deleted by right-clicking them in the session picker. (requested by [@db-can](https://github.com/db-can))
+
+### Fixes
+
+- **Replay froze after a dropped connection** — an idle replay sent no data, so proxies could close the socket and the client never reconnected. The server now sends a keep-alive every 20s, and the client reconnects and resumes where it left off. ([#106](https://github.com/adn8naiagent/F1ReplayTiming/issues/106), reported by [@nbolland](https://github.com/nbolland))
+
+- **App unreachable behind a reverse proxy when `PORT` was set** — 2.1.2 passed `PORT` into the container, moving the port proxies point at (Traefik, nginx and cloudflared all target 8000). The container now always listens on 8000; `PORT` sets the published host port only. (found while investigating [#106](https://github.com/adn8naiagent/F1ReplayTiming/issues/106), reported by [@nbolland](https://github.com/nbolland))
+
 ## 2.1.2
 
 ### Fixes

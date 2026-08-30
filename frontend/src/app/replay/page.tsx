@@ -389,6 +389,14 @@ export default function ReplayPage() {
 
   return (
     <div className="h-dvh flex flex-col bg-f1-dark overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
+      {/* Connection lost — the socket retries on its own in the background */}
+      {replay.reconnecting && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-3 py-1.5 bg-f1-red text-white text-xs font-bold rounded shadow-lg">
+          <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          Connection lost — reconnecting…
+        </div>
+      )}
+
       {/* Banner */}
       {!fullscreen && sessionData && (
         <SessionBanner
