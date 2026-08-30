@@ -42,6 +42,21 @@ class RetentionError(ValueError):
     """Invalid retention settings."""
 
 
+# State of the running/last sweep, polled by the UI so a large delete shows
+# progress instead of a request that just hangs.
+# state is "idle" | "running" | "done" | "error"
+_sweep_status: dict = {"state": "idle", "message": "", "done": 0, "total": 0,
+                       "count": 0, "freed_bytes": 0}
+
+
+def get_sweep_status() -> dict:
+    return dict(_sweep_status)
+
+
+def _set_status(**fields) -> None:
+    _sweep_status.update(fields)
+
+
 def cutoff_for(amount: int, unit: str, now: datetime | None = None) -> datetime:
     """The date before which sessions are considered expired."""
     now = now or datetime.now(timezone.utc)
@@ -161,8 +176,6 @@ def expired_sessions(amount: int, unit: str) -> list[dict]:
 
 def sweep(amount: int, unit: str, dry_run: bool = False) -> dict:
     """Delete every stored session older than the given age."""
-    from services.process import delete_session
-
     stale = expired_sessions(amount, unit)
     if dry_run:
         return {
@@ -172,16 +185,42 @@ def sweep(amount: int, unit: str, dry_run: bool = False) -> dict:
             "sessions": stale,
         }
 
-    freed = 0
-    deleted = 0
+    # Bulk delete rather than one call per session: on R2 a per-session loop is
+    # several sequential round trips each, which for a large first sweep means
+    # minutes with the request held open.
+    #
+    # No tombstones here. They exist to stop auto_precompute re-downloading a
+    # session the user removed, and it only ever looks at the last 7 days —
+    # retention never deletes anything newer than a week.
+    prefixes = [f"sessions/{s['year']}/{s['round']}/{s['type']}" for s in stale]
+    freed, deleted = 0, 0
+    try:
+        _set_status(state="running", message="Finding files to delete…")
+        sizes = storage.keys_under(prefixes)
+        keys = list(sizes)
+
+        def progress(done: int, total: int):
+            _set_status(
+                state="running",
+                message=f"Deleting {len(stale)} session{'' if len(stale) == 1 else 's'}…",
+                done=done,
+                total=total,
+            )
+
+        progress(0, len(keys))
+        storage.delete_keys(keys, on_progress=progress)
+        freed = sum(sizes.values())
+        deleted = len(stale)
+    except Exception as e:
+        logger.error(f"Retention sweep failed: {e}")
+        _set_status(state="error", message="Delete failed.")
+
     for s in stale:
         try:
-            freed += delete_session(s["year"], s["round"], s["type"])
-            deleted += 1
-        except Exception as e:
-            logger.warning(
-                f"Retention: failed to delete {s['year']}/{s['round']}/{s['type']}: {e}"
-            )
+            from routers.replay import evict_cached_session
+            evict_cached_session(s["year"], s["round"], s["type"])
+        except Exception:
+            pass
 
     if deleted:
         logger.info(f"Retention: deleted {deleted} session(s), freed {freed} bytes")
@@ -194,7 +233,32 @@ def sweep(amount: int, unit: str, dry_run: bool = False) -> dict:
     })
     storage.put_json(CONFIG_PATH, config)
 
+    if _sweep_status.get("state") != "error":
+        _set_status(
+            state="done",
+            message=f"Deleted {deleted} session{'' if deleted == 1 else 's'}.",
+            count=deleted,
+            freed_bytes=freed,
+        )
+
     return {"dry_run": False, "count": deleted, "freed_bytes": freed, "sessions": stale}
+
+
+async def start_sweep(amount: int, unit: str) -> dict:
+    """Run a sweep in the background so the UI can poll for progress."""
+    _sweep_status.clear()
+    _sweep_status.update({"state": "running", "message": "Starting…",
+                          "done": 0, "total": 0, "count": 0, "freed_bytes": 0})
+
+    async def run():
+        try:
+            await asyncio.to_thread(sweep, amount, unit)
+        except Exception as e:
+            logger.error(f"Sweep task failed: {e}")
+            _set_status(state="error", message="Delete failed.")
+
+    asyncio.create_task(run())
+    return get_sweep_status()
 
 
 async def retention_loop():

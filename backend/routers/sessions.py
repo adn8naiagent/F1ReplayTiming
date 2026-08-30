@@ -15,8 +15,10 @@ from services.process import (
 from services.retention import (
     RetentionError,
     get_retention,
+    get_sweep_status,
     save_retention,
     session_index,
+    start_sweep,
     sweep,
 )
 
@@ -248,11 +250,19 @@ async def update_retention(
 
         config = save_retention(enabled, amount, unit)
         if not enabled:
-            return {"retention": config, "count": 0, "freed_bytes": 0}
+            return {"retention": config, "started": False}
 
-        result = await asyncio.to_thread(sweep, amount, unit)
+        # Deleting a large backlog takes a while, so run it in the background
+        # and let the client poll for progress rather than holding the request.
+        status = await start_sweep(amount, unit)
     except RetentionError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     _events_cache.clear()
-    return {"retention": get_retention(), **result}
+    return {"retention": config, "started": True, "status": status}
+
+
+@router.get("/storage/retention/status")
+async def retention_status():
+    """Progress of the running or most recent sweep."""
+    return get_sweep_status()
