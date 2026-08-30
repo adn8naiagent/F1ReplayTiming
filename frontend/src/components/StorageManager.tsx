@@ -29,6 +29,15 @@ interface StorageResponse {
   retention: Retention;
 }
 
+interface SweepStatus {
+  state: "idle" | "running" | "done" | "error";
+  message: string;
+  done: number;
+  total: number;
+  count: number;
+  freed_bytes: number;
+}
+
 interface SweepResult {
   count: number;
   freed_bytes: number;
@@ -93,6 +102,7 @@ export default function StorageManager({ onClose }: { onClose: () => void }) {
   const unitLabel = amountNum === 1 ? unit.slice(0, -1) : unit;
 
   const [confirm, setConfirm] = useState<SweepResult | null>(null);
+  const [progress, setProgress] = useState<SweepStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -175,16 +185,30 @@ export default function StorageManager({ onClose }: { onClose: () => void }) {
   async function applySave() {
     setBusy(true);
     setError(null);
+    setConfirm(null);
+    setProgress({ state: "running", message: "Starting…", done: 0, total: 0, count: 0, freed_bytes: 0 });
     try {
       const res = await authFetch(`/api/storage/retention?${query}`, { method: "PUT" });
       if (!res.ok) throw new Error();
-      const body: SweepResult = await res.json();
-      setConfirm(null);
-      setResult(
-        `Deleted ${body.count} session${body.count === 1 ? "" : "s"}, freeing ${formatSize(body.freed_bytes)}.`,
-      );
+
+      // The sweep runs server-side; poll so a large delete shows progress.
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 400));
+        const s: SweepStatus = await authFetch("/api/storage/retention/status").then((r) => r.json());
+        setProgress(s);
+        if (s.state === "done") {
+          setResult(`Deleted ${s.count} session${s.count === 1 ? "" : "s"}, freeing ${formatSize(s.freed_bytes)}.`);
+          break;
+        }
+        if (s.state === "error") {
+          setError(s.message || "Delete failed.");
+          break;
+        }
+      }
+      setProgress(null);
       await load();
     } catch {
+      setProgress(null);
       setError("Failed to apply the retention setting.");
     } finally {
       setBusy(false);
@@ -209,7 +233,14 @@ export default function StorageManager({ onClose }: { onClose: () => void }) {
           )}
         </div>
 
-        {/* Retention policy */}
+        {/* Retention policy — hidden until usage is known, so the threshold
+            can't be set against a total that hasn't loaded yet. */}
+        {loading ? (
+          <div className="p-6 py-8 border-b border-f1-border flex items-center justify-center gap-3">
+            <span className="w-5 h-5 border-2 border-f1-muted border-t-f1-red rounded-full animate-spin flex-shrink-0" />
+            <span className="text-f1-muted text-sm">Calculating current storage…</span>
+          </div>
+        ) : (
         <div className="p-6 py-4 border-b border-f1-border overflow-y-auto min-h-0">
           <button
             onClick={() => setEnabled(!enabled)}
@@ -316,9 +347,32 @@ export default function StorageManager({ onClose }: { onClose: () => void }) {
             </div>
           )}
 
+          {progress && (
+            <div className="mt-3 p-3 bg-f1-dark border border-f1-border rounded">
+              <div className="flex items-center gap-3 mb-2">
+                <span className="w-4 h-4 border-2 border-f1-muted border-t-f1-red rounded-full animate-spin flex-shrink-0" />
+                <span className="text-white text-sm">{progress.message}</span>
+              </div>
+              {progress.total > 0 && (
+                <>
+                  <div className="h-1.5 bg-f1-border rounded overflow-hidden">
+                    <div
+                      className="h-full bg-f1-red transition-all duration-200"
+                      style={{ width: `${Math.round((progress.done / progress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-f1-muted text-xs mt-1">
+                    {progress.done} of {progress.total} files
+                  </p>
+                </>
+              )}
+            </div>
+          )}
+
           {result && <p className="text-green-400 text-sm mt-2">{result}</p>}
           {error && <p className="text-red-400 text-sm mt-2">{error}</p>}
         </div>
+        )}
 
         <div className="p-6 pt-4 flex justify-end">
           <button

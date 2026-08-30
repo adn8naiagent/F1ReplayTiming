@@ -205,6 +205,32 @@ def _r2_delete(path: str) -> int:
     return size
 
 
+def _r2_delete_prefixes(prefixes: list[str]) -> int:
+    """Delete many prefixes with one listing and batched deletes.
+
+    Deleting a hundred sessions one at a time is hundreds of sequential
+    round trips; this keeps it to a single listing plus one call per 1000 keys.
+    """
+    client = _get_r2_client()
+    bucket = _r2_bucket()
+
+    wanted = tuple(p if p.endswith("/") else p + "/" for p in prefixes)
+    # List once from the deepest shared root rather than per prefix.
+    root = os.path.commonprefix(list(wanted))
+    root = root[: root.rfind("/") + 1] if "/" in root else ""
+    sizes = {k: v for k, v in _r2_list_sizes(root).items() if k.startswith(wanted)}
+    if not sizes:
+        return 0
+
+    keys = list(sizes)
+    for i in range(0, len(keys), 1000):
+        client.delete_objects(
+            Bucket=bucket,
+            Delete={"Objects": [{"Key": k} for k in keys[i:i + 1000]]},
+        )
+    return sum(sizes.values())
+
+
 def _r2_delete_prefix(prefix: str) -> int:
     client = _get_r2_client()
     bucket = _r2_bucket()
@@ -282,3 +308,65 @@ def delete_prefix(prefix: str) -> int:
     if _mode() == "r2":
         return _r2_delete_prefix(cleaned)
     return _local_delete_prefix(cleaned)
+
+
+def delete_prefixes(prefixes: list[str]) -> int:
+    """Delete every file under each of *prefixes*. Returns bytes freed."""
+    cleaned = []
+    for prefix in prefixes:
+        c = (prefix or "").strip("/")
+        if not c or ".." in c.split("/"):
+            raise ValueError(f"refusing to delete unsafe prefix: {prefix!r}")
+        cleaned.append(c)
+    if not cleaned:
+        return 0
+    if _mode() == "r2":
+        return _r2_delete_prefixes(cleaned)
+    return sum(_local_delete_prefix(c) for c in cleaned)
+
+
+def keys_under(prefixes: list[str]) -> dict[str, int]:
+    """Every stored key beneath any of *prefixes*, with sizes.
+
+    Does a single listing so a caller can delete in progress-reporting batches
+    without paying for a fresh listing per batch.
+    """
+    cleaned = []
+    for prefix in prefixes:
+        c = (prefix or "").strip("/")
+        if not c or ".." in c.split("/"):
+            raise ValueError(f"refusing to list unsafe prefix: {prefix!r}")
+        cleaned.append(c if c.endswith("/") else c + "/")
+    if not cleaned:
+        return {}
+
+    root = os.path.commonprefix(cleaned)
+    root = root[: root.rfind("/") + 1] if "/" in root else ""
+    wanted = tuple(cleaned)
+    return {k: v for k, v in list_sizes(root).items() if k.startswith(wanted)}
+
+
+def delete_keys(keys: list[str], on_progress=None) -> None:
+    """Delete exactly these keys. on_progress(done, total) fires per batch."""
+    total = len(keys)
+    if not total:
+        return
+    r2 = _mode() == "r2"
+    client = _get_r2_client() if r2 else None
+    bucket = _r2_bucket() if r2 else None
+
+    step = 1000 if r2 else 200
+    for i in range(0, total, step):
+        batch = keys[i:i + step]
+        if r2:
+            client.delete_objects(
+                Bucket=bucket, Delete={"Objects": [{"Key": k} for k in batch]}
+            )
+        else:
+            for k in batch:
+                try:
+                    (_data_dir() / k).unlink()
+                except FileNotFoundError:
+                    pass
+        if on_progress:
+            on_progress(min(i + step, total), total)
