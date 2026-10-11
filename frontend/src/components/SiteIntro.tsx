@@ -11,7 +11,7 @@ const DISMISS_KEY = "f1replay_intro_dismissed";
 const HIGHLIGHTS = [
   { icon: <Flag className="w-4 h-4" />, title: "Race control", text: "Steward messages, penalties and marshal sector flags on the track map." },
   { icon: <img src="/pit-return.png" alt="" className="w-4 h-4 invert opacity-80" />, title: "Pit prediction", text: "Where each driver would rejoin if they pitted now." },
-  { icon: <CircleDot className="w-4 h-4" />, title: "Tyre wear", text: "Current compound, laps on the set and tyre history." },
+  { icon: <CircleDot className="w-4 h-4" />, title: "Tyre wear", text: "Current compound, tyre age and tyre history." },
   { icon: <RefreshCw className="w-4 h-4" />, title: "Sync to your TV", text: "Line the replay up with a recording by entering the lap and gaps." },
   { icon: <PictureInPicture2 className="w-4 h-4" />, title: "Picture-in-picture", text: "A floating window to watch alongside the broadcast." },
   { icon: <Smartphone className="w-4 h-4" />, title: "Mobile and tablet", text: "Works on phones and tablets as well as desktop." },
