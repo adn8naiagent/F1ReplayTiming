@@ -14,7 +14,7 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **`RETENTION_SWEEP_ENABLED`** — set to `false` to stop an instance running the daily retention sweep, for setups where several instances share one storage bucket.
 
-- **Report a problem** — Settings > Other in a replay opens a GitHub issue with the session and replay time filled in. The home, About and Features pages link to GitHub and Discussions.
+- **Report a bug** — a new Report a bug tab in a replay's Settings opens a GitHub issue with the session and replay time filled in. The home, About and Features pages link to GitHub and Discussions.
 
 ### Fixes
 
