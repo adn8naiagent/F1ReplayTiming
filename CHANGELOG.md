@@ -2,11 +2,17 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
+## 2.2.1 (unreleased)
+
+### Improvements
+
+- **Leaderboard guide** — the top of the Features page now shows a sample leaderboard with each column numbered and explained, so it's clear what everything means at a glance.
+
 ## 2.2.0
 
 ### Improvements
 
-- **Faster, lighter replays** — replays now load as small compressed files and play in the browser instead of being streamed frame by frame from the server: about 11 MB per race instead of about 211 MB, with no server memory per viewer. Sessions processed before 2.2 are converted the first time they're opened, or all at once with `python precompute.py <years> --chunks-only`. If you have problems, set `REPLAY_PLAYER=websocket` to go back to the previous player.
+- **Faster, lighter replays** — replays now load as small compressed files and play in the browser instead of being streamed frame by frame from the server reducing to ~11 MB per race instead of ~200 MB. Sessions processed before 2.2 are converted the first time they're opened, or all at once with `python precompute.py <years> --chunks-only`. If you have problems, set `REPLAY_PLAYER=websocket` to go back to the previous player.
 
 - **Manual sync runs in the browser** — matching a typed-in lap and gaps no longer loads the whole session on the server.
 
