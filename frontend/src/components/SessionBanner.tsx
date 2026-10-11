@@ -84,7 +84,7 @@ export default function SessionBanner({
   const isRace = sessionType === "R" || sessionType === "S";
   const isQualifying = sessionType === "Q" || sessionType === "SQ";
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Other">("Leaderboard");
+  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Other" | "Report a bug">("Leaderboard");
   const settingsRef = useRef<HTMLDivElement>(null);
 
   // Close settings on outside click
@@ -228,7 +228,10 @@ export default function SessionBanner({
                 <div className="flex flex-1 min-h-0">
                   {/* Tab sidebar */}
                   <div className="flex flex-col border-r border-f1-border py-2 w-36 flex-shrink-0">
-                    {(["Leaderboard", "Weather", "Track Map", "Race Control", "Other"] as const).map((tab) => (
+                    {([
+                      "Leaderboard", "Weather", "Track Map", "Race Control", "Other",
+                      ...(onReportProblem ? (["Report a bug"] as const) : []),
+                    ] as const).map((tab) => (
                       <button
                         key={tab}
                         onClick={() => setSettingsTab(tab)}
@@ -348,16 +351,22 @@ export default function SessionBanner({
                         </div>
                       </button>
                     ))}
-                    {onReportProblem && (
+                  </>)}
+
+                  {settingsTab === "Report a bug" && onReportProblem && (
+                    <div className="px-2 sm:px-6 py-2 space-y-3">
+                      <p className="text-sm text-f1-muted leading-relaxed">
+                        Something not working? This opens a GitHub issue with this session and the current
+                        replay time already filled in.
+                      </p>
                       <button
                         onClick={onReportProblem}
-                        className="w-full text-left px-2 sm:px-6 py-1.5 hover:bg-white/5 transition-colors"
+                        className="px-4 py-2 bg-f1-red text-white text-sm font-bold rounded hover:bg-red-700 transition-colors"
                       >
-                        <span className="text-sm text-white block">Report a problem</span>
-                        <span className="text-[9px] text-f1-muted block">Opens a GitHub issue with this session and replay time filled in</span>
+                        Report a bug
                       </button>
-                    )}
-                  </>)}
+                    </div>
+                  )}
                 </div>
                 </div>
               </div>
