@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Flag, CircleDot, Smartphone, RefreshCw, PictureInPicture2, X } from "lucide-react";
+import { Flag, CircleDot, Smartphone, RefreshCw, PictureInPicture2, X, Info } from "lucide-react";
 
-// Short "what is this" panel for the public site's home page. Hidden once
-// dismissed (per browser), so regular visitors don't keep seeing it.
+// Short "what is this" panel for the public site's home page. Once hidden
+// (remembered per browser) it collapses to an Overview button that reopens it.
 
 const DISMISS_KEY = "f1replay_intro_dismissed";
 
@@ -18,8 +18,8 @@ const HIGHLIGHTS = [
 ];
 
 export default function SiteIntro() {
-  // Start hidden so it doesn't flash before the saved choice is read.
-  const [show, setShow] = useState(false);
+  // null until the saved choice is read, so neither state flashes on load.
+  const [show, setShow] = useState<boolean | null>(null);
 
   useEffect(() => {
     try {
@@ -29,14 +29,30 @@ export default function SiteIntro() {
     }
   }, []);
 
-  if (!show) return null;
-
-  const dismiss = () => {
-    setShow(false);
+  const remember = (visible: boolean) => {
+    setShow(visible);
     try {
-      localStorage.setItem(DISMISS_KEY, "1");
+      if (visible) localStorage.removeItem(DISMISS_KEY);
+      else localStorage.setItem(DISMISS_KEY, "1");
     } catch {}
   };
+  const dismiss = () => remember(false);
+
+  if (show === null) return null;
+
+  if (!show) {
+    return (
+      <div className="max-w-3xl mx-auto mb-4">
+        <button
+          onClick={() => remember(true)}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-f1-card border border-f1-border rounded-lg text-xs font-bold text-f1-muted hover:text-white transition-colors"
+        >
+          <Info className="w-3.5 h-3.5" />
+          Overview
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="max-w-3xl mx-auto mb-8 bg-f1-card border border-f1-border rounded-xl p-5 relative">

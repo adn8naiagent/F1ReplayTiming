@@ -8,7 +8,7 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Leaderboard guide** — the top of the Features page now shows a sample leaderboard with each column numbered and explained, so it's clear what everything means at a glance.
 
-- **Home page introduction** — a short summary of what the site does and its main features, shown on public sites and hidden once dismissed.
+- **Home page introduction** — a short summary of what the site does and its main features, shown on public sites. Once hidden, an Overview button above the year picker brings it back.
 
 ## 2.2.0
 
