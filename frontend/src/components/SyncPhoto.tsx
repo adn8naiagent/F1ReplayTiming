@@ -10,6 +10,10 @@ interface Props {
   sessionType: string;
   onSync: (timestamp: number) => void;
   onClose: () => void;
+  /** Photo sync needs a server-side vision API key; without one only manual entry shows. */
+  photoEnabled?: boolean;
+  /** Match against frames in the browser (static player) instead of on the server. */
+  matchLocally?: (extracted: SyncResult["extracted"]) => Promise<SyncResult>;
 }
 
 interface SyncResult {
@@ -22,7 +26,7 @@ interface SyncResult {
       position: number;
       abbr: string;
       gap: string | null;
-      tyre: string | null;
+      tyre?: string | null;
     }>;
   };
 }
@@ -33,8 +37,10 @@ export default function SyncPhoto({
   sessionType,
   onSync,
   onClose,
+  photoEnabled = true,
+  matchLocally,
 }: Props) {
-  const [tab, setTab] = useState<"photo" | "manual">("photo");
+  const [tab, setTab] = useState<"photo" | "manual">(photoEnabled ? "photo" : "manual");
   const [step, setStep] = useState<"instructions" | "capture" | "processing" | "result">("instructions");
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<SyncResult | null>(null);
@@ -66,10 +72,10 @@ export default function SyncPhoto({
   }, []);
 
   useEffect(() => {
-    if (step === "processing" || step === "result") return;
+    if (!photoEnabled || step === "processing" || step === "result") return;
     document.addEventListener("paste", handlePaste);
     return () => document.removeEventListener("paste", handlePaste);
-  }, [step, handlePaste]);
+  }, [step, handlePaste, photoEnabled]);
 
   async function handleFile(file: File) {
     setStep("processing");
@@ -89,7 +95,7 @@ export default function SyncPhoto({
       const token = getToken();
       if (token) headers["Authorization"] = `Bearer ${token}`;
       const resp = await fetch(
-        apiUrl(`/api/sessions/${year}/${round}/sync-photo?type=${sessionType}`),
+        apiUrl(`/api/sessions/${year}/${round}/sync-photo?type=${sessionType}${matchLocally ? "&match=false" : ""}`),
         { method: "POST", body: formData, headers },
       );
 
@@ -98,7 +104,8 @@ export default function SyncPhoto({
         throw new Error(err.detail || `Error ${resp.status}`);
       }
 
-      const data: SyncResult = await resp.json();
+      const body = await resp.json();
+      const data: SyncResult = matchLocally ? await matchLocally(body.extracted) : body;
       setResult(data);
       setStep("result");
     } catch (e: any) {
@@ -151,6 +158,12 @@ export default function SyncPhoto({
     setError(null);
 
     try {
+      if (matchLocally) {
+        setResult(await matchLocally({ lap, drivers }));
+        setTab("photo"); // reuse result view
+        setStep("result");
+        return;
+      }
       const manualHeaders: HeadersInit = { "Content-Type": "application/json" };
       const manualToken = getToken();
       if (manualToken) manualHeaders["Authorization"] = `Bearer ${manualToken}`;
@@ -233,7 +246,7 @@ export default function SyncPhoto({
         </div>
 
         {/* Tabs */}
-        {step !== "result" && (
+        {step !== "result" && photoEnabled && (
           <div className="flex border-b border-f1-border">
             <button
               onClick={() => { setTab("photo"); resetToStart(); }}

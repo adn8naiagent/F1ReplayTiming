@@ -268,13 +268,21 @@ async def live_websocket(
     token: str = Query(""),
 ):
     from auth import is_auth_enabled, verify_token
+    from app_config import is_public_mode, is_valid_session
 
-    await websocket.accept()
-
+    # Check before accepting, so a refused client never gets an open socket
+    # (and never causes an upstream connection to F1's live timing).
     if is_auth_enabled() and not verify_token(token):
-        await websocket.send_json({"type": "error", "message": "Unauthorized"})
         await websocket.close(code=4401, reason="Unauthorized")
         return
+    if is_public_mode():
+        await websocket.close(code=4403, reason="Live timing is not available here")
+        return
+    if not is_valid_session(year, round_num, type) or source not in ("auto", "test", "signalr"):
+        await websocket.close(code=4400, reason="Invalid session")
+        return
+
+    await websocket.accept()
 
     session = None
     try:

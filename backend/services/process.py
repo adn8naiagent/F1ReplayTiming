@@ -8,11 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import traceback
 from datetime import datetime, timezone
 
+from app_config import is_public_mode
 from services import storage
+from services import replay_chunks
 from services.f1_data import (
+    release_sessions,
     _get_session_info_sync,
     _get_track_data_sync,
     _get_lap_data_sync,
@@ -25,6 +29,11 @@ logger = logging.getLogger(__name__)
 
 # Locks to prevent duplicate processing of the same session
 _locks: dict[str, asyncio.Lock] = {}
+
+# Sessions being processed per weekend, so loaded FastF1 data for a weekend is
+# only released once nothing from it is still in progress.
+_active_rounds: dict[tuple[int, int], int] = {}
+_active_lock = threading.Lock()
 
 # State of user-triggered reprocess jobs: key -> {"state": ..., "message": ...}
 # state is "running" | "done" | "error"
@@ -89,6 +98,30 @@ def process_session_sync(
 
     on_status: optional callback(message: str) called with progress updates.
     """
+    round_key = (year, round_num)
+    with _active_lock:
+        _active_rounds[round_key] = _active_rounds.get(round_key, 0) + 1
+    try:
+        return _process_session_sync(year, round_num, session_type, skip_existing, on_status)
+    finally:
+        with _active_lock:
+            _active_rounds[round_key] -= 1
+            last = _active_rounds[round_key] == 0
+            if last:
+                del _active_rounds[round_key]
+        # FastF1 sessions hold every lap's telemetry. Once nothing from this
+        # weekend is being processed, free them; the data is in storage now.
+        if last:
+            release_sessions(year, round_num)
+
+
+def _process_session_sync(
+    year: int,
+    round_num: int,
+    session_type: str,
+    skip_existing: bool,
+    on_status: callable,
+) -> bool:
     prefix = f"{year} R{round_num} {session_type}"
     base = f"sessions/{year}/{round_num}/{session_type}"
 
@@ -144,6 +177,9 @@ def process_session_sync(
         frames = _get_driver_positions_by_time_sync(year, round_num, session_type)
         storage.put_json(f"{base}/replay.json", frames)
         logger.info(f"[{prefix}] Uploaded {len(frames)} replay frames")
+        status("Writing replay files...")
+        replay_chunks.write_chunks(year, round_num, session_type, frames)
+        del frames
     except Exception as e:
         logger.warning(f"[{prefix}] No replay data: {e}")
 
@@ -181,6 +217,13 @@ def process_session_sync(
     except Exception:
         pass
 
+    # The WebSocket player may hold the old frames in memory.
+    try:
+        from routers.replay import evict_cached_session
+        evict_cached_session(year, round_num, session_type)
+    except Exception:
+        pass
+
     # Invalidate the cached events listing so the picker shows the downloaded
     # marker straight away, rather than after the 5 minute cache expires.
     try:
@@ -210,6 +253,10 @@ async def ensure_session_data(
     # Fast path: data already exists
     if storage.exists(f"{base}/replay.json"):
         return True
+
+    # Public sites only show sessions that are already processed.
+    if is_public_mode():
+        return False
 
     # Get or create lock for this session
     key = f"{year}_{round_num}_{session_type}"
@@ -254,6 +301,9 @@ async def ensure_session_data_ws(
 
     if storage.exists(f"{base}/replay.json"):
         return True
+
+    if is_public_mode():
+        return False
 
     key = f"{year}_{round_num}_{session_type}"
     if key not in _locks:
@@ -344,3 +394,69 @@ def delete_session(year: int, round_num: int, session_type: str) -> int:
 
     logger.info(f"Deleted {base} — freed {freed} bytes")
     return freed
+
+
+# ---------------------------------------------------------------------------
+# Preparing a session for the static replay player
+# ---------------------------------------------------------------------------
+
+# key -> {"state": "running" | "done" | "error" | "unavailable", "message": str}
+_prepare_status: dict[str, dict] = {}
+
+
+def get_prepare_status(year: int, round_num: int, session_type: str) -> dict:
+    return _prepare_status.get(
+        f"{year}_{round_num}_{session_type}", {"state": "idle", "message": ""}
+    )
+
+
+def clear_prepare_status(year: int, round_num: int, session_type: str) -> None:
+    _prepare_status.pop(f"{year}_{round_num}_{session_type}", None)
+
+
+def start_prepare(year: int, round_num: int, session_type: str) -> dict:
+    """Make sure replay chunks exist, in the background. Poll get_prepare_status.
+
+    Sessions processed before chunks existed are converted from replay.json;
+    unprocessed sessions are processed from FastF1 (not in public mode).
+    """
+    key = f"{year}_{round_num}_{session_type}"
+    current = _prepare_status.get(key)
+    if current and current["state"] == "running":
+        return current
+    _prepare_status[key] = {"state": "running", "message": "Loading session data..."}
+
+    def set_message(msg: str):
+        cur = _prepare_status.get(key)
+        if cur is not None and cur["state"] == "running":
+            cur["message"] = msg
+
+    def run_sync() -> dict:
+        base = f"sessions/{year}/{round_num}/{session_type}"
+        if replay_chunks.get_manifest(year, round_num, session_type):
+            return {"state": "done", "message": ""}
+        if storage.exists(f"{base}/replay.json"):
+            set_message("Preparing replay files (first view only)...")
+            ok = replay_chunks.build_from_replay_json(year, round_num, session_type)
+            return {"state": "done" if ok else "error", "message": "" if ok else "No replay data"}
+        if is_public_mode():
+            return {"state": "unavailable", "message": "This session isn't available yet."}
+        set_message("Session data not found — processing on demand...")
+        ok = process_session_sync(year, round_num, session_type, False, set_message)
+        if ok and replay_chunks.get_manifest(year, round_num, session_type):
+            return {"state": "done", "message": ""}
+        return {"state": "error", "message": "Failed to load session data. The session may not be available yet."}
+
+    async def run():
+        if key not in _locks:
+            _locks[key] = asyncio.Lock()
+        async with _locks[key]:
+            try:
+                _prepare_status[key] = await asyncio.to_thread(run_sync)
+            except Exception as e:
+                logger.error(f"Preparing replay for {key} failed: {e}")
+                traceback.print_exc()
+                _prepare_status[key] = {"state": "error", "message": "Failed to prepare replay"}
+
+    asyncio.create_task(run())
+    return _prepare_status[key]

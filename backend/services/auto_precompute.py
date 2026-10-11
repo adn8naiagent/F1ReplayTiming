@@ -127,12 +127,8 @@ async def _check_and_process():
                     processed_any = True
 
                     # Also update the schedule in storage
-                    from services.f1_data import _get_season_events_sync
-                    schedule_data = _get_season_events_sync(year)
-                    storage.put_json(
-                        f"seasons/{year}/schedule.json",
-                        {"year": year, "events": schedule_data},
-                    )
+                    from services.schedule import refresh_schedule
+                    await asyncio.to_thread(refresh_schedule, year)
                 else:
                     logger.warning(f"[auto] Failed to process {prefix}")
             except Exception as e:
