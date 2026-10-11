@@ -19,12 +19,6 @@ export default function SiteFooter() {
             <a href={`${REPO_URL}#self-hosting-guide`} target="_blank" rel="noopener noreferrer" className={linkClass}>Self-host it</a>
           )}
         </nav>
-        {publicMode && (
-          <p>
-            A hobby project, maintained in spare time. Visits are counted with cookieless analytics; no
-            personal data is stored.
-          </p>
-        )}
         <p>
           This website is unofficial and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE,
           FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One
