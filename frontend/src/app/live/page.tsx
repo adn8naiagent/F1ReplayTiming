@@ -6,6 +6,7 @@ import { useApi } from "@/hooks/useApi";
 import { useLiveSocket } from "@/hooks/useLiveSocket";
 import { useSettings } from "@/hooks/useSettings";
 import { apiFetch } from "@/lib/api";
+import { useAppConfig } from "@/lib/config";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
 import Leaderboard from "@/components/Leaderboard";
@@ -67,7 +68,7 @@ function formatDelayShort(s: number): string {
   return sec === 0 ? `${sign}${m}m` : `${sign}${m}:${String(sec).padStart(2, "0")}`;
 }
 
-export default function LivePage() {
+function LiveTiming() {
   const searchParams = useSearchParams();
   const year = Number(searchParams.get("year"));
   const round = Number(searchParams.get("round"));
@@ -939,4 +940,21 @@ export default function LivePage() {
       )}
     </div>
   );
+}
+
+// Live timing is switched off on public sites: send visitors to the session picker.
+export default function LivePage() {
+  const config = useAppConfig();
+  const disabled = !!config && !config.live;
+  useEffect(() => {
+    if (disabled) window.location.replace("/");
+  }, [disabled]);
+  if (!config || disabled) {
+    return (
+      <div className="min-h-screen bg-f1-dark flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-f1-red border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+  return <LiveTiming />;
 }

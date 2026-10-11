@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import io
 import json
@@ -16,6 +17,7 @@ from fastapi import APIRouter, UploadFile, File, Query, HTTPException, Body
 register_heif_opener()
 
 from routers.replay import _get_frames  # reads from R2
+from app_config import validate_session
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["sync"])
@@ -243,6 +245,7 @@ async def sync_manual(
     body: dict = Body(...),
 ):
     """Match manual leaderboard input against replay frames."""
+    validate_session(year, round_num, type)
     if not body:
         raise HTTPException(status_code=400, detail="Request body required")
 
@@ -268,7 +271,9 @@ async def sync_from_photo(
     round_num: int,
     type: str = Query("R"),
     photo: UploadFile = File(...),
+    match: bool = Query(True, description="False returns only the extracted leaderboard; the browser player matches it itself"),
 ):
+    validate_session(year, round_num, type)
     # Read image
     image_bytes = await photo.read()
     if len(image_bytes) == 0:
@@ -278,7 +283,7 @@ async def sync_from_photo(
 
     # Convert to JPEG (handles HEIC, PNG, etc.)
     try:
-        image_bytes = _convert_to_jpeg(image_bytes)
+        image_bytes = await asyncio.to_thread(_convert_to_jpeg, image_bytes)
     except Exception as e:
         logger.error(f"Image conversion failed: {e}")
         raise HTTPException(status_code=400, detail="Could not process image")
@@ -286,6 +291,9 @@ async def sync_from_photo(
     # Extract leaderboard data from image
     extracted = await _extract_leaderboard(image_bytes)
     logger.info(f"Extracted leaderboard: {json.dumps(extracted)}")
+
+    if not match:
+        return {"extracted": extracted}
 
     # Load replay frames
     frames = await _get_frames(year, round_num, type)

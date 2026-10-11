@@ -264,6 +264,35 @@ def get_json(path: str) -> object | None:
     return _local_get_json(path)
 
 
+async def aget_json(path: str) -> object | None:
+    """get_json without blocking the event loop (R2 reads are network calls)."""
+    import asyncio
+    return await asyncio.to_thread(get_json, path)
+
+
+def get_bytes(path: str) -> tuple[bytes, bool] | None:
+    """Raw stored bytes for serving as-is, and whether they are gzipped.
+
+    R2 objects are stored gzipped, so they can be passed straight through to
+    the browser with Content-Encoding: gzip instead of being decompressed.
+    """
+    if _mode() == "r2":
+        from botocore.exceptions import ClientError
+        try:
+            resp = _get_r2_client().get_object(Bucket=_r2_bucket(), Key=_r2_key(path))
+        except ClientError as e:
+            if e.response["Error"]["Code"] in ("NoSuchKey", "404"):
+                return None
+            raise
+        body = resp["Body"].read()
+    else:
+        filepath = _data_dir() / path
+        if not filepath.is_file():
+            return None
+        body = filepath.read_bytes()
+    return body, body[:2] == b"\x1f\x8b"
+
+
 def exists(path: str) -> bool:
     if _mode() == "r2":
         return _r2_exists(path)

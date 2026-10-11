@@ -1,5 +1,7 @@
 "use client";
 
+import SiteFooter from "@/components/SiteFooter";
+
 export default function FeaturesPage() {
   return (
     <div className="min-h-screen bg-f1-dark">
@@ -511,6 +513,7 @@ export default function FeaturesPage() {
           </button>
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

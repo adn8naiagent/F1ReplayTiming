@@ -4,6 +4,7 @@ Determines if any F1 session is currently live or imminent based on
 the session schedule and known session durations.
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 
@@ -46,10 +47,14 @@ async def live_status():
 
     Returns the live session details if found, or null.
     """
+    from app_config import is_public_mode
+    if is_public_mode():
+        return {"live": None}
+
     now = datetime.now(timezone.utc)
     year = now.year
 
-    schedule = get_json(f"seasons/{year}/schedule.json")
+    schedule = await asyncio.to_thread(get_json, f"seasons/{year}/schedule.json")
     if not schedule:
         return {"live": None}
 

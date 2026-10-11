@@ -86,6 +86,9 @@ All configuration is managed through the `.env` file. No need to edit `docker-co
 | `AUTH_ENABLED` | `false` | Enable passphrase authentication |
 | `AUTH_PASSPHRASE` | | Required passphrase when auth is enabled |
 | `OPENROUTER_API_KEY` | | Enables photo sync feature ([get a key](https://openrouter.ai/)) |
+| `AUTO_PRECOMPUTE` | `race+qual` | Which sessions to fetch in the background on race weekends (see [Session data](#session-data)) |
+| `RETENTION_SWEEP_ENABLED` | `true` | Set to `false` to stop this instance running the daily retention sweep, e.g. when several instances share one bucket |
+| `REPLAY_PLAYER` | `static` | `static` plays replays in the browser from small compressed files. `websocket` uses the previous player, which streams frames from the server |
 
 ### Reverse Proxy / Remote Access
 
@@ -205,6 +208,12 @@ docker compose exec f1timing python precompute.py 2025 --skip-existing
 docker compose exec f1timing python precompute.py 2024 2025 --skip-existing
 ```
 
+**Replay files from older versions:** Sessions processed before 2.2 are converted to the new replay files automatically the first time they're opened (a few seconds per session). To convert everything in advance instead:
+
+```bash
+docker compose exec f1timing python precompute.py 2024 2025 2026 --chunks-only
+```
+
 **Re-computing a session:** Some updates (noted in the changelog as "requires re-compute") add new data to existing sessions. Re-run the same command **without** `--skip-existing` and it overwrites the stored session — that is the re-compute:
 
 ```bash
@@ -278,6 +287,6 @@ This project is powered by [FastF1](https://github.com/theOehrly/Fast-F1), an op
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
-> **Disclaimer:** This project is intended for **personal, non-commercial use only**. This website is unofficial and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.
+> **Disclaimer:** This project is non-commercial. This website is unofficial and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.

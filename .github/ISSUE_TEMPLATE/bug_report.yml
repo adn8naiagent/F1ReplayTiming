@@ -1,0 +1,43 @@
+name: Report a problem
+description: Something isn't working as expected
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect to see instead?
+    validations:
+      required: true
+  - type: input
+    id: session
+    attributes:
+      label: Which session?
+      description: Year, race and session, e.g. "2026 Singapore, Qualifying"
+  - type: dropdown
+    id: setup
+    attributes:
+      label: Where are you running it?
+      options:
+        - The public website
+        - Self-hosted (Docker)
+        - Self-hosted (manual setup)
+  - type: dropdown
+    id: device
+    attributes:
+      label: Device
+      options:
+        - Desktop / laptop
+        - Phone
+        - Tablet
+        - TV or other
+  - type: textarea
+    id: screenshot
+    attributes:
+      label: Screenshot
+      description: Optional. Drag an image in here.
+  - type: textarea
+    id: context
+    attributes:
+      label: Details
+      description: Filled in automatically when you use "Report a problem" in the app.

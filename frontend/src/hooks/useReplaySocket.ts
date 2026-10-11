@@ -82,7 +82,7 @@ export interface QualiPhaseInfo {
   timestamp: number;
 }
 
-interface ReplayState {
+export interface ReplayState {
   connected: boolean;
   reconnecting: boolean;
   ready: boolean;
@@ -98,7 +98,7 @@ interface ReplayState {
   statusMessage: string | null;
 }
 
-export function useReplaySocket(year: number, round: number, sessionType: string = "R") {
+export function useReplaySocket(year: number, round: number, sessionType: string = "R", enabled: boolean = true) {
   const wsRef = useRef<WebSocket | null>(null);
   // Reconnect bookkeeping. Without this a dropped socket — a proxy idle
   // timeout, a network blip — freezes the UI permanently with no feedback.
@@ -124,6 +124,7 @@ export function useReplaySocket(year: number, round: number, sessionType: string
   });
 
   useEffect(() => {
+    if (!enabled) return;
     unmountedRef.current = false;
     attemptRef.current = 0;
     lastTimestampRef.current = 0;
@@ -219,7 +220,7 @@ export function useReplaySocket(year: number, round: number, sessionType: string
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
       wsRef.current?.close();
     };
-  }, [year, round, sessionType]);
+  }, [year, round, sessionType, enabled]);
 
   const send = useCallback((msg: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
