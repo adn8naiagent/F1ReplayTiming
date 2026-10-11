@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Flag, CircleDot, Smartphone, RefreshCw, PictureInPicture2, X, Info } from "lucide-react";
+import { Flag, CircleDot, Smartphone, RefreshCw, PictureInPicture2, X } from "lucide-react";
 
-// Short "what is this" panel for the public site's home page. Once hidden
-// (remembered per browser) it collapses to an Overview button that reopens it.
+// Short "what is this" panel for the public site's home page. Hiding it is
+// remembered per browser; an Overview button in the header brings it back.
 
 const DISMISS_KEY = "f1replay_intro_dismissed";
 
@@ -17,8 +17,8 @@ const HIGHLIGHTS = [
   { icon: <Smartphone className="w-4 h-4" />, title: "Mobile and tablet", text: "Works on phones and tablets as well as desktop." },
 ];
 
-export default function SiteIntro() {
-  // null until the saved choice is read, so neither state flashes on load.
+/** Whether the intro is showing (null until the saved choice is read, so nothing flashes). */
+export function useIntroVisibility() {
   const [show, setShow] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -29,30 +29,19 @@ export default function SiteIntro() {
     }
   }, []);
 
-  const remember = (visible: boolean) => {
+  const set = (visible: boolean) => {
     setShow(visible);
     try {
       if (visible) localStorage.removeItem(DISMISS_KEY);
       else localStorage.setItem(DISMISS_KEY, "1");
     } catch {}
   };
-  const dismiss = () => remember(false);
 
-  if (show === null) return null;
+  return { show, open: () => set(true), dismiss: () => set(false) };
+}
 
-  if (!show) {
-    return (
-      <div className="max-w-3xl mx-auto mb-4">
-        <button
-          onClick={() => remember(true)}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-f1-card border border-f1-border rounded-lg text-xs font-bold text-f1-muted hover:text-white transition-colors"
-        >
-          <Info className="w-3.5 h-3.5" />
-          Overview
-        </button>
-      </div>
-    );
-  }
+export default function SiteIntro({ onDismiss }: { onDismiss: () => void }) {
+  const dismiss = onDismiss;
 
   return (
     <div className="max-w-3xl mx-auto mb-8 bg-f1-card border border-f1-border rounded-xl p-5 relative">

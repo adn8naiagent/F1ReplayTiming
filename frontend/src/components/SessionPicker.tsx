@@ -6,7 +6,7 @@ import { getToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import StorageManager from "./StorageManager";
 import SiteFooter from "./SiteFooter";
-import SiteIntro from "./SiteIntro";
+import SiteIntro, { useIntroVisibility } from "./SiteIntro";
 import { useAppConfig } from "@/lib/config";
 
 interface SessionMenu {
@@ -282,6 +282,8 @@ export default function SessionPicker() {
   const appConfig = useAppConfig();
   const publicMode = appConfig?.public_mode ?? false;
   const showAdmin = !!appConfig && !appConfig.public_mode;
+  const intro = useIntroVisibility();
+  const showOverviewButton = publicMode && intro.show === false;
 
   const { data: seasonsData } = useApi<SeasonsResponse>("/api/seasons");
   const { data: eventsData, loading: eventsLoading } = useApi<EventsResponse>(
@@ -643,6 +645,14 @@ export default function SessionPicker() {
             <p className="text-f1-muted text-xs sm:text-base">Select a session to replay</p>
           </div>
           {/* Desktop: text buttons */}
+          {showOverviewButton && (
+            <button
+              onClick={intro.open}
+              className="hidden sm:block px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
+            >
+              Overview
+            </button>
+          )}
           <a
             href="/features"
             className="hidden sm:block px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
@@ -675,6 +685,14 @@ export default function SessionPicker() {
             </button>
             {menuOpen && (
               <div className="absolute right-0 top-11 w-40 bg-f1-card border border-f1-border rounded-lg shadow-xl z-50 py-1">
+                {showOverviewButton && (
+                  <button
+                    onClick={() => { setMenuOpen(false); intro.open(); }}
+                    className="block w-full text-left px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"
+                  >
+                    Overview
+                  </button>
+                )}
                 <a
                   href="/features"
                   className="block px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"
@@ -702,7 +720,7 @@ export default function SessionPicker() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
-        {publicMode && <SiteIntro />}
+        {publicMode && intro.show && <SiteIntro onDismiss={intro.dismiss} />}
 
         {/* Season selector */}
         <div className="flex gap-2 mb-8 flex-wrap max-w-3xl mx-auto">
