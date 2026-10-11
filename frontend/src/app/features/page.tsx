@@ -1,6 +1,7 @@
 "use client";
 
 import SiteFooter from "@/components/SiteFooter";
+import LeaderboardGuide from "@/components/LeaderboardGuide";
 
 export default function FeaturesPage() {
   return (
@@ -26,6 +27,16 @@ export default function FeaturesPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-12 space-y-10">
+
+        {/* Reading the leaderboard */}
+        <section className="bg-f1-card border border-f1-red/40 rounded-xl p-6">
+          <h2 className="text-lg font-bold text-white mb-1">Reading the Leaderboard</h2>
+          <p className="text-f1-text leading-relaxed mb-4">
+            What each column on the leaderboard means. More detail in{" "}
+            <a href="#driver-leaderboard" className="text-f1-red hover:underline font-semibold">Driver Leaderboard</a> below.
+          </p>
+          <LeaderboardGuide />
+        </section>
 
         {/* Session Picker */}
         <section className="bg-f1-card border border-f1-border rounded-xl p-6">
@@ -76,7 +87,7 @@ export default function FeaturesPage() {
         </section>
 
         {/* Driver Leaderboard */}
-        <section className="bg-f1-card border border-f1-border rounded-xl p-6">
+        <section id="driver-leaderboard" className="bg-f1-card border border-f1-border rounded-xl p-6 scroll-mt-6">
           <h2 className="text-lg font-bold text-white mb-1">Driver Leaderboard</h2>
           <p className="text-xs font-bold text-f1-red uppercase tracking-wider mb-3">All sessions</p>
           <p className="text-f1-text leading-relaxed mb-4">
