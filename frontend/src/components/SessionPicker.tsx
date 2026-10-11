@@ -5,6 +5,8 @@ import { useApi } from "@/hooks/useApi";
 import { getToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import StorageManager from "./StorageManager";
+import SiteFooter from "./SiteFooter";
+import { useAppConfig } from "@/lib/config";
 
 interface SessionMenu {
   x: number;
@@ -274,11 +276,17 @@ export default function SessionPicker() {
     };
   }, [ctxMenu]);
 
+  // Admin controls (reprocess, delete, storage) stay hidden until we know
+  // this isn't a public site, so they never flash up on one.
+  const appConfig = useAppConfig();
+  const publicMode = appConfig?.public_mode ?? false;
+  const showAdmin = !!appConfig && !appConfig.public_mode;
+
   const { data: seasonsData } = useApi<SeasonsResponse>("/api/seasons");
   const { data: eventsData, loading: eventsLoading } = useApi<EventsResponse>(
     `/api/seasons/${year}/events`,
   );
-  const { data: liveData } = useApi<{ live: LiveSessionInfo | null }>("/api/live/status");
+  const { data: liveData } = useApi<{ live: LiveSessionInfo | null }>(appConfig?.live ? "/api/live/status" : null);
   const liveSession = liveData?.live || null;
 
   const seasons = (seasonsData?.seasons || []).filter((s) => s <= currentYear);
@@ -390,11 +398,14 @@ export default function SessionPicker() {
                   </div>
                 );
               }
-              if (session.available) {
+              // Public sites only offer sessions that are already processed.
+              if (session.available && !(publicMode && !session.precomputed)) {
                 const sizeLabel = formatSize(session.size_bytes);
-                const tooltip = session.precomputed
-                  ? `Downloaded${sizeLabel ? ` · ${sizeLabel}` : ""} — right-click for options`
-                  : "Not downloaded — will process when opened";
+                const tooltip = !showAdmin
+                  ? undefined
+                  : session.precomputed
+                    ? `Downloaded${sizeLabel ? ` · ${sizeLabel}` : ""} — right-click for options`
+                    : "Not downloaded — will process when opened";
                 const href = `/replay?year=${year}&round=${evt.round_number}&type=${code}`;
                 const sKey = `${year}_${evt.round_number}_${code}`;
                 const busy = reprocessing.has(sKey);
@@ -414,8 +425,9 @@ export default function SessionPicker() {
                         if (suppressClickRef.current) { suppressClickRef.current = false; e.preventDefault(); return; }
                         setNavigating(true);
                       }}
-                      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); openMenu(e.clientX, e.clientY); }}
+                      onContextMenu={(e) => { if (!showAdmin) return; e.preventDefault(); e.stopPropagation(); openMenu(e.clientX, e.clientY); }}
                       onTouchStart={(e) => {
+                        if (!showAdmin) return;
                         const t = e.touches[0];
                         longPressRef.current = setTimeout(() => { suppressClickRef.current = true; openMenu(t.clientX, t.clientY); }, 500);
                       }}
@@ -427,7 +439,7 @@ export default function SessionPicker() {
                       {session.name}
                       {busy ? (
                         <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" aria-label="Reprocessing" />
-                      ) : session.precomputed ? (
+                      ) : session.precomputed && showAdmin ? (
                         <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" aria-label="Downloaded" />
                       ) : null}
                     </a>
@@ -437,12 +449,13 @@ export default function SessionPicker() {
               return (
                 <div key={session.name} className="flex flex-col items-center">
                   {localTime && (
-                    <span className="text-[10px] text-f1-muted/50 mb-1 text-center leading-tight">
+                    <span className="text-[10px] text-f1-muted opacity-50 mb-1 text-center leading-tight">
                       {localTime.dayDate}<br />{localTime.time}
                     </span>
                   )}
                   <span
-                    className="px-3 py-1.5 bg-f1-border/40 text-f1-muted/50 text-xs font-bold rounded cursor-not-allowed"
+                    title={session.available ? "Not available yet" : undefined}
+                    className="px-3 py-1.5 bg-f1-border/40 text-f1-muted opacity-60 text-xs font-bold rounded cursor-not-allowed"
                   >
                     {session.name}
                   </span>
@@ -641,12 +654,14 @@ export default function SessionPicker() {
           >
             About
           </a>
-          <button
-            onClick={() => setStorageOpen(true)}
-            className="hidden sm:block px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
-          >
-            Storage
-          </button>
+          {showAdmin && (
+            <button
+              onClick={() => setStorageOpen(true)}
+              className="hidden sm:block px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
+            >
+              Storage
+            </button>
+          )}
           {/* Mobile: hamburger menu */}
           <div className="relative sm:hidden" ref={menuRef}>
             <button
@@ -671,12 +686,14 @@ export default function SessionPicker() {
                 >
                   About
                 </a>
-                <button
-                  onClick={() => { setMenuOpen(false); setStorageOpen(true); }}
-                  className="block w-full text-left px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"
-                >
-                  Storage
-                </button>
+                {showAdmin && (
+                  <button
+                    onClick={() => { setMenuOpen(false); setStorageOpen(true); }}
+                    className="block w-full text-left px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"
+                  >
+                    Storage
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -763,6 +780,7 @@ export default function SessionPicker() {
           </>
         )}
       </div>
+      <SiteFooter />
     </div>
   );
 }

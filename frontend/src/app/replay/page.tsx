@@ -4,6 +4,9 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
 import { useReplaySocket } from "@/hooks/useReplaySocket";
+import { useReplayPlayer } from "@/hooks/useReplayPlayer";
+import { useAppConfig, reportProblemUrl } from "@/lib/config";
+import { matchFrame } from "@/lib/replayMatch";
 import { useSettings } from "@/hooks/useSettings";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
@@ -215,7 +218,37 @@ export default function ReplayPage() {
     return map;
   }, [lapsResponse]);
 
-  const replay = useReplaySocket(year, round, sessionType);
+  // Which player: the server setting, a per-tab ?player=old|new override, or
+  // the WebSocket player if the static files can't be loaded.
+  const appConfig = useAppConfig();
+  const playerParam = searchParams.get("player");
+  const [staticFailed, setStaticFailed] = useState(false);
+  const playerMode: "static" | "websocket" | null = !appConfig
+    ? null
+    : staticFailed || playerParam === "old"
+      ? "websocket"
+      : playerParam === "new"
+        ? "static"
+        : appConfig.replay_player;
+  const socketReplay = useReplaySocket(year, round, sessionType, playerMode === "websocket");
+  const staticReplay = useReplayPlayer(year, round, sessionType, playerMode === "static");
+  useEffect(() => {
+    if (playerMode === "static" && staticReplay.fatal) {
+      console.warn("[replay] Static replay files unavailable, using the WebSocket player:", staticReplay.error);
+      setStaticFailed(true);
+    }
+  }, [playerMode, staticReplay.fatal, staticReplay.error]);
+  const replay = playerMode === "static" ? staticReplay : socketReplay;
+
+  const reportProblem = useCallback(() => {
+    const url = reportProblemUrl({
+      Page: window.location.href,
+      Session: `${year} round ${round} ${sessionType}`,
+      "Replay time": replay.frame ? `${Math.round(replay.frame.timestamp)}s (lap ${replay.frame.lap})` : undefined,
+      Player: playerMode ?? undefined,
+    });
+    window.open(url, "_blank", "noopener,noreferrer");
+  }, [year, round, sessionType, replay.frame, playerMode]);
 
   // Wake Lock — prevent screen sleep during playback
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -281,7 +314,9 @@ export default function ReplayPage() {
   }, [settings.showAllPanels]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const isLoading = sessionLoading || trackLoading;
-  const dataError = sessionError || trackError;
+  // A replay that failed to load (nothing to show) counts as unavailable too.
+  const replayError = !replay.loading && !replay.frame && !(playerMode === "static" && staticReplay.fatal) ? replay.error : null;
+  const dataError = sessionError || trackError || replayError;
 
   // Show loading until session + track + replay frames are all ready
   if (isLoading || (!dataError && replay.loading)) {
@@ -409,6 +444,7 @@ export default function ReplayPage() {
           onSettingChange={updateSetting}
           weather={weather}
           mobileTeamAbbrHidden={mobileTeamAbbrHidden}
+          onReportProblem={reportProblem}
         />
       )}
 
@@ -1195,6 +1231,12 @@ export default function ReplayPage() {
           sessionType={sessionType}
           onSync={(timestamp) => replay.seek(timestamp)}
           onClose={() => setShowSyncPhoto(false)}
+          photoEnabled={appConfig?.photo_sync ?? false}
+          matchLocally={
+            playerMode === "static"
+              ? async (extracted) => matchFrame(await staticReplay.framesNearLap(extracted.lap), extracted)
+              : undefined
+          }
         />
       )}
     </div>

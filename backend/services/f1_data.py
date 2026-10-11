@@ -4,6 +4,7 @@ import asyncio
 import os
 import logging
 import threading
+import time
 from datetime import datetime, timezone
 from functools import lru_cache
 
@@ -34,6 +35,24 @@ _session_lock = threading.Lock()
 
 def _cache_key(year: int, round_num: int, session_type: str) -> str:
     return f"{year}_{round_num}_{session_type}"
+
+
+def release_sessions(year: int, round_num: int) -> None:
+    """Drop a weekend's loaded FastF1 sessions from memory.
+
+    Processing loads full telemetry for a session (and sometimes another
+    session from the same weekend for the track outline). Once written to
+    storage it's never read again, so keeping it only grows memory.
+    """
+    prefix = f"{year}_{round_num}_"
+    with _session_lock:
+        keys = [k for k in _session_cache if k.startswith(prefix)]
+        for k in keys:
+            del _session_cache[k]
+    if keys:
+        import gc
+        gc.collect()
+        logger.info(f"Released FastF1 sessions from memory: {', '.join(keys)}")
 
 
 # Cache for session availability checks: key -> bool
@@ -79,56 +98,71 @@ SESSION_NAME_TO_TYPE: dict[str, str] = {
 }
 
 
-# Cache for raw schedule data: year -> list of event dicts (static, fetched once)
-_schedule_cache: dict[int, list[dict]] = {}
+# Cache for raw schedule data: year -> (list of event dicts, fetched_at).
+# Refreshed daily so mid-season calendar changes (moved or cancelled rounds)
+# are picked up without a restart.
+_schedule_cache: dict[int, tuple[list[dict], float]] = {}
 _schedule_lock = threading.Lock()
+SCHEDULE_TTL = 24 * 60 * 60
 
 
-def _fetch_schedule_sync(year: int) -> list[dict]:
-    """Fetch and cache the raw schedule from FastF1. Only called once per year."""
-    if year in _schedule_cache:
-        return _schedule_cache[year]
+def _fetch_schedule_sync(year: int, force: bool = False) -> list[dict]:
+    """Fetch and cache the raw schedule from FastF1, refreshing once a day."""
+    cached = _schedule_cache.get(year)
+    if cached and not force and time.time() - cached[1] < SCHEDULE_TTL:
+        return cached[0]
 
     with _schedule_lock:
-        if year in _schedule_cache:
-            return _schedule_cache[year]
-
-        logger.info(f"Fetching schedule for {year} from FastF1...")
-        schedule = fastf1.get_event_schedule(year, include_testing=False)
-        events = []
-
-        for _, row in schedule.iterrows():
-            if row["RoundNumber"] == 0:
-                continue
-
-            sessions_raw = []
-            for i in range(1, 6):
-                name = row.get(f"Session{i}", "")
-                if not (name and isinstance(name, str) and name.strip()):
-                    continue
-                date_utc = row.get(f"Session{i}DateUtc")
-                sessions_raw.append({
-                    "name": name,
-                    "date_utc": date_utc.isoformat() + "Z" if pd.notna(date_utc) else None,
-                    "_ts": date_utc.to_pydatetime().replace(tzinfo=timezone.utc) if pd.notna(date_utc) else None,
-                })
-
-            event_date = row.get("EventDate")
-            event_dt = pd.Timestamp(event_date).to_pydatetime().replace(tzinfo=timezone.utc) if pd.notna(event_date) else None
-
-            events.append({
-                "round_number": int(row["RoundNumber"]),
-                "country": str(row.get("Country", "")),
-                "event_name": str(row.get("EventName", "")),
-                "location": str(row.get("Location", "")),
-                "event_date": str(row.get("EventDate", ""))[:10],
-                "sessions_raw": sessions_raw,
-                "_event_dt": event_dt,
-            })
-
-        _schedule_cache[year] = events
+        cached = _schedule_cache.get(year)
+        if cached and not force and time.time() - cached[1] < SCHEDULE_TTL:
+            return cached[0]
+        try:
+            events = _load_schedule(year)
+        except Exception:
+            if cached:
+                logger.warning(f"Schedule refresh for {year} failed; keeping the cached copy")
+                return cached[0]
+            raise
+        _schedule_cache[year] = (events, time.time())
         logger.info(f"Schedule for {year} cached ({len(events)} events).")
         return events
+
+
+def _load_schedule(year: int) -> list[dict]:
+    logger.info(f"Fetching schedule for {year} from FastF1...")
+    schedule = fastf1.get_event_schedule(year, include_testing=False)
+    events = []
+
+    for _, row in schedule.iterrows():
+        if row["RoundNumber"] == 0:
+            continue
+
+        sessions_raw = []
+        for i in range(1, 6):
+            name = row.get(f"Session{i}", "")
+            if not (name and isinstance(name, str) and name.strip()):
+                continue
+            date_utc = row.get(f"Session{i}DateUtc")
+            sessions_raw.append({
+                "name": name,
+                "date_utc": date_utc.isoformat() + "Z" if pd.notna(date_utc) else None,
+                "_ts": date_utc.to_pydatetime().replace(tzinfo=timezone.utc) if pd.notna(date_utc) else None,
+            })
+
+        event_date = row.get("EventDate")
+        event_dt = pd.Timestamp(event_date).to_pydatetime().replace(tzinfo=timezone.utc) if pd.notna(event_date) else None
+
+        events.append({
+            "round_number": int(row["RoundNumber"]),
+            "country": str(row.get("Country", "")),
+            "event_name": str(row.get("EventName", "")),
+            "location": str(row.get("Location", "")),
+            "event_date": str(row.get("EventDate", ""))[:10],
+            "sessions_raw": sessions_raw,
+            "_event_dt": event_dt,
+        })
+
+    return events
 
 
 def _get_season_events_sync(year: int) -> list[dict]:

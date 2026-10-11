@@ -15,6 +15,7 @@ interface Props {
   weather?: WeatherData;
   extraActions?: React.ReactNode;
   mobileTeamAbbrHidden?: boolean;
+  onReportProblem?: () => void;
 }
 
 const SESSION_LABELS: Record<string, string> = {
@@ -77,12 +78,13 @@ export default function SessionBanner({
   weather,
   extraActions,
   mobileTeamAbbrHidden,
+  onReportProblem,
 }: Props) {
   const settings = settingsProp || DEFAULT_SETTINGS;
   const isRace = sessionType === "R" || sessionType === "S";
   const isQualifying = sessionType === "Q" || sessionType === "SQ";
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Other">("Leaderboard");
+  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Other" | "Report a bug">("Leaderboard");
   const settingsRef = useRef<HTMLDivElement>(null);
 
   // Close settings on outside click
@@ -226,7 +228,10 @@ export default function SessionBanner({
                 <div className="flex flex-1 min-h-0">
                   {/* Tab sidebar */}
                   <div className="flex flex-col border-r border-f1-border py-2 w-36 flex-shrink-0">
-                    {(["Leaderboard", "Weather", "Track Map", "Race Control", "Other"] as const).map((tab) => (
+                    {([
+                      "Leaderboard", "Weather", "Track Map", "Race Control", "Other",
+                      ...(onReportProblem ? (["Report a bug"] as const) : []),
+                    ] as const).map((tab) => (
                       <button
                         key={tab}
                         onClick={() => setSettingsTab(tab)}
@@ -347,6 +352,21 @@ export default function SessionBanner({
                       </button>
                     ))}
                   </>)}
+
+                  {settingsTab === "Report a bug" && onReportProblem && (
+                    <div className="px-2 sm:px-6 py-2 space-y-3">
+                      <p className="text-sm text-f1-muted leading-relaxed">
+                        Something not working? This opens a GitHub issue with this session and the current
+                        replay time already filled in.
+                      </p>
+                      <button
+                        onClick={onReportProblem}
+                        className="px-4 py-2 bg-f1-red text-white text-sm font-bold rounded hover:bg-red-700 transition-colors"
+                      >
+                        Report a bug
+                      </button>
+                    </div>
+                  )}
                 </div>
                 </div>
               </div>

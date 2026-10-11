@@ -2,6 +2,32 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
+## 2.2.0
+
+### Improvements
+
+- **Faster, lighter replays** — replays now load as small compressed files and play in the browser instead of being streamed frame by frame from the server: about 11 MB per race instead of about 211 MB, with no server memory per viewer. Sessions processed before 2.2 are converted the first time they're opened, or all at once with `python precompute.py <years> --chunks-only`. If you have problems, set `REPLAY_PLAYER=websocket` to go back to the previous player.
+
+- **Manual sync runs in the browser** — matching a typed-in lap and gaps no longer loads the whole session on the server.
+
+- **Race calendar refreshes daily** — moved or cancelled rounds are picked up within a day instead of at the next restart.
+
+- **`RETENTION_SWEEP_ENABLED`** — set to `false` to stop an instance running the daily retention sweep, for setups where several instances share one storage bucket.
+
+- **Report a bug** — a new Report a bug tab in a replay's Settings opens a GitHub issue with the session and replay time filled in. The home, About and Features pages link to GitHub and Discussions.
+
+### Fixes
+
+- **Server memory grew with each viewer** — every new replay connection reloaded the whole session, and earlier viewers kept their own copy in memory.
+
+- **Processed sessions never released from memory** — FastF1 session data stayed loaded for the life of the server after processing.
+
+- **Outdated 2026 calendar on new installs** — an early-season calendar with the old round order could be used until a session was processed. It's now replaced with a fresh one on first load.
+
+- **Stricter request checks** — session types, years, rounds and driver codes are validated before they're used in storage paths, and live timing refuses invalid or unauthorised connections before opening them.
+
+- **Unavailable sessions looked clickable** — greyed-out session buttons on the home page showed bright text.
+
 ## 2.1.3
 
 ### Improvements
