@@ -18,6 +18,10 @@ Usage:
 
     # Process multiple years
     python precompute.py 2024 2025
+
+    # Write replay chunks for sessions processed before they existed
+    # (no FastF1 processing; reads each stored replay.json)
+    python precompute.py 2024 2025 2026 --chunks-only
 """
 
 from __future__ import annotations
@@ -36,10 +40,11 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(__file__))
 
 from services import storage
+from services import replay_chunks
 from services.process import process_session_sync
+from services.schedule import refresh_schedule
 from services.f1_data import (
     _fetch_schedule_sync,
-    _get_season_events_sync,
     SESSION_NAME_TO_TYPE,
 )
 
@@ -55,8 +60,7 @@ def process_year(year: int, target_round: int | None = None, target_session: str
     # Upload schedule
     logger.info(f"Processing schedule for {year}...")
     try:
-        events = _get_season_events_sync(year)
-        storage.put_json(f"seasons/{year}/schedule.json", {"year": year, "events": events})
+        events = refresh_schedule(year)
         logger.info(f"Uploaded schedule for {year} ({len(events)} events)")
     except Exception as e:
         logger.error(f"Failed to get schedule for {year}: {e}")
@@ -86,15 +90,43 @@ def process_year(year: int, target_round: int | None = None, target_session: str
                 traceback.print_exc()
 
 
+def backfill_chunks(year: int, target_round: int | None = None, target_session: str | None = None):
+    """Write replay chunks for stored sessions that only have replay.json."""
+    keys = storage.list_keys(f"sessions/{year}/")
+    sessions = sorted({
+        tuple(k.split("/")[2:4]) for k in keys
+        if k.endswith("/replay.json") and len(k.split("/")) == 5
+    }, key=lambda rt: (int(rt[0]), rt[1]))
+    for rnd, st in sessions:
+        rnd = int(rnd)
+        if target_round is not None and rnd != target_round:
+            continue
+        if target_session is not None and st != target_session:
+            continue
+        if replay_chunks.get_manifest(year, rnd, st):
+            logger.info(f"{year} R{rnd} {st}: chunks already exist")
+            continue
+        try:
+            manifest = replay_chunks.build_from_replay_json(year, rnd, st)
+            logger.info(f"{year} R{rnd} {st}: {len(manifest['chunks']) if manifest else 0} chunks written")
+        except Exception as e:
+            logger.error(f"{year} R{rnd} {st}: failed to write chunks: {e}")
+            traceback.print_exc()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pre-compute F1 data and upload to storage")
     parser.add_argument("years", type=int, nargs="+", help="Year(s) to process")
     parser.add_argument("--round", type=int, default=None, help="Specific round number")
     parser.add_argument("--session", type=str, default=None, help="Session type (R, Q, S, FP1, FP2, FP3, SQ)")
     parser.add_argument("--skip-existing", action="store_true", help="Skip sessions already in R2")
+    parser.add_argument("--chunks-only", action="store_true", help="Only write replay chunks for already-processed sessions")
     args = parser.parse_args()
 
     for year in args.years:
+        if args.chunks_only:
+            backfill_chunks(year, target_round=args.round, target_session=args.session)
+            continue
         process_year(year, target_round=args.round, target_session=args.session, skip_existing=args.skip_existing)
 
     logger.info("Pre-compute complete.")

@@ -4,8 +4,10 @@ import time
 from copy import deepcopy
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Query, HTTPException
-from services.storage import get_json, put_json, list_sizes
+from fastapi import APIRouter, Query, HTTPException, Response
+from app_config import set_cache, validate_session, MIN_YEAR, MAX_YEAR
+from services import schedule as schedule_store
+from services.storage import get_json, aget_json, list_sizes
 from services.process import (
     ensure_session_data,
     start_reprocess,
@@ -43,9 +45,10 @@ _events_cache: dict[int, tuple[dict, float]] = {}
 _CACHE_TTL = 300  # 5 minutes
 
 
-def _build_events(year: int) -> dict:
+def _build_events(year: int, data: dict | None = None) -> dict:
     """Build events response with availability based on session dates."""
-    data = get_json(f"seasons/{year}/schedule.json")
+    if data is None:
+        data = get_json(f"seasons/{year}/schedule.json")
     if data is None:
         return None
 
@@ -122,24 +125,28 @@ async def list_seasons():
 
 
 @router.get("/seasons/{year}/events")
-async def list_events(year: int):
+async def list_events(year: int, response: Response):
+    if not MIN_YEAR <= year <= MAX_YEAR:
+        raise HTTPException(status_code=400, detail=f"Unsupported year: {year}")
+    set_cache(response, 60)
     now = time.time()
     cached = _events_cache.get(year)
     if cached and (now - cached[1]) < _CACHE_TTL:
         return cached[0]
 
-    data = _build_events(year)
-    if data is None:
+    stored = await aget_json(f"seasons/{year}/schedule.json")
+    if stored is None:
         # No schedule in storage — fetch from FastF1 and save for next time
         try:
-            from services.f1_data import _get_season_events_sync
-            import asyncio
-            events = await asyncio.to_thread(_get_season_events_sync, year)
-            put_json(f"seasons/{year}/schedule.json", {"year": year, "events": events})
-            logger.info(f"Generated schedule for {year} on demand ({len(events)} events)")
-            data = _build_events(year)
+            await asyncio.to_thread(schedule_store.refresh_schedule, year)
+            stored = await aget_json(f"seasons/{year}/schedule.json")
         except Exception as e:
             logger.error(f"Failed to fetch schedule for {year}: {e}")
+    elif schedule_store.is_stale(stored):
+        # Serve what we have now; the refreshed calendar shows on the next load.
+        schedule_store.refresh_in_background(year, on_done=lambda: _events_cache.pop(year, None))
+
+    data = await asyncio.to_thread(_build_events, year, stored) if stored else None
     if data is None:
         raise HTTPException(status_code=404, detail=f"No schedule data for {year}")
 
@@ -151,16 +158,19 @@ async def list_events(year: int):
 async def get_session(
     year: int,
     round_num: int,
+    response: Response,
     type: str = Query("R", description="Session type: R, Q, S, FP1, FP2, FP3, SQ"),
 ):
-    data = get_json(f"sessions/{year}/{round_num}/{type}/info.json")
+    validate_session(year, round_num, type)
+    data = await aget_json(f"sessions/{year}/{round_num}/{type}/info.json")
     if data is not None:
+        set_cache(response, 300)
         return data
 
     # Fast fallback: build minimal session info from schedule data.
     # This avoids triggering slow FastF1 processing for live sessions
     # that haven't been precomputed yet.
-    schedule = get_json(f"seasons/{year}/schedule.json")
+    schedule = await aget_json(f"seasons/{year}/schedule.json")
     if schedule:
         events = schedule.get("events", [])
         if 0 < round_num <= len(events):
@@ -183,7 +193,7 @@ async def get_session(
     # On-demand: try to process the session via FastF1 (for replays)
     available = await ensure_session_data(year, round_num, type)
     if available:
-        data = get_json(f"sessions/{year}/{round_num}/{type}/info.json")
+        data = await aget_json(f"sessions/{year}/{round_num}/{type}/info.json")
         if data is not None:
             return data
 
@@ -200,6 +210,7 @@ async def reprocess_session(year: int, round_num: int, type: str = Query("R")):
     Auth is enforced by the global /api middleware. Runs in the background;
     poll the status endpoint for completion.
     """
+    validate_session(year, round_num, type)
     state = await start_reprocess(year, round_num, type)
     return {"state": state}
 
@@ -212,7 +223,7 @@ async def reprocess_session_status(year: int, round_num: int, type: str = Query(
 @router.get("/storage")
 async def storage_usage():
     """Stored size of every downloaded session, plus the retention setting."""
-    sessions, total = session_index()
+    sessions, total = await asyncio.to_thread(session_index)
     return {
         "total_bytes": total,
         "session_count": len(sessions),
@@ -224,9 +235,8 @@ async def storage_usage():
 @router.delete("/sessions/{year}/{round_num}")
 async def delete_session_data(year: int, round_num: int, type: str = Query("R")):
     """Delete one session's stored data. Auth is enforced by the /api middleware."""
-    if type not in SESSION_NAME_TO_TYPE.values():
-        raise HTTPException(status_code=400, detail=f"Unknown session type: {type}")
-    freed = delete_session(year, round_num, type)
+    validate_session(year, round_num, type)
+    freed = await asyncio.to_thread(delete_session, year, round_num, type)
     _events_cache.clear()
     return {"deleted": 1, "freed_bytes": freed}
 

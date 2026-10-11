@@ -1,3 +1,6 @@
+import SiteFooter from "@/components/SiteFooter";
+import { REPO_URL } from "@/lib/config";
+
 export default function AboutPage() {
   return (
     <div className="min-h-screen bg-f1-dark">
@@ -51,12 +54,30 @@ export default function AboutPage() {
           </p>
         </div>
 
+        <div className="bg-f1-card border border-f1-border rounded-xl p-6">
+          <h2 className="text-lg font-bold text-white mb-3">Open Source</h2>
+          <p className="text-f1-text leading-relaxed">
+            F1 Replay Timing is open source under the MIT licence. The code, setup guide for running your own
+            copy, and issue tracker are on{" "}
+            <a
+              href={REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-f1-red hover:underline font-semibold"
+            >
+              GitHub
+            </a>
+            . Bug reports go in Issues; ideas and questions in Discussions.
+          </p>
+        </div>
+
         <div className="text-center pt-4">
           <a href="/" className="text-f1-muted hover:text-white transition-colors text-sm">
             Back to session picker
           </a>
         </div>
       </div>
+      <SiteFooter />
     </div>
   );
 }

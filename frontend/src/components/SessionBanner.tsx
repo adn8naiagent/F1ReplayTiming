@@ -15,6 +15,7 @@ interface Props {
   weather?: WeatherData;
   extraActions?: React.ReactNode;
   mobileTeamAbbrHidden?: boolean;
+  onReportProblem?: () => void;
 }
 
 const SESSION_LABELS: Record<string, string> = {
@@ -77,6 +78,7 @@ export default function SessionBanner({
   weather,
   extraActions,
   mobileTeamAbbrHidden,
+  onReportProblem,
 }: Props) {
   const settings = settingsProp || DEFAULT_SETTINGS;
   const isRace = sessionType === "R" || sessionType === "S";
@@ -346,6 +348,15 @@ export default function SessionBanner({
                         </div>
                       </button>
                     ))}
+                    {onReportProblem && (
+                      <button
+                        onClick={onReportProblem}
+                        className="w-full text-left px-2 sm:px-6 py-1.5 hover:bg-white/5 transition-colors"
+                      >
+                        <span className="text-sm text-white block">Report a problem</span>
+                        <span className="text-[9px] text-f1-muted block">Opens a GitHub issue with this session and replay time filled in</span>
+                      </button>
+                    )}
                   </>)}
                 </div>
                 </div>
