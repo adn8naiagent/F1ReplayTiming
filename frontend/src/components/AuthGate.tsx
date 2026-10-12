@@ -67,6 +67,13 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Public sites have no passphrase; the backend marks their pages so the
+    // app opens without waiting on (or failing) an auth check.
+    if ((window as { __PUBLIC_MODE__?: boolean }).__PUBLIC_MODE__) {
+      setAuthenticated(true);
+      setChecking(false);
+      return;
+    }
     checkAuth();
   }, [checkAuth]);
 

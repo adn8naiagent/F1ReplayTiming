@@ -7,7 +7,8 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Query, HTTPException, Response
 from app_config import set_cache, validate_session, MIN_YEAR, MAX_YEAR
 from services import schedule as schedule_store
-from services.storage import get_json, aget_json, list_sizes
+from services import availability
+from services.storage import get_json, aget_json
 from services.process import (
     ensure_session_data,
     start_reprocess,
@@ -57,12 +58,13 @@ def _build_events(year: int, data: dict | None = None) -> dict:
     now = datetime.now(timezone.utc)
     last_past_idx = None
 
-    # One storage listing for the whole season; used to mark which sessions
-    # have already been pre-computed (replay.json present) and their total size.
+    # Which sessions are processed, and their stored size, from the season's
+    # small availability index rather than a listing of every stored file.
     try:
-        sizes = list_sizes(f"sessions/{year}")
-    except Exception:
-        sizes = {}
+        stored = availability.get(year)
+    except Exception as e:
+        logger.warning(f"Could not read availability for {year}: {e}")
+        stored = {}
 
     for i, evt in enumerate(events):
         has_past_session = False
@@ -83,17 +85,11 @@ def _build_events(year: int, data: dict | None = None) -> dict:
             else:
                 session["available"] = False
 
-            # Pre-compute status + stored size (replay.json is the definitive
-            # marker that a session has been fully processed).
             code = SESSION_NAME_TO_TYPE.get(session.get("name", ""))
             if code and rnd is not None:
-                prefix = f"sessions/{year}/{rnd}/{code}/"
-                precomputed = (prefix + "replay.json") in sizes
-                session["precomputed"] = precomputed
-                session["size_bytes"] = (
-                    sum(v for k, v in sizes.items() if k.startswith(prefix))
-                    if precomputed else 0
-                )
+                size = stored.get(f"{rnd}/{code}")
+                session["precomputed"] = size is not None
+                session["size_bytes"] = size or 0
             else:
                 session["precomputed"] = False
                 session["size_bytes"] = 0
