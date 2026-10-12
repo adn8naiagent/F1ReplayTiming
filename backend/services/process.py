@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from app_config import is_public_mode
 from services import storage
 from services import replay_chunks
+from services import availability
 from services.f1_data import (
     release_sessions,
     _get_session_info_sync,
@@ -217,6 +218,8 @@ def _process_session_sync(
     except Exception:
         pass
 
+    availability.refresh_session(year, round_num, session_type)
+
     # The WebSocket player may hold the old frames in memory.
     try:
         from routers.replay import evict_cached_session
@@ -383,6 +386,7 @@ def delete_session(year: int, round_num: int, session_type: str) -> int:
         f"{base}/{TOMBSTONE}",
         {"deleted_at": datetime.now(timezone.utc).isoformat()},
     )
+    availability.refresh_session(year, round_num, session_type)
 
     # Frames stay resident until the cache evicts them, so drop them now —
     # otherwise deleting from disk frees no memory for up to 5 minutes.

@@ -8,7 +8,15 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Leaderboard guide** — the top of the Features page now shows a sample leaderboard with each column numbered and explained, so it's clear what everything means at a glance.
 
-- **Home page introduction** — a short summary of what the site does and its main features, shown on public sites. Once hidden, an Overview button in the header brings it back.
+- **Home page introduction** — a short summary of what the site does and its main features. Once hidden, an Overview button in the header brings it back.
+
+- **Session list loads instantly** — the home page reads a small per-season index of processed sessions and their sizes, instead of listing every stored file. With replay files that listing reached tens of thousands of files and could take 20 seconds on R2. The index is built automatically the first time a season is opened and kept up to date as sessions are processed or deleted.
+
+### Fixes
+
+- **Crash or stale page after an update** — browsers could keep an older page that pointed at files a newer version had replaced, showing "Application error: a client-side exception". Pages are now checked for a newer version on every visit.
+
+- **Endless spinner when a season failed to load** — the session list now shows an error with a Retry button.
 
 ## 2.2.0
 

@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, FileResponse, RedirectResponse
+from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
@@ -212,23 +212,36 @@ if STATIC_DIR.exists():
     if next_static.exists():
         app.mount("/_next", StaticFiles(directory=str(next_static)), name="next-static")
 
+    _html_cache: dict[Path, str] = {}
+
+    def _page(path: Path) -> HTMLResponse:
+        """An HTML page, revalidated on every visit so it never points at the
+        build assets of an earlier deploy. Public sites without a passphrase get
+        a flag so the page can skip the login check."""
+        if path not in _html_cache:
+            html = path.read_text()
+            if is_public_mode() and not is_auth_enabled():
+                html = html.replace("<head>", "<head><script>window.__PUBLIC_MODE__=true</script>", 1)
+            _html_cache[path] = html
+        return HTMLResponse(_html_cache[path], headers={"Cache-Control": "no-cache"})
+
     @app.get("/{full_path:path}")
     async def serve_frontend(full_path: str):
         """Serve frontend static files with SPA fallback."""
         # Try exact file match
         file_path = STATIC_DIR / full_path
         if file_path.is_file():
-            return FileResponse(str(file_path))
+            return _page(file_path) if file_path.suffix == ".html" else FileResponse(str(file_path))
         # Try with .html extension (Next.js static export produces replay.html, etc.)
         html_path = STATIC_DIR / f"{full_path}.html"
         if html_path.is_file():
-            return FileResponse(str(html_path))
+            return _page(html_path)
         # Try directory with index.html
         index_path = STATIC_DIR / full_path / "index.html"
         if index_path.is_file():
-            return FileResponse(str(index_path))
+            return _page(index_path)
         # SPA fallback — serve root index.html
         root_index = STATIC_DIR / "index.html"
         if root_index.is_file():
-            return FileResponse(str(root_index))
+            return _page(root_index)
         return JSONResponse(status_code=404, content={"detail": "Not found"})

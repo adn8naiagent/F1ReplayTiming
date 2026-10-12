@@ -211,6 +211,8 @@ def sweep(amount: int, unit: str, dry_run: bool = False) -> dict:
         storage.delete_keys(keys, on_progress=progress)
         freed = sum(sizes.values())
         deleted = len(stale)
+        from services import availability
+        availability.remove_sessions([(s["year"], s["round"], s["type"]) for s in stale])
     except Exception as e:
         logger.error(f"Retention sweep failed: {e}")
         _set_status(state="error", message="Delete failed.")
