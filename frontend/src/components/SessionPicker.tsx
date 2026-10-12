@@ -286,7 +286,7 @@ export default function SessionPicker() {
   const showOverviewButton = publicMode && intro.show === false;
 
   const { data: seasonsData } = useApi<SeasonsResponse>("/api/seasons");
-  const { data: eventsData, loading: eventsLoading } = useApi<EventsResponse>(
+  const { data: eventsData, loading: eventsLoading, error: eventsError, retry: retryEvents } = useApi<EventsResponse>(
     `/api/seasons/${year}/events`,
   );
   const { data: liveData } = useApi<{ live: LiveSessionInfo | null }>(appConfig?.live ? "/api/live/status" : null);
@@ -743,6 +743,16 @@ export default function SessionPicker() {
           <div className="text-f1-muted text-center py-20">
             <div className="inline-block w-8 h-8 border-2 border-f1-muted border-t-f1-red rounded-full animate-spin mb-4" />
             <p>Loading data...</p>
+          </div>
+        ) : eventsError ? (
+          <div className="text-f1-muted text-center py-20">
+            <p className="mb-4">Couldn&apos;t load the {year} season.</p>
+            <button
+              onClick={retryEvents}
+              className="px-4 py-2 bg-f1-red text-white text-sm font-bold rounded hover:bg-red-700 transition-colors"
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <>

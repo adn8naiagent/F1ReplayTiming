@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { apiFetch } from "@/lib/api";
 
 export function useApi<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(!!path);
   const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!path) {
@@ -32,7 +33,9 @@ export function useApi<T>(path: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [path]);
+  }, [path, attempt]);
 
-  return { data, loading, error };
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+
+  return { data, loading, error, retry };
 }
