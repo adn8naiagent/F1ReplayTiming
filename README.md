@@ -39,6 +39,10 @@ Everything runs as a **single container on one port**. The frontend and backend 
 
 Session data is processed once and stored locally (or in Cloudflare R2 for persistence). You can either pre-compute data in bulk ahead of time, or let the app process sessions on demand when you select them.
 
+## Support
+
+F1 Replay Timing is free and open source, built in my spare time. If you find it useful, you can support its development on [Ko-fi](https://ko-fi.com/addevaccount).
+
 ## Self-Hosting Guide
 
 ### Quick start (Docker)
