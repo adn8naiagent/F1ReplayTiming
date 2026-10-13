@@ -18,6 +18,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Endless spinner when a season failed to load** — the session list now shows an error with a Retry button.
 
+- **Stuck on "Loading session…" after opening a session in a new tab** — Ctrl/Cmd-click or middle-click on a session opened it in a new tab but left the home page covered by the loading screen. The home page now stays usable.
+
 ## 2.2.0
 
 ### Improvements

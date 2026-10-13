@@ -148,6 +148,12 @@ function StatusPill({ status }: { status: Event["status"] }) {
   }
 }
 
+// A plain left click navigates this tab; modified or middle clicks open a new
+// one, so this tab mustn't show the loading overlay.
+function opensHere(e: React.MouseEvent) {
+  return e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey && !e.altKey;
+}
+
 export default function SessionPicker() {
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
@@ -388,7 +394,7 @@ export default function SessionPicker() {
                       href={`/live?year=${year}&round=${evt.round_number}&type=${code}`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        setNavigating(true);
+                        if (opensHere(e)) setNavigating(true);
                       }}
                       className="px-3 py-1.5 bg-red-600 text-white text-xs font-bold rounded hover:bg-red-500 transition-colors flex items-center gap-1.5"
                     >
@@ -426,7 +432,7 @@ export default function SessionPicker() {
                       onClick={(e) => {
                         e.stopPropagation();
                         if (suppressClickRef.current) { suppressClickRef.current = false; e.preventDefault(); return; }
-                        setNavigating(true);
+                        if (opensHere(e)) setNavigating(true);
                       }}
                       onContextMenu={(e) => { if (!showAdmin) return; e.preventDefault(); e.stopPropagation(); openMenu(e.clientX, e.clientY); }}
                       onTouchStart={(e) => {
@@ -761,7 +767,7 @@ export default function SessionPicker() {
               <div className="mb-8 max-w-3xl mx-auto">
                 <a
                   href={`/live?year=${liveSession.year}&round=${liveSession.round_number}&type=${liveSession.session_type}`}
-                  onClick={() => setNavigating(true)}
+                  onClick={(e) => { if (opensHere(e)) setNavigating(true); }}
                   className="block bg-f1-card border border-f1-red/50 rounded-xl overflow-hidden hover:border-f1-red transition-all group"
                 >
                   <div className="px-4 py-4 flex items-center gap-4">
