@@ -21,6 +21,7 @@ const FALLBACK: AppConfig = {
 };
 
 export const REPO_URL = "https://github.com/adn8naiagent/F1ReplayTiming";
+export const KOFI_URL = "https://ko-fi.com/addevaccount";
 
 let configPromise: Promise<AppConfig> | null = null;
 

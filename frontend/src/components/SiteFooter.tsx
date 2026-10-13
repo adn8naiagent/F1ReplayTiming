@@ -1,6 +1,6 @@
 "use client";
 
-import { useAppConfig, reportProblemUrl, REPO_URL } from "@/lib/config";
+import { useAppConfig, reportProblemUrl, REPO_URL, KOFI_URL } from "@/lib/config";
 
 export default function SiteFooter() {
   const config = useAppConfig();
@@ -15,6 +15,7 @@ export default function SiteFooter() {
           <a href={REPO_URL} target="_blank" rel="noopener noreferrer" className={linkClass}>GitHub</a>
           <a href={reportProblemUrl()} target="_blank" rel="noopener noreferrer" className={linkClass}>Report a problem</a>
           <a href={`${REPO_URL}/discussions`} target="_blank" rel="noopener noreferrer" className={linkClass}>Ideas &amp; questions</a>
+          <a href={KOFI_URL} target="_blank" rel="noopener noreferrer" className={linkClass}>Support on Ko-fi</a>
           {publicMode && (
             <a href={`${REPO_URL}#self-hosting-guide`} target="_blank" rel="noopener noreferrer" className={linkClass}>Self-host it</a>
           )}

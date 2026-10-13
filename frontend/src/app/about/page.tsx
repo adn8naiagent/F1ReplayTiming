@@ -1,5 +1,5 @@
 import SiteFooter from "@/components/SiteFooter";
-import { REPO_URL } from "@/lib/config";
+import { REPO_URL, KOFI_URL } from "@/lib/config";
 
 export default function AboutPage() {
   return (
@@ -68,6 +68,22 @@ export default function AboutPage() {
               GitHub
             </a>
             . Bug reports go in Issues; ideas and questions in Discussions.
+          </p>
+        </div>
+
+        <div className="bg-f1-card border border-f1-border rounded-xl p-6">
+          <h2 className="text-lg font-bold text-white mb-3">Support the Project</h2>
+          <p className="text-f1-text leading-relaxed">
+            F1 Replay Timing is free and built in spare time. If you enjoy it, you can support its development on{" "}
+            <a
+              href={KOFI_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-f1-red hover:underline font-semibold"
+            >
+              Ko-fi
+            </a>
+            .
           </p>
         </div>
 
