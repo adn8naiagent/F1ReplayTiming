@@ -272,7 +272,10 @@ export function useReplayPlayer(year: number, round: number, sessionType: string
           pollTimer = setTimeout(poll, POLL_MS);
           return;
         }
-        if (res.status === 404 && body.state === "unavailable") {
+        if (
+          (res.status === 404 || res.status === 503) &&
+          (body.state === "unavailable" || body.state === "rate_limited")
+        ) {
           setState((s) => ({ ...s, loading: false, error: body.message || "Session unavailable" }));
           return;
         }

@@ -44,8 +44,19 @@ async def replay_manifest(
     elif status["state"] in ("error", "unavailable"):
         # Report the failure once; the next page load tries again.
         clear_prepare_status(year, round_num, type)
-        code = 404 if status["state"] == "unavailable" else 500
-        return JSONResponse(status_code=code, content={"state": status["state"], "message": status["message"]})
+        if status["state"] in ("unavailable", "rate_limited"):
+            # Expected condition, not a server fault: tell the client when to retry.
+            retry_after = int(status.get("retry_after") or 0)
+            content = {
+                "state": status["state"],
+                "message": status["message"],
+                "detail": status["message"],
+                "reason": status.get("reason", status["state"]),
+                "retry_after": retry_after,
+            }
+            headers = {"Retry-After": str(retry_after)} if retry_after else {}
+            return JSONResponse(status_code=503, content=content, headers=headers)
+        return JSONResponse(status_code=500, content={"state": status["state"], "message": status["message"]})
 
     response.headers["Cache-Control"] = "no-store"
     response.status_code = 202

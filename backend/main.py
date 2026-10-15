@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, FileResponse, HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from services.f1_data import SessionUnavailable
 from starlette.middleware.gzip import GZipMiddleware
 
 from app_config import (
@@ -68,6 +69,24 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+
+
+@app.exception_handler(SessionUnavailable)
+async def session_unavailable_handler(request: Request, exc: SessionUnavailable):
+    """No upstream data / rate limited: 503 with a retry hint, never a 500."""
+    retry_after = exc.retry_after_seconds
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": str(exc),
+            "state": "unavailable" if exc.reason == "not_available" else "rate_limited",
+            "reason": exc.reason,
+            "retry_after": retry_after,
+        },
+        headers={"Retry-After": str(retry_after)},
+    )
+
 
 # Auth middleware (skip auth endpoints, health, and WebSocket upgrades)
 AUTH_SKIP_PATHS = {"/api/auth/status", "/api/auth/login", "/api/health", "/api/config"}

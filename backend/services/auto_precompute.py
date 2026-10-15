@@ -59,7 +59,7 @@ def get_allowed_session_types() -> set[str]:
 
 async def _check_and_process():
     """Check for new sessions and process any that have data available."""
-    from services.f1_data import _fetch_schedule_sync, SESSION_NAME_TO_TYPE
+    from services.f1_data import _fetch_schedule_sync, SESSION_NAME_TO_TYPE, SessionUnavailable, is_backed_off
     from services import storage
 
     from services.process import process_session_sync as process_session, is_deleted
@@ -113,6 +113,10 @@ async def _check_and_process():
             if is_deleted(year, round_num, session_type):
                 continue
 
+            # Upstream said "no data"/rate limited recently: don't even try.
+            if is_backed_off(year, round_num, session_type):
+                continue
+
             # New session data might be available - try to process it
             prefix = f"{year} R{round_num} {session_type}"
             logger.info(f"[auto] New session detected: {prefix}, attempting precompute...")
@@ -131,6 +135,8 @@ async def _check_and_process():
                     await asyncio.to_thread(refresh_schedule, year)
                 else:
                     logger.warning(f"[auto] Failed to process {prefix}")
+            except SessionUnavailable as e:
+                logger.info(f"[auto] {prefix} {e.reason}; backing off {e.retry_after_seconds}s")
             except Exception as e:
                 logger.warning(f"[auto] Error processing {prefix}: {e}")
                 traceback.print_exc()

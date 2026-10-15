@@ -6,6 +6,7 @@ import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 from services.storage import get_json
+from services.f1_data import SessionUnavailable
 from services.process import ensure_session_data_ws
 from services.replay_chunks import add_pit_predictions, pit_loss_for
 from app_config import is_valid_session
@@ -146,7 +147,18 @@ async def replay_websocket(
         await send_status("Loading session data...")
 
         # On-demand: process session if data doesn't exist yet
-        available = await ensure_session_data_ws(year, round_num, type, send_status)
+        try:
+            available = await ensure_session_data_ws(year, round_num, type, send_status)
+        except SessionUnavailable as e:
+            await websocket.send_json({
+                "type": "error",
+                "code": "session_unavailable",
+                "reason": e.reason,
+                "retry_after": e.retry_after_seconds,
+                "message": str(e),
+            })
+            await websocket.close()
+            return
 
         if not available:
             await websocket.send_json({
