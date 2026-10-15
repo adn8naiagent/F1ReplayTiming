@@ -100,6 +100,12 @@ class _DriverState:
         "y",
         "relative_distance",
         "on_track",
+        "speed",
+        "throttle",
+        "brake",
+        "gear",
+        "rpm",
+        "drs",
         "_sector_best_personal",
         "_sector_best_overall",
         "_stint_count",
@@ -138,6 +144,13 @@ class _DriverState:
         self.y: float = 0.0
         self.relative_distance: float = 0.0
         self.on_track: bool = False
+        # Telemetry from CarData.z, only sent with an F1 TV sign-in
+        self.speed: float | None = None
+        self.throttle: float | None = None
+        self.brake: bool = False
+        self.gear: int | None = None
+        self.rpm: float | None = None
+        self.drs: int | None = None
         # Internal tracking for sector colours
         self._sector_best_personal: dict[int, float] = {}  # sector_num -> best time
         self._sector_best_overall: dict[int, bool] = {}  # sector_num -> ever overall fastest
@@ -173,13 +186,12 @@ class _DriverState:
             "x": self.x,
             "y": self.y,
             "relative_distance": self.relative_distance,
-            # No telemetry data in live
-            "speed": None,
-            "throttle": None,
-            "brake": False,
-            "gear": None,
-            "rpm": None,
-            "drs": None,
+            "speed": self.speed,
+            "throttle": self.throttle,
+            "brake": self.brake,
+            "gear": self.gear,
+            "rpm": self.rpm,
+            "drs": self.drs,
         }
 
 
@@ -584,6 +596,34 @@ class LiveStateManager:
                 drv.x = norm_x
                 drv.y = norm_y
 
+    # --- CarData (decoded from CarData.z, F1 TV sign-in only) -----------
+
+    # Channel numbers in CarData entries, as used by FastF1.
+    _CAR_CHANNELS = {"0": "rpm", "2": "speed", "3": "gear", "4": "throttle", "5": "brake", "45": "drs"}
+
+    def _handle_car_data(self, data: dict, _ts: float) -> None:
+        """Expected structure:
+        {"Entries": [{"Utc": "...", "Cars": {"1": {"Channels": {"0": 11000, "2": 290, ...}}}}]}
+        Only the latest entry matters for a 2 Hz frame.
+        """
+        entries = data.get("Entries")
+        if not entries or not isinstance(entries, list):
+            return
+        cars = (entries[-1] or {}).get("Cars") or {}
+        for number, car in cars.items():
+            channels = (car or {}).get("Channels") or {}
+            drv = self._get_driver(number)
+            for channel, name in self._CAR_CHANNELS.items():
+                if channel not in channels:
+                    continue
+                value = _sanitize_value(channels[channel])
+                if name == "brake":
+                    drv.brake = bool(value)
+                elif name in ("gear", "drs"):
+                    setattr(drv, name, int(value) if value is not None else None)
+                else:
+                    setattr(drv, name, value)
+
     def _snap_to_track(self, x: float, y: float) -> tuple[float, float, float]:
         """Snap a position to the nearest point on the track outline.
 
@@ -854,6 +894,7 @@ class LiveStateManager:
         "SessionStatus": _handle_session_status,
         "SessionData": _handle_session_data,
         "Position": _handle_position,
+        "CarData": _handle_car_data,
     }
 
     # ------------------------------------------------------------------

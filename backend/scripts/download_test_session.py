@@ -35,6 +35,7 @@ STREAM_TOPICS = [
     "SessionStatus",
     "SessionData",
     "Position.z",
+    "CarData.z",
 ]
 
 # Initial state .json files the replayer loads at t=-1 (see _SAFE_INIT_TOPICS).

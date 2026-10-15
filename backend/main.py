@@ -21,7 +21,7 @@ from app_config import (
 )
 from auth import is_auth_enabled, verify_token
 from routers import sessions, track, laps, results, replay, replay_data, telemetry, sync, live, live_status
-from routers import auth_routes
+from routers import auth_routes, f1tv
 from services.auto_precompute import auto_precompute_loop, get_allowed_session_types
 from services.retention import retention_loop
 
@@ -80,6 +80,7 @@ PUBLIC_MODE_BLOCKED = [
     ("DELETE", re.compile(_SESSION + r"$")),
     ("POST", re.compile(_SESSION + r"/sync-photo$")),
     (None, re.compile(r"/api/storage(/.*)?$")),
+    (None, re.compile(r"/api/f1tv(/.*)?$")),
 ]
 
 
@@ -168,6 +169,7 @@ app.include_router(telemetry.router)
 app.include_router(sync.router)
 app.include_router(live.router)
 app.include_router(live_status.router)
+app.include_router(f1tv.router)
 
 
 @app.get("/api/health")
@@ -184,6 +186,7 @@ async def app_config():
         "replay_player": replay_player(),
         "photo_sync": photo_sync_available(),
         "live": not public,
+        "f1tv": not public,
     }
 
 

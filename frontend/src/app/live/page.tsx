@@ -464,7 +464,8 @@ function LiveTiming() {
                 </div>
               )}
 
-              {/* Live positions unavailable overlay */}
+              {/* Live positions unavailable overlay (positions arrive with an F1 TV sign-in) */}
+              {!drivers.some((d) => d.x !== 0 || d.y !== 0) && (
               <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
                 <div className="bg-f1-card/90 border border-f1-border rounded-lg px-4 py-2.5 backdrop-blur-sm text-center max-w-sm">
                   <p className="text-f1-muted text-xs leading-relaxed">
@@ -473,6 +474,7 @@ function LiveTiming() {
                   </p>
                 </div>
               </div>
+              )}
 
               {trackPoints.length > 0 ? (
                 <TrackCanvas

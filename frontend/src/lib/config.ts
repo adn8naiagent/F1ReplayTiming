@@ -10,6 +10,7 @@ export interface AppConfig {
   replay_player: "static" | "websocket";
   photo_sync: boolean;
   live: boolean;
+  f1tv: boolean;
 }
 
 // Used if the backend predates /api/config: behave as before.
@@ -18,6 +19,7 @@ const FALLBACK: AppConfig = {
   replay_player: "websocket",
   photo_sync: true,
   live: true,
+  f1tv: false,
 };
 
 export const REPO_URL = "https://github.com/adn8naiagent/F1ReplayTiming";
