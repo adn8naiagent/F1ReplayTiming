@@ -17,6 +17,8 @@ from services import storage
 from services import replay_chunks
 from services import availability
 from services.f1_data import (
+    SessionUnavailable,
+    clear_session_backoff,
     release_sessions,
     _get_session_info_sync,
     _get_track_data_sync,
@@ -71,6 +73,7 @@ async def start_reprocess(year: int, round_num: int, session_type: str) -> str:
 
     async def _run():
         try:
+            clear_session_backoff(year, round_num, session_type)  # explicit user retry
             # skip_existing defaults False, so this overwrites the stored session.
             ok = await asyncio.to_thread(
                 process_session_sync, year, round_num, session_type, False, on_status
@@ -79,6 +82,8 @@ async def start_reprocess(year: int, round_num: int, session_type: str) -> str:
                 "state": "done" if ok else "error",
                 "message": "Reprocess complete" if ok else "Reprocess failed",
             }
+        except SessionUnavailable as e:
+            _reprocess_status[key] = {"state": "error", "message": str(e)}
         except Exception as e:
             logger.error(f"Reprocess failed for {key}: {e}")
             traceback.print_exc()
@@ -141,6 +146,8 @@ def _process_session_sync(
     try:
         info = _get_session_info_sync(year, round_num, session_type)
         storage.put_json(f"{base}/info.json", info)
+    except SessionUnavailable:
+        raise
     except Exception as e:
         logger.error(f"[{prefix}] Failed to get session info: {e}")
         return False
@@ -287,6 +294,8 @@ async def ensure_session_data(
                 on_status=sync_status,
             )
             return success
+        except SessionUnavailable:
+            raise
         except Exception as e:
             logger.error(f"On-demand processing failed for {key}: {e}")
             traceback.print_exc()
@@ -358,6 +367,8 @@ async def ensure_session_data_ws(
         try:
             success = process_task.result()
             return success
+        except SessionUnavailable:
+            raise
         except Exception as e:
             logger.error(f"On-demand processing failed for {key}: {e}")
             return False
@@ -435,7 +446,21 @@ def start_prepare(year: int, round_num: int, session_type: str) -> dict:
         if cur is not None and cur["state"] == "running":
             cur["message"] = msg
 
+    def unavailable_status(e: SessionUnavailable) -> dict:
+        return {
+            "state": "unavailable" if e.reason == "not_available" else "rate_limited",
+            "message": str(e),
+            "reason": e.reason,
+            "retry_after": e.retry_after_seconds,
+        }
+
     def run_sync() -> dict:
+        try:
+            return _run_sync()
+        except SessionUnavailable as e:
+            return unavailable_status(e)
+
+    def _run_sync() -> dict:
         base = f"sessions/{year}/{round_num}/{session_type}"
         if replay_chunks.get_manifest(year, round_num, session_type):
             return {"state": "done", "message": ""}

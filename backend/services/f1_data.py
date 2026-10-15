@@ -66,6 +66,7 @@ def _check_session_has_data(year: int, round_num: int, session_type: str) -> boo
         return _availability_cache[key]
 
     try:
+        _check_backoff(_cache_key(year, round_num, session_type))
         session = fastf1.get_session(year, round_num, session_type)
         session.load(laps=True, telemetry=True, weather=False)
 
@@ -82,7 +83,10 @@ def _check_session_has_data(year: int, round_num: int, session_type: str) -> boo
         if has_full_data:
             _availability_cache[key] = True
         return has_full_data
-    except Exception:
+    except SessionUnavailable:
+        return False
+    except Exception as e:
+        _note_upstream_failure(year, round_num, session_type, e)
         return False
 
 
@@ -220,28 +224,137 @@ async def get_season_events(year: int) -> list[dict]:
     return await asyncio.to_thread(_get_season_events_sync, year)
 
 
+class SessionUnavailable(Exception):
+    """A session can't be loaded right now (no upstream data, or rate limited).
+
+    ``reason`` is "not_available" or "rate_limited"; ``retry_after`` is the
+    epoch time before which no further upstream attempt will be made.
+    """
+
+    def __init__(self, reason: str, retry_after: float, message: str = ""):
+        self.reason = reason
+        self.retry_after = retry_after
+        super().__init__(message or f"Session unavailable ({reason})")
+
+    @property
+    def retry_after_seconds(self) -> int:
+        return max(1, int(self.retry_after - time.time() + 0.999))
+
+
+NOT_AVAILABLE_BACKOFF_S = 12 * 60
+# FastF1 allows 500 calls/h; its window resets within the hour.
+RATE_LIMIT_BACKOFF_S = 15 * 60
+
+# key -> (retry_after epoch, reason, message)
+_negative_cache: dict[str, tuple[float, str, str]] = {}
+_key_locks: dict[str, threading.Lock] = {}
+_key_locks_guard = threading.Lock()
+
+
+def _key_lock(key: str) -> threading.Lock:
+    with _key_locks_guard:
+        lock = _key_locks.get(key)
+        if lock is None:
+            lock = _key_locks[key] = threading.Lock()
+        return lock
+
+
+def _check_backoff(key: str) -> None:
+    entry = _negative_cache.get(key)
+    if entry is None:
+        return
+    retry_after, reason, message = entry
+    if time.time() < retry_after:
+        raise SessionUnavailable(reason, retry_after, message)
+    _negative_cache.pop(key, None)
+
+
+def _record_backoff(key: str, reason: str, seconds: float, message: str) -> SessionUnavailable:
+    retry_after = time.time() + seconds
+    _negative_cache[key] = (retry_after, reason, message)
+    return SessionUnavailable(reason, retry_after, message)
+
+
+def is_backed_off(year: int, round_num: int, session_type: str) -> bool:
+    try:
+        _check_backoff(_cache_key(year, round_num, session_type))
+    except SessionUnavailable:
+        return True
+    return False
+
+
+def clear_session_backoff(year: int, round_num: int, session_type: str | None = None) -> None:
+    """Forget recorded failures (e.g. on an explicit reprocess)."""
+    prefix = f"{year}_{round_num}_"
+    for k in [k for k in _negative_cache if k.startswith(prefix) and (session_type is None or k == _cache_key(year, round_num, session_type))]:
+        _negative_cache.pop(k, None)
+
+
+def _note_upstream_failure(year: int, round_num: int, session_type: str, exc: Exception) -> None:
+    """Record a backoff if exc is a not-available / rate-limit error."""
+    from fastf1._api import SessionNotAvailableError
+    from fastf1.exceptions import RateLimitExceededError
+
+    key = _cache_key(year, round_num, session_type)
+    if isinstance(exc, SessionNotAvailableError):
+        _record_backoff(key, "not_available", NOT_AVAILABLE_BACKOFF_S, "Session data is not available yet.")
+    elif isinstance(exc, RateLimitExceededError):
+        _record_backoff(key, "rate_limited", RATE_LIMIT_BACKOFF_S,
+                        "Upstream data source is rate limited; try again later.")
+
+
 def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.Session:
+    """Load a session, once per key at a time, with backoff on upstream failure.
+
+    Raises SessionUnavailable (without touching FastF1) while a recorded
+    not-available / rate-limit backoff is active.
+    """
+    from fastf1._api import SessionNotAvailableError
+    from fastf1.exceptions import DataNotLoadedError, RateLimitExceededError
+
     key = _cache_key(year, round_num, session_type)
     if key in _session_cache:
         return _session_cache[key]
+    _check_backoff(key)
 
-    with _session_lock:
-        # Double-check after acquiring lock
+    # Single flight: concurrent callers for the same key queue here, then hit
+    # the cache or the negative cache the first caller populated.
+    with _key_lock(key):
         if key in _session_cache:
             return _session_cache[key]
+        _check_backoff(key)
 
         logger.info(f"Loading session {year}/{round_num}/{session_type} from FastF1...")
-        session = fastf1.get_session(year, round_num, session_type)
-        session.load(
-            telemetry=True,
-            laps=True,
-            weather=True,
-            messages=True,
-        )
+        try:
+            session = fastf1.get_session(year, round_num, session_type)
+            session.load(
+                telemetry=True,
+                laps=True,
+                weather=True,
+                messages=True,
+            )
+            if not hasattr(session, "_laps"):
+                raise DataNotLoadedError("laps were not loaded")
+            n_laps = len(session.laps)
+        except SessionNotAvailableError as e:
+            logger.warning(f"Session {key} not available upstream: {e}")
+            raise _record_backoff(key, "not_available", NOT_AVAILABLE_BACKOFF_S,
+                                  "Session data is not available yet.") from e
+        except DataNotLoadedError as e:
+            logger.warning(f"Session {key} has no lap data: {e}")
+            raise _record_backoff(key, "not_available", NOT_AVAILABLE_BACKOFF_S,
+                                  "Session data is not available yet.") from e
+        except RateLimitExceededError as e:
+            logger.warning(f"FastF1 rate limit hit loading {key}: {e}")
+            raise _record_backoff(key, "rate_limited", RATE_LIMIT_BACKOFF_S,
+                                  "Upstream data source is rate limited; try again later.") from e
 
         # Only cache if we actually got meaningful data
-        if len(session.laps) > 0:
+        if n_laps > 0:
             _session_cache[key] = session
+        else:
+            raise _record_backoff(key, "not_available", NOT_AVAILABLE_BACKOFF_S,
+                                  "Session data is not available yet.")
 
         logger.info(f"Session {year}/{round_num}/{session_type} loaded.")
         return session
