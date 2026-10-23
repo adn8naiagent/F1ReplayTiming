@@ -46,6 +46,12 @@ def photo_sync_available() -> bool:
     return bool(os.environ.get("OPENROUTER_API_KEY")) and not is_public_mode()
 
 
+def live_f1tv_auth() -> bool:
+    """Sign in to the live stream with an F1 TV account (via FastF1) to get
+    car positions and telemetry. Needs an F1 TV Access subscription or higher."""
+    return _flag("LIVE_F1TV_AUTH", False) and not is_public_mode()
+
+
 def set_cache(response, seconds: int, immutable: bool = False) -> None:
     """Cache-Control for read-only data.
 

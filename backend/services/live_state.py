@@ -100,6 +100,12 @@ class _DriverState:
         "y",
         "relative_distance",
         "on_track",
+        "speed",
+        "throttle",
+        "brake",
+        "gear",
+        "rpm",
+        "drs",
         "_sector_best_personal",
         "_sector_best_overall",
         "_stint_count",
@@ -138,6 +144,13 @@ class _DriverState:
         self.y: float = 0.0
         self.relative_distance: float = 0.0
         self.on_track: bool = False
+        # Telemetry from CarData.z (only sent to F1 TV-authenticated clients)
+        self.speed: float | None = None
+        self.throttle: float | None = None
+        self.brake: bool = False
+        self.gear: int | None = None
+        self.rpm: float | None = None
+        self.drs: int | None = None
         # Internal tracking for sector colours
         self._sector_best_personal: dict[int, float] = {}  # sector_num -> best time
         self._sector_best_overall: dict[int, bool] = {}  # sector_num -> ever overall fastest
@@ -173,13 +186,12 @@ class _DriverState:
             "x": self.x,
             "y": self.y,
             "relative_distance": self.relative_distance,
-            # No telemetry data in live
-            "speed": None,
-            "throttle": None,
-            "brake": False,
-            "gear": None,
-            "rpm": None,
-            "drs": None,
+            "speed": self.speed,
+            "throttle": self.throttle,
+            "brake": self.brake,
+            "gear": self.gear,
+            "rpm": self.rpm,
+            "drs": self.drs,
         }
 
 
@@ -584,6 +596,58 @@ class LiveStateManager:
                 drv.x = norm_x
                 drv.y = norm_y
 
+    # --- CarData ------------------------------------------------------
+
+    def _handle_car_data(self, data: dict, _ts: float) -> None:
+        """Handle CarData (decoded from CarData.z).
+
+        Expected structure:
+        {
+            "Entries": [
+                {
+                    "Utc": "...",
+                    "Cars": {
+                        "1": {"Channels": {"0": rpm, "2": speed, "3": gear,
+                                           "4": throttle, "5": brake, "45": drs}},
+                        ...
+                    }
+                }
+            ]
+        }
+        """
+        entries = data.get("Entries")
+        if not entries or not isinstance(entries, list):
+            return
+
+        # Samples are in time order, so the last one per car wins
+        for entry in entries:
+            cars = entry.get("Cars") if isinstance(entry, dict) else None
+            if not isinstance(cars, dict):
+                continue
+            for number, car in cars.items():
+                channels = car.get("Channels") if isinstance(car, dict) else None
+                if not isinstance(channels, dict):
+                    continue
+                drv = self._get_driver(str(number))
+                try:
+                    if "0" in channels:
+                        drv.rpm = float(channels["0"])
+                    if "2" in channels:
+                        drv.speed = float(channels["2"])
+                    if "3" in channels:
+                        drv.gear = int(channels["3"])
+                    # Throttle and brake above 100 are "no data" sentinels
+                    # (e.g. 104 while the car is in the garage)
+                    if "4" in channels:
+                        throttle = float(channels["4"])
+                        drv.throttle = throttle if throttle <= 100 else 0.0
+                    if "5" in channels:
+                        drv.brake = 0 < int(channels["5"]) <= 100
+                    if "45" in channels:
+                        drv.drs = int(channels["45"])
+                except (ValueError, TypeError):
+                    continue
+
     def _snap_to_track(self, x: float, y: float) -> tuple[float, float, float]:
         """Snap a position to the nearest point on the track outline.
 
@@ -854,6 +918,7 @@ class LiveStateManager:
         "SessionStatus": _handle_session_status,
         "SessionData": _handle_session_data,
         "Position": _handle_position,
+        "CarData": _handle_car_data,
     }
 
     # ------------------------------------------------------------------
@@ -880,6 +945,11 @@ class LiveStateManager:
                 drv._s3_complete_time = None
                 drv._sector_times.clear()
             d = drv.to_dict()
+            # Cars parked in their pit box snap onto the main straight and pile
+            # up there, so hide them from the track map (the frontend skips
+            # x=0, y=0). Needs telemetry, so only with F1 TV sign-in.
+            if drv.in_pit and drv.speed is not None and drv.speed < 1:
+                d["x"] = d["y"] = 0.0
             # Sanitize all values
             for key in list(d.keys()):
                 d[key] = _sanitize_value(d[key])

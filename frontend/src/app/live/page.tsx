@@ -11,6 +11,7 @@ import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
 import Leaderboard from "@/components/Leaderboard";
 import PiPWindow from "@/components/PiPWindow";
+import TelemetryChart from "@/components/TelemetryChart";
 import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
 
 interface TrackData {
@@ -68,7 +69,7 @@ function formatDelayShort(s: number): string {
   return sec === 0 ? `${sign}${m}m` : `${sign}${m}:${String(sec).padStart(2, "0")}`;
 }
 
-function LiveTiming() {
+function LiveTiming({ liveTelemetry }: { liveTelemetry: boolean }) {
   const searchParams = useSearchParams();
   const year = Number(searchParams.get("year"));
   const round = Number(searchParams.get("round"));
@@ -82,6 +83,7 @@ function LiveTiming() {
   const devMode = searchParams.get("dev") === "1";
 
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
+  const [showTelemetry, setShowTelemetry] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileTrackOpen, setMobileTrackOpen] = useState(true);
@@ -256,6 +258,13 @@ function LiveTiming() {
   const drivers = isQualifying ? driversRaw.filter((d) => !d.retired) : driversRaw;
   const trackStatus = live.frame?.status || "green";
   const weather = live.frame?.weather;
+  const trackDrivers = drivers.filter((d) => !d.retired && !d.no_timing && (d.x !== 0 || d.y !== 0)).map((d) => ({
+    abbr: d.abbr,
+    x: d.x,
+    y: d.y,
+    color: d.color,
+    position: d.position,
+  }));
 
   // Session hasn't started yet (connected but no driver data)
   const waitingForSession = live.ready && drivers.length === 0;
@@ -464,28 +473,54 @@ function LiveTiming() {
                 </div>
               )}
 
-              {/* Live positions unavailable overlay */}
-              <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
-                <div className="bg-f1-card/90 border border-f1-border rounded-lg px-4 py-2.5 backdrop-blur-sm text-center max-w-sm">
-                  <p className="text-f1-muted text-xs leading-relaxed">
-                    Driver track positions and telemetry are not available during live sessions.
-                    These will be available in replay once the session is processed.
-                  </p>
+              {/* Live positions unavailable overlay (without F1 TV sign-in) */}
+              {!liveTelemetry && (
+                <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
+                  <div className="bg-f1-card/90 border border-f1-border rounded-lg px-4 py-2.5 backdrop-blur-sm text-center max-w-sm">
+                    <p className="text-f1-muted text-xs leading-relaxed">
+                      Driver track positions and telemetry are not available during live sessions.
+                      These will be available in replay once the session is processed.
+                    </p>
+                  </div>
                 </div>
-              </div>
+              )}
+
+              {/* Telemetry overlay - desktop only, bottom-left (F1 TV sign-in) */}
+              {liveTelemetry && !isMobile && showTelemetry && (
+                <div className="absolute bottom-2 left-3 z-10 flex flex-col gap-1">
+                  <button
+                    onClick={() => setShowTelemetry(false)}
+                    className="self-start px-2 py-0.5 bg-f1-card/90 border border-f1-border rounded text-[9px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm mb-0.5"
+                  >
+                    Hide Telemetry
+                  </button>
+                  {selectedDrivers.length > 0 ? (
+                    selectedDrivers.map((abbr) => {
+                      const drv = drivers.find((d) => d.abbr === abbr) || null;
+                      return <TelemetryChart key={abbr} visible driver={drv} year={year} isQualifying={isQualifying} useImperial={settings.useImperial} />;
+                    })
+                  ) : (
+                    <TelemetryChart visible driver={null} year={year} useImperial={settings.useImperial} />
+                  )}
+                </div>
+              )}
+
+              {/* Telemetry toggle - desktop only, bottom-left */}
+              {liveTelemetry && !isMobile && !showTelemetry && (
+                <button
+                  onClick={() => setShowTelemetry(true)}
+                  className="absolute bottom-2 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
+                >
+                  Show Telemetry
+                </button>
+              )}
 
               {trackPoints.length > 0 ? (
                 <TrackCanvas
                   trackPoints={trackPoints}
                   rotation={rotation}
                   trackStatus={trackStatus}
-                  drivers={drivers.filter((d) => !d.retired && !d.no_timing && (d.x !== 0 || d.y !== 0)).map((d) => ({
-                    abbr: d.abbr,
-                    x: d.x,
-                    y: d.y,
-                    color: d.color,
-                    position: d.position,
-                  }))}
+                  drivers={trackDrivers}
                   highlightedDrivers={selectedDrivers}
                   playbackSpeed={1}
                   showDriverNames={settings.showDriverNames}
@@ -866,7 +901,7 @@ function LiveTiming() {
                     trackPoints={trackPoints}
                     rotation={rotation}
                     trackStatus={trackStatus}
-                    drivers={[]}
+                    drivers={liveTelemetry ? trackDrivers : []}
                     highlightedDrivers={selectedDrivers}
                     showDriverNames={settings.showDriverNames}
                     corners={settings.showCorners ? trackData?.corners : null}
@@ -956,5 +991,5 @@ export default function LivePage() {
       </div>
     );
   }
-  return <LiveTiming />;
+  return <LiveTiming liveTelemetry={config.live_telemetry} />;
 }

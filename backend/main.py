@@ -14,6 +14,7 @@ from starlette.middleware.gzip import GZipMiddleware
 
 from app_config import (
     is_public_mode,
+    live_f1tv_auth,
     origin_secret,
     photo_sync_available,
     replay_player,
@@ -184,6 +185,7 @@ async def app_config():
         "replay_player": replay_player(),
         "photo_sync": photo_sync_available(),
         "live": not public,
+        "live_telemetry": live_f1tv_auth(),
     }
 
 

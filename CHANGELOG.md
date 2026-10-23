@@ -6,6 +6,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 ### Improvements
 
+- **Live car positions and telemetry with F1 TV** — set `LIVE_F1TV_AUTH=true` to sign in to live timing with an F1 TV account (Access or higher, via FastF1 3.9+). Cars then move on the live track map and in Picture-in-Picture, and selected drivers show speed, throttle, brake, gear and RPM as in replays. Cars parked in their pit box are hidden from the map. Off by default; without it live timing works as before.
+
 - **Leaderboard guide** — the top of the Features page now shows a sample leaderboard with each column numbered and explained, so it's clear what everything means at a glance.
 
 - **Home page introduction** — a short summary of what the site does and its main features. Once hidden, an Overview button in the header brings it back.

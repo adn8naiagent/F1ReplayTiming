@@ -10,6 +10,8 @@ export interface AppConfig {
   replay_player: "static" | "websocket";
   photo_sync: boolean;
   live: boolean;
+  // Server signs in to the live stream with F1 TV: car positions and telemetry
+  live_telemetry: boolean;
 }
 
 // Used if the backend predates /api/config: behave as before.
@@ -18,6 +20,7 @@ const FALLBACK: AppConfig = {
   replay_player: "websocket",
   photo_sync: true,
   live: true,
+  live_telemetry: false,
 };
 
 export const REPO_URL = "https://github.com/adn8naiagent/F1ReplayTiming";

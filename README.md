@@ -89,6 +89,7 @@ All configuration is managed through the `.env` file. No need to edit `docker-co
 | `AUTH_ENABLED` | `false` | Enable passphrase authentication |
 | `AUTH_PASSPHRASE` | | Required passphrase when auth is enabled |
 | `OPENROUTER_API_KEY` | | Enables photo sync feature ([get a key](https://openrouter.ai/)) |
+| `LIVE_F1TV_AUTH` | `false` | Sign in to live timing with an F1 TV account (Access or higher) to show car positions and telemetry during live sessions. Requires FastF1 3.9+ and a one-time `python -m fastf1 auth f1tv --authenticate` in the container; set `F1_USERNAME` / `F1_PASSWORD` so it can sign in again when the token expires |
 | `AUTO_PRECOMPUTE` | `race+qual` | Which sessions to fetch in the background on race weekends (see [Session data](#session-data)) |
 | `RETENTION_SWEEP_ENABLED` | `true` | Set to `false` to stop this instance running the daily retention sweep, e.g. when several instances share one bucket |
 | `REPLAY_PLAYER` | `static` | `static` plays replays in the browser from small compressed files. `websocket` uses the previous player, which streams frames from the server |

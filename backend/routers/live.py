@@ -94,8 +94,9 @@ class LiveSession:
             self._task = asyncio.create_task(self._run_replayer())
             self._mode = "replayer"
         elif use_signalr:
+            from app_config import live_f1tv_auth
             from services.live_signalr import LiveSignalRClient
-            self._signalr_client = LiveSignalRClient()
+            self._signalr_client = LiveSignalRClient(authenticated=live_f1tv_auth())
             self._task = asyncio.create_task(self._run_signalr())
             self._mode = "signalr"
 

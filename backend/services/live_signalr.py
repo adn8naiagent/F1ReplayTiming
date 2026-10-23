@@ -55,6 +55,11 @@ _TOPICS = [
     "Position.z",
 ]
 
+# Only delivered to connections signed in with an F1 TV subscription
+_AUTH_TOPICS = [
+    "CarData.z",
+]
+
 # Reconnect parameters
 _INITIAL_BACKOFF = 1.0  # seconds
 _MAX_BACKOFF = 30.0  # seconds
@@ -89,7 +94,11 @@ class LiveSignalRClient:
         await client.connect(on_message)
     """
 
-    def __init__(self) -> None:
+    def __init__(self, authenticated: bool = False) -> None:
+        # When set, sign in with the F1 TV token managed by FastF1 so the
+        # server also sends car positions and telemetry.
+        self._authenticated = authenticated
+        self._topics = _TOPICS + _AUTH_TOPICS if authenticated else _TOPICS
         self._ws: Any | None = None
         self._connected = False
         self._stop_event: asyncio.Event = asyncio.Event()
@@ -186,7 +195,30 @@ class LiveSignalRClient:
     # ------------------------------------------------------------------
 
     @staticmethod
-    def _negotiate() -> tuple[str, str]:
+    def _get_auth_header() -> str | None:
+        """Return the F1 TV ``Authorization`` header value, or None.
+
+        FastF1 stores the token and signs in again when it expires (using
+        F1_USERNAME / F1_PASSWORD if set). Blocking: run in an executor.
+        """
+        try:
+            from fastf1.internals.f1account import get_token
+        except ImportError:
+            logger.warning(
+                "LIVE_F1TV_AUTH is set but this FastF1 version has no F1 "
+                "account support (needs 3.9+); connecting without auth"
+            )
+            return None
+        try:
+            return get_token().authorization_header
+        except Exception as exc:
+            logger.warning(
+                "F1 TV sign-in failed, connecting without auth: %s", exc
+            )
+            return None
+
+    @staticmethod
+    def _negotiate(auth_header: str | None = None) -> tuple[str, str]:
         """Perform the SignalR negotiate handshake over HTTP.
 
         Returns
@@ -219,6 +251,8 @@ class LiveSignalRClient:
         )
         post_req.add_header("Content-Type", "application/json")
         post_req.add_header("Accept", "application/json")
+        if auth_header:
+            post_req.add_header("Authorization", auth_header)
 
         resp = opener.open(post_req, timeout=10)
         body = json.loads(resp.read().decode())
@@ -257,8 +291,13 @@ class LiveSignalRClient:
         """
         # Negotiate happens on a regular HTTP request — run in a thread so
         # we don't block the event loop.
-        connection_token, cookie = await asyncio.get_event_loop().run_in_executor(
-            None, self._negotiate
+        loop = asyncio.get_event_loop()
+        # Fetched per session so reconnects pick up a renewed token
+        auth_header = None
+        if self._authenticated:
+            auth_header = await loop.run_in_executor(None, self._get_auth_header)
+        connection_token, cookie = await loop.run_in_executor(
+            None, self._negotiate, auth_header
         )
 
         ws_url = f"{_WS_URL}?id={connection_token}"
@@ -266,6 +305,8 @@ class LiveSignalRClient:
         extra_headers: dict[str, str] = {}
         if cookie:
             extra_headers["Cookie"] = cookie
+        if auth_header:
+            extra_headers["Authorization"] = auth_header
 
         ssl_context = ssl.create_default_context()
 
@@ -304,10 +345,13 @@ class LiveSignalRClient:
                 "type": _MSG_INVOCATION,
                 "invocationId": "1",
                 "target": "Subscribe",
-                "arguments": [_TOPICS],
+                "arguments": [self._topics],
             }
             await self._send(ws, subscribe_msg)
-            logger.info("Subscribed to %d topics", len(_TOPICS))
+            logger.info(
+                "Subscribed to %d topics (%s)", len(self._topics),
+                "authenticated" if auth_header else "anonymous",
+            )
 
             # --- Receive loop ---
             buffer = ""
@@ -413,7 +457,7 @@ class LiveSignalRClient:
             if target == "feed":
                 # Only log non-TimingData feed topics in detail to reduce noise
                 topic_preview = str(arguments[0])[:80] if arguments else "EMPTY"
-                if topic_preview != "TimingData":
+                if topic_preview not in ("TimingData", "Position.z", "CarData.z"):
                     logger.info(
                         "Feed msg: %d args, types=%s, topics=%r",
                         len(arguments),
