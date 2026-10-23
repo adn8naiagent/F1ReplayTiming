@@ -330,9 +330,15 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                 );
               })()}
 
-              {/* Live sector indicators - fixed width (qualifying and practice) */}
+              {/* Live sector indicators - fixed width (qualifying and practice); OUT on an out-lap */}
               {!isRace && settings.showSectors && (
-                <SectorMarkers sectors={drv.sectors} className="w-7 flex-shrink-0 mx-1" />
+                drv.out_lap && !drv.in_pit ? (
+                  <span className="w-7 flex-shrink-0 mx-1 text-center text-[9px] font-extrabold text-white/80" title="Out lap">
+                    OUT
+                  </span>
+                ) : (
+                  <SectorMarkers sectors={drv.sectors} className="w-7 flex-shrink-0 mx-1" />
+                )
               )}
 
               {/* Pit stops / chequered flag - 20px (race only) */}

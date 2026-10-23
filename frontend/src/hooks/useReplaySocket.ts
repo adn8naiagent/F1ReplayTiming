@@ -17,6 +17,7 @@ export interface ReplayDriver {
   pit_stops: number;
   in_pit: boolean;
   pit_time: number | null;
+  out_lap?: boolean; // absent in sessions processed before it was added
   finished: boolean;
   tyre_history: string[];
   gap: string | null;
