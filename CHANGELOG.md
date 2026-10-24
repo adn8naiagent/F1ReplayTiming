@@ -2,13 +2,25 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
-## 2.3.0 (unreleased)
+## 2.3.1 (unreleased)
 
 > **Action needed:** since 15 October 2026 F1 requires an F1 TV subscription (Access or higher) to download timing data. After updating, run `pip install -r requirements.txt` (or rebuild the Docker image), set `F1TV_SECRET_KEY` in `.env` (`openssl rand -hex 32`), then sign in from **F1 TV** on the home page — or set `F1_USERNAME` and `F1_PASSWORD` in `.env` instead of signing in through the app. Sessions you've already downloaded keep working without it. See the README's [F1 TV account](README.md#f1-tv-account) section.
 
+> **Cloud hosting:** F1 blocks requests from cloud providers with HTTP 403, even when signed in. On a cloud host, these don't work:
+> - downloading new sessions: opening an unprocessed session, reprocessing, and `precompute.py`
+> - race-weekend background downloads (`AUTO_PRECOMPUTE`)
+> - team radio and captions for new sessions, which are downloaded with them
+> - live timing, which uses the same F1 servers (expected, not yet confirmed)
+>
+> Replays of sessions already in storage keep working. To keep a cloud copy up to date, run a copy at home that downloads into the same R2 bucket. See the README's [Cloud hosting](README.md#cloud-hosting) section.
+
 ### Improvements
 
-- **F1 TV sign-in** — since 15 October 2026 F1 requires an F1 TV subscription (Access or higher) to download timing data. Sign in from **F1 TV** on the home page or the F1 TV tab in a replay's Settings. With **Keep me signed in**, the password is stored encrypted and you stay signed in, including for race-weekend background downloads. **Alternatively**, set `F1_USERNAME` and `F1_PASSWORD` as environment variables instead of signing in through the app — the best option on hosts that wipe files on redeploy (Railway, Render, Fly.io). From the command line, `python precompute.py --sign-in` also works. Sessions already downloaded keep working. Requires FastF1 3.9 (`pip install -r requirements.txt`). See the README's F1 TV account section.
+- **Team radio** — the radio messages F1 picks for the world feed pop up over the track map with the driver, a caption and the audio, in replays and live timing. Needs an F1 TV sign-in. Captions are made locally on your server by [Whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, about 480 MB, downloaded on first use). Accuracy varies depending on quality and clarity. Set `TEAM_RADIO_CAPTIONS=false` to turn them off. Turn team radio or its audio off in Settings. Sessions downloaded before this update get team radio when reprocessed.
+
+- **Live track positions** — when signed in to F1 TV, live timing receives car positions, so the live track map shows every car on track. F1 sends positions about once a second; the map plays them about 1.5 seconds behind so cars move smoothly instead of jumping.
+
+- **F1 TV sign-in** — since 15 October 2026 F1 requires an F1 TV subscription (Access or higher) to download timing data. Sign in from **F1 TV** on the home page or the F1 TV tab in a replay's Settings. With **Keep me signed in**, the password is stored encrypted and you stay signed in, including for race-weekend background downloads. **Alternatively**, set `F1_USERNAME` and `F1_PASSWORD` as environment variables instead of signing in through the app. From the command line, `python precompute.py --sign-in` also works. Sessions already downloaded keep working. Requires FastF1 3.9 (`pip install -r requirements.txt`). See the README's F1 TV account section. (issue raised, and F1 TV sign-in contributed, by [@kungfoochef](https://github.com/kungfoochef))
 
 - **Download throttling** — downloads pause between sessions (60 seconds) in the background and in `precompute.py` (`--gap` to change), to stay within F1's limits. Downloads also time out and retry once instead of hanging if F1's servers stop responding.
 
@@ -17,6 +29,10 @@ All notable changes to F1 Replay Timing will be documented in this file.
 - **Session list loads instantly** — the home page reads a small per-season index of processed sessions and their sizes, instead of listing every stored file. The index is built automatically the first time a season is opened and kept up to date as sessions are processed or deleted.
 
 ### Fixes
+
+- **Unclear error when F1 refused a download** — a refused download ended in a generic "Failed to load session data". F1's response is now logged, and the error says why: a sign-in or subscription problem (HTTP 401), or F1 blocking the server's network (HTTP 403).
+
+- **Security updates** — updated frontend dependencies with security fixes.
 
 - **Crash or stale page after an update** — browsers could keep an older page that pointed at files a newer version had replaced, showing "Application error: a client-side exception". Pages are now checked for a newer version on every visit.
 

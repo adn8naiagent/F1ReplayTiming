@@ -1,5 +1,6 @@
 "use client";
 
+import type { RadioClip } from "@/components/TeamRadio";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { wsUrl } from "@/lib/api";
 
@@ -75,6 +76,8 @@ export interface ReplayFrame {
   rc_messages?: RCMessage[];
   red_flag_end?: number;
   sector_flags?: { sector: number; flag: string; driver: string }[];
+  /** Live only: the latest captioned team radio clips */
+  team_radio?: RadioClip[];
 }
 
 export interface QualiPhaseInfo {

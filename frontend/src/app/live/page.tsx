@@ -9,6 +9,7 @@ import { apiFetch } from "@/lib/api";
 import { useAppConfig } from "@/lib/config";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
+import TeamRadio from "@/components/TeamRadio";
 import Leaderboard from "@/components/Leaderboard";
 import PiPWindow from "@/components/PiPWindow";
 import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
@@ -463,6 +464,14 @@ function LiveTiming() {
                   </div>
                 </div>
               )}
+
+              <TeamRadio
+                enabled={settings.showTeamRadio}
+                audio={!settings.teamRadioMuted}
+                clips={live.frame?.team_radio}
+                mode="live"
+                drivers={drivers}
+              />
 
               {/* Live positions unavailable overlay (positions arrive with an F1 TV sign-in) */}
               {!drivers.some((d) => d.x !== 0 || d.y !== 0) && (

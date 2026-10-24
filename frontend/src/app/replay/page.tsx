@@ -17,6 +17,10 @@ import SyncPhoto from "@/components/SyncPhoto";
 import PiPWindow from "@/components/PiPWindow";
 import LapAnalysisPanel from "@/components/LapAnalysisPanel";
 import LapNotifications from "@/components/LapNotifications";
+import TeamRadio, { type RadioClip } from "@/components/TeamRadio";
+
+// F1 TV video isn't finished: the Broadcast button stays hidden until it is.
+const BROADCAST_ENABLED = false;
 import BroadcastView from "@/components/BroadcastView";
 import { f1tv } from "@/lib/f1tv";
 import type { SectorOverlay } from "@/lib/trackRenderer";
@@ -204,6 +208,10 @@ export default function ReplayPage() {
   // Fetch lap data for last lap time column (all session types)
   const { data: lapsResponse } = useApi<{ laps: LapEntry[] }>(
     `/api/sessions/${year}/${round}/laps?type=${sessionType}`,
+  );
+
+  const { data: radioResponse } = useApi<{ clips: RadioClip[] }>(
+    `/api/sessions/${year}/${round}/team-radio?type=${sessionType}`,
   );
 
   // Build lookup: driver -> lap_number -> lap_time
@@ -585,9 +593,20 @@ export default function ReplayPage() {
                 drivers={drivers}
               />
 
+              <TeamRadio
+                enabled={settings.showTeamRadio}
+                audio={!settings.teamRadioMuted}
+                clips={radioResponse?.clips}
+                mode="replay"
+                currentTime={replay.frame?.timestamp || 0}
+                playing={replay.playing}
+                speed={replay.speed}
+                drivers={drivers}
+              />
+
               {/* Race Control toggle - desktop only, mobile has its own section */}
               <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-1.5">
-                {f1tvSignedIn && (
+                {BROADCAST_ENABLED && f1tvSignedIn && (
                   <button
                     onClick={() => setBroadcastOn(!broadcastOn)}
                     className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${

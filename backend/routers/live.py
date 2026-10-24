@@ -32,6 +32,7 @@ class LiveSession:
         self._started = False
         self._mode = "none"  # "replayer" or "signalr"
         self._msg_logged = False
+        self._radio_tasks: set[asyncio.Task] = set()
 
     async def start(
         self,
@@ -85,6 +86,8 @@ class LiveSession:
             pit_loss_vsc=pit_loss_vsc,
             track_norm=track_norm,
             track_points=track_points,
+            # The test replayer runs at `speed`; positions play out at the same rate
+            clock_rate=speed if data_dir else 1.0,
         )
 
         if data_dir:
@@ -101,6 +104,12 @@ class LiveSession:
 
         self._started = True
         logger.info(f"Live session started: {self.key} (mode={self._mode})")
+
+        # Team radio needs an F1 TV sign-in; load Whisper now rather than on
+        # the first clip.
+        from services import f1_account, team_radio
+        if f1_account.ready():
+            asyncio.create_task(asyncio.to_thread(team_radio.warm_up))
 
     async def _run_replayer(self):
         """Run the test replayer, feeding messages into the state manager."""
@@ -126,6 +135,27 @@ class LiveSession:
             logger.info(f"First SignalR message received: topic={topic}")
             self._msg_logged = True
         self._state_manager.process_message(topic, data, timestamp)
+        if topic in ("TeamRadio", "SessionInfo"):
+            self._caption_new_radio()
+
+    def _caption_new_radio(self):
+        """Caption new team radio clips in the background. A clip only goes
+        out to clients once captioned (a second or two each)."""
+        for clip in self._state_manager.take_new_radio():
+            task = asyncio.create_task(self._caption(clip))
+            self._radio_tasks.add(task)
+            task.add_done_callback(self._radio_tasks.discard)
+
+    async def _caption(self, clip: dict):
+        from services import team_radio
+
+        transcript = None
+        if team_radio.captions_enabled():
+            audio = await asyncio.to_thread(team_radio.fetch_audio, clip["url"])
+            if audio:
+                transcript = await asyncio.to_thread(team_radio.transcribe, audio, clip.get("first_name"))
+        if self._state_manager is not None:
+            self._state_manager.set_radio_caption(clip["id"], transcript)
 
     def get_frame(self) -> dict | None:
         """Get the current frame from the state manager."""
@@ -147,6 +177,7 @@ class LiveSession:
             self._state_manager.process_message(msg.topic, msg.data, msg.timestamp)
             idx += 1
         replayer._current_index = idx
+        self._state_manager.skip_new_radio()
         logger.info(f"Skipped forward {seconds}s: {current_ts:.1f}s -> {target_ts:.1f}s (idx {idx})")
 
     def add_client(self, ws: WebSocket):
@@ -163,6 +194,12 @@ class LiveSession:
     async def stop(self):
         if self._replayer:
             self._replayer.stop()
+        for task in list(self._radio_tasks):
+            task.cancel()
+        # Free the Whisper model once no live session needs it
+        if not any(s is not self and s._started for s in _live_sessions.values()):
+            from services import team_radio
+            team_radio.release_model()
         if self._signalr_client:
             await self._signalr_client.disconnect()
         if self._task:
