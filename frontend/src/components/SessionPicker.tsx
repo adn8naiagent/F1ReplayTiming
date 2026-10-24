@@ -5,6 +5,9 @@ import { useApi } from "@/hooks/useApi";
 import { getToken } from "@/lib/auth";
 import { apiUrl } from "@/lib/api";
 import StorageManager from "./StorageManager";
+import { F1TVAccountDialog } from "./F1TVAccount";
+import { f1tv, type F1TVStatus } from "@/lib/f1tv";
+import { TriangleAlert } from "lucide-react";
 import SiteFooter from "./SiteFooter";
 import SiteIntro, { useIntroVisibility } from "./SiteIntro";
 import PaywallNotice from "./PaywallNotice";
@@ -162,6 +165,8 @@ export default function SessionPicker() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [storageOpen, setStorageOpen] = useState(false);
+  const [f1tvOpen, setF1tvOpen] = useState(false);
+  const [f1tvStatus, setF1tvStatus] = useState<F1TVStatus | null>(null);
   const [navigating, setNavigating] = useState(false);
   useEffect(() => {
     setNavigating(false);
@@ -289,6 +294,13 @@ export default function SessionPicker() {
   const appConfig = useAppConfig();
   const publicMode = appConfig?.public_mode ?? false;
   const showAdmin = !!appConfig && !appConfig.public_mode;
+  const showF1TV = !!appConfig?.f1tv;
+  const f1tvSignedOut = showF1TV && f1tvStatus !== null && !f1tvStatus.signed_in;
+
+  useEffect(() => {
+    if (!showF1TV) return;
+    f1tv.status().then(setF1tvStatus).catch(() => {});
+  }, [showF1TV]);
   const intro = useIntroVisibility();
   const showOverviewButton = publicMode && intro.show === false;
 
@@ -548,6 +560,7 @@ export default function SessionPicker() {
       )}
 
       {storageOpen && <StorageManager onClose={() => setStorageOpen(false)} />}
+      {f1tvOpen && <F1TVAccountDialog onClose={() => setF1tvOpen(false)} onChange={setF1tvStatus} />}
 
       {/* Delete confirmation */}
       {deleteModal && (
@@ -680,6 +693,15 @@ export default function SessionPicker() {
               Storage
             </button>
           )}
+          {showF1TV && (
+            <button
+              onClick={() => setF1tvOpen(true)}
+              className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-f1-border text-f1-muted text-sm font-bold rounded hover:text-white transition-colors"
+            >
+              F1 TV
+              {f1tvSignedOut && <TriangleAlert className="w-4 h-4 text-amber-400" aria-label="Not signed in" />}
+            </button>
+          )}
           {/* Mobile: hamburger menu */}
           <div className="relative sm:hidden" ref={menuRef}>
             <button
@@ -720,6 +742,17 @@ export default function SessionPicker() {
                     Storage
                   </button>
                 )}
+                {showF1TV && (
+                  <button
+                    onClick={() => { setMenuOpen(false); setF1tvOpen(true); }}
+                    className="block w-full text-left px-4 py-2.5 text-sm font-bold text-f1-muted hover:text-white hover:bg-white/5 transition-colors"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      F1 TV
+                      {f1tvSignedOut && <TriangleAlert className="w-4 h-4 text-amber-400" aria-label="Not signed in" />}
+                    </span>
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -727,6 +760,20 @@ export default function SessionPicker() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {f1tvSignedOut && (
+          <div className="max-w-3xl mx-auto mb-6 bg-f1-card border border-f1-red/40 rounded-xl px-4 py-3 flex flex-wrap items-center gap-3 justify-between">
+            <p className="text-sm text-f1-muted leading-relaxed flex-1 min-w-[200px]">
+              <span className="font-bold text-white">Sign in to F1 TV to download new sessions.</span> Since 15 October
+              2026 F1 requires an F1 TV subscription for timing data. Sessions already downloaded keep working.
+            </p>
+            <button
+              onClick={() => setF1tvOpen(true)}
+              className="px-4 py-2 bg-f1-red text-white text-sm font-bold rounded hover:bg-red-700 transition-colors"
+            >
+              Sign in
+            </button>
+          </div>
+        )}
         {publicMode && <PaywallNotice className="max-w-3xl mx-auto mb-6" />}
         {publicMode && intro.show && <SiteIntro onDismiss={intro.dismiss} />}
 

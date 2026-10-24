@@ -22,6 +22,9 @@ CHECK_INTERVAL = 30 * 60
 # Days of the week to check (0=Monday, 4=Friday, 5=Saturday, 6=Sunday)
 ACTIVE_DAYS = {0, 4, 5, 6}  # Mon, Fri, Sat, Sun
 
+# Pause between session downloads, to stay well clear of F1's rate limits
+SESSION_GAP = 60
+
 # How long after a session's scheduled start before we try to fetch data
 DATA_AVAILABILITY_DELAY = timedelta(hours=0)
 
@@ -71,6 +74,11 @@ async def _check_and_process():
     if not allowed_types:
         return
 
+    from services import f1_account
+    if not f1_account.ready():
+        logger.info("[auto] Not signed in to F1 TV; skipping. Sign in under Settings → F1 TV.")
+        return
+
     try:
         events = _fetch_schedule_sync(year)
     except Exception as e:
@@ -78,6 +86,7 @@ async def _check_and_process():
         return
 
     processed_any = False
+    downloaded_any = False
 
     for event in events:
         round_num = event["round_number"]
@@ -116,6 +125,10 @@ async def _check_and_process():
             # New session data might be available - try to process it
             prefix = f"{year} R{round_num} {session_type}"
             logger.info(f"[auto] New session detected: {prefix}, attempting precompute...")
+
+            if downloaded_any:
+                await asyncio.sleep(SESSION_GAP)
+            downloaded_any = True
 
             try:
                 # Run blocking precompute in thread pool
