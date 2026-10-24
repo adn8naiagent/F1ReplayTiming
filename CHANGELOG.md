@@ -20,6 +20,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Live track positions** — when signed in to F1 TV, live timing receives car positions, so the live track map shows every car on track. F1 sends positions about once a second; the map plays them about 1.5 seconds behind so cars move smoothly instead of jumping.
 
+- **Live telemetry** — when signed in to F1 TV, selected drivers show speed, throttle, brake, gear and RPM in live timing, as in replays, and the Picture-in-Picture track map shows the cars too. Cars parked in their pit box are left off the map (they all snapped onto the start/finish straight), and parked cars no longer read 104% throttle with the brake on (F1's "no data" value).
+
 - **F1 TV sign-in** — since 15 October 2026 F1 requires an F1 TV subscription (Access or higher) to download timing data. Sign in from **F1 TV** on the home page or the F1 TV tab in a replay's Settings. With **Keep me signed in**, the password is stored encrypted and you stay signed in, including for race-weekend background downloads. **Alternatively**, set `F1_USERNAME` and `F1_PASSWORD` as environment variables instead of signing in through the app. From the command line, `python precompute.py --sign-in` also works. Sessions already downloaded keep working. Requires FastF1 3.9 (`pip install -r requirements.txt`). See the README's F1 TV account section. (issue raised, and F1 TV sign-in contributed, by [@kungfoochef](https://github.com/kungfoochef))
 
 - **Download throttling** — downloads pause between sessions (60 seconds) in the background and in `precompute.py` (`--gap` to change), to stay within F1's limits. Downloads also time out and retry once instead of hanging if F1's servers stop responding.
