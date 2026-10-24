@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, HTTPException, Response
-from app_config import set_cache, validate_session, MIN_YEAR, MAX_YEAR
+from app_config import is_after_public_cutoff, set_cache, validate_session, MIN_YEAR, MAX_YEAR
 from services import schedule as schedule_store
 from services import availability
 from services.storage import get_json, aget_json
@@ -86,7 +86,12 @@ def _build_events(year: int, data: dict | None = None) -> dict:
                 session["available"] = False
 
             code = SESSION_NAME_TO_TYPE.get(session.get("name", ""))
-            if code and rnd is not None:
+            if rnd is not None and is_after_public_cutoff(year, rnd):
+                # Behind F1 TV on this public site, even if the shared bucket has it.
+                session["precomputed"] = False
+                session["size_bytes"] = 0
+                session["paywalled"] = True
+            elif code and rnd is not None:
                 size = stored.get(f"{rnd}/{code}")
                 session["precomputed"] = size is not None
                 session["size_bytes"] = size or 0
@@ -112,6 +117,24 @@ def _build_events(year: int, data: dict | None = None) -> dict:
         events[last_past_idx]["status"] = "latest"
 
     return data
+
+
+_event_names: dict[tuple[int, int], str] = {}
+
+
+async def event_name(year: int, round_num: int) -> str | None:
+    """Event name for a round from the stored schedule, e.g. "Singapore Grand Prix"."""
+    if (year, round_num) in _event_names:
+        return _event_names[(year, round_num)]
+    try:
+        schedule = await aget_json(f"seasons/{year}/schedule.json")
+    except Exception:
+        return None
+    for evt in (schedule or {}).get("events", []):
+        if evt.get("round_number") == round_num and evt.get("event_name"):
+            _event_names[(year, round_num)] = evt["event_name"]
+            return evt["event_name"]
+    return None
 
 
 @router.get("/seasons")

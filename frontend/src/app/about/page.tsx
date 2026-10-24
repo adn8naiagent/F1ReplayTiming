@@ -1,4 +1,5 @@
 import SiteFooter from "@/components/SiteFooter";
+import PaywallNotice from "@/components/PaywallNotice";
 import { REPO_URL, KOFI_URL } from "@/lib/config";
 
 export default function AboutPage() {
@@ -16,6 +17,8 @@ export default function AboutPage() {
       </div>
 
       <div className="max-w-3xl mx-auto px-6 py-12 space-y-8">
+        <PaywallNotice />
+
         <div className="bg-f1-card border border-f1-red/40 rounded-xl p-6">
           <h2 className="text-lg font-bold text-f1-red mb-3">Disclaimer</h2>
           <p className="text-f1-text leading-relaxed">
