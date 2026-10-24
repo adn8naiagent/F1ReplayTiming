@@ -40,6 +40,8 @@ Mini-sectors, deleted laps and sector end times need sessions reprocessed. Witho
 
 - **Team radio** — the radio messages F1 picks for the world feed pop up over the track map with the driver, a caption and the audio, in replays and live timing. Needs an F1 TV sign-in. Captions are made locally on your server by [Whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, about 480 MB, downloaded on first use). Accuracy varies depending on quality and clarity. Set `TEAM_RADIO_CAPTIONS=false` to turn them off. Turn team radio or its audio off in Settings. Sessions downloaded before this update get team radio when reprocessed.
 
+- **Out-lap indicator** — in practice and qualifying, the leaderboard shows OUT in place of the sector markers while a driver is on an out-lap, from pit exit until the lap is completed. Works in live timing and in replays; sessions processed before this version need reprocessing to show it in replays.
+
 - **Live track positions** — when signed in to F1 TV, live timing receives car positions, so the live track map shows every car on track. F1 sends positions about once a second; the map plays them about 1.5 seconds behind so cars move smoothly instead of jumping.
 
 - **Live telemetry** — when signed in to F1 TV, selected drivers show speed, throttle, brake, gear and RPM in live timing, as in replays, and the Picture-in-Picture track map shows the cars too. Cars parked in their pit box are left off the map (they all snapped onto the start/finish straight), and parked cars no longer read 104% throttle with the brake on (F1's "no data" value).
