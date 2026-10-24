@@ -111,7 +111,8 @@ All configuration is managed through the `.env` file. No need to edit `docker-co
 | `F1TV_SECRET_KEY` | | **Required.** Encrypts the saved F1 TV sign-in. Generate with `openssl rand -hex 32`, set once and don't change it (see [F1 TV account](#f1-tv-account)) |
 | `F1_USERNAME` / `F1_PASSWORD` | | Sign in to F1 TV here instead of in the app |
 | `TEAM_RADIO_CAPTIONS` | `true` | Set to `false` to skip captioning team radio (clips still play) |
-| `TEAM_RADIO_MODEL` | `small.en` | Whisper model for team radio captions. Downloads on first use (`small.en` is about 480 MB) |
+| `TEAM_RADIO_MODEL` | `small.en` | Whisper model for team radio captions. Downloads on first use (`small.en` is about 480 MB). `large-v3-turbo` (about 1.6 GB) is noticeably more accurate but about twice as slow; on a Raspberry Pi 5 it took about 24 s per clip against 12 s for `small.en` |
+| `TEAM_RADIO_LIVE_MODEL` | `TEAM_RADIO_MODEL` | Whisper model for live timing only, where a caption needs to be ready within your broadcast delay. For example, `large-v3-turbo` for replays and `small.en` for live |
 
 ### F1 TV account
 

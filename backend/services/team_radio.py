@@ -10,6 +10,10 @@ F1 sends no text, so captions come from Whisper running locally
 
 - TEAM_RADIO_CAPTIONS=false turns captions off (clips still play).
 - TEAM_RADIO_MODEL picks the Whisper model (default small.en, about 480 MB).
+- TEAM_RADIO_LIVE_MODEL picks a different model for live timing, where a
+  caption has to be ready within the broadcast delay. Unset, live uses
+  TEAM_RADIO_MODEL. A larger model (e.g. large-v3-turbo) is noticeably more
+  accurate but 2-3x slower, which suits replays but not live.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ from __future__ import annotations
 import io
 import logging
 import os
+import re
 import threading
 import time
 from datetime import datetime, timezone
@@ -29,7 +34,7 @@ logger = logging.getLogger(__name__)
 
 STATIC_URL = "https://livetiming.formula1.com/static/"
 
-_model = None
+_models: dict[str, Any] = {}  # model name -> loaded WhisperModel
 _model_lock = threading.Lock()
 # One clip at a time: Whisper already uses every CPU core.
 _transcribe_lock = threading.Lock()
@@ -55,36 +60,42 @@ def _model_dir() -> Path:
     return data_dir / "whisper"
 
 
-def _get_model():
-    global _model
+def model_name(live: bool = False) -> str:
+    """The Whisper model for replays, or for live timing when live is set."""
+    replay = os.environ.get("TEAM_RADIO_MODEL", "").strip() or "small.en"
+    if live:
+        return os.environ.get("TEAM_RADIO_LIVE_MODEL", "").strip() or replay
+    return replay
+
+
+def _get_model(live: bool = False):
+    name = model_name(live)
     with _model_lock:
-        if _model is None:
+        if name not in _models:
             from faster_whisper import WhisperModel
 
-            name = os.environ.get("TEAM_RADIO_MODEL", "small.en").strip() or "small.en"
             logger.info(f"Loading Whisper model {name} (downloads on first use)")
-            _model = WhisperModel(name, device="cpu", compute_type="int8", download_root=str(_model_dir()))
-        return _model
+            _models[name] = WhisperModel(name, device="cpu", compute_type="int8", download_root=str(_model_dir()))
+        return _models[name]
 
 
-def warm_up() -> None:
+def warm_up(live: bool = False) -> None:
     """Load the model ahead of the first clip (it downloads on first use)."""
     if captions_enabled():
         try:
-            _get_model()
+            _get_model(live)
         except Exception as e:
             logger.warning(f"Couldn't load the Whisper model: {e}")
 
 
-def release_model() -> None:
-    """Free the model's memory (a few hundred MB) when nothing needs it."""
-    global _model
+def release_model(live: bool = False) -> None:
+    """Free the model's memory (a few hundred MB to 1.5 GB) when nothing needs it."""
+    name = model_name(live)
     with _model_lock, _transcribe_lock:
-        if _model is not None:
-            _model = None
+        if _models.pop(name, None) is not None:
             import gc
             gc.collect()
-            logger.info("Released the Whisper model from memory")
+            logger.info(f"Released the Whisper model {name} from memory")
 
 
 def audio_url(session_path: str, clip_path: str) -> str:
@@ -104,16 +115,55 @@ def fetch_audio(url: str) -> bytes | None:
     return r.content
 
 
-def transcribe(audio: bytes, first_name: str | None = None) -> str | None:
-    """Caption one clip. None if captions are off or nothing was said."""
+def _prompt(first_name: str | None, year: int | None) -> str:
+    """A short context sentence for Whisper. Naming only this clip's driver
+    helps with their name without making Whisper hear other drivers' names
+    that weren't said. Kept short: Whisper inserts words from a long word
+    list where they weren't said, and reads the list back on near-silent
+    clips. British spelling steers it to "tyres"."""
+    who = f" with {first_name}" if first_name else ""
+    # DRS was replaced by overtake mode and boost in 2026
+    era = "boost, overtake mode" if year is None or year >= 2026 else "DRS"
+    return f"Formula 1 team radio{who}. Copy. Box, box. Tyres, safety car, {era}."
+
+
+_WORD_RE = re.compile(r"[a-z0-9']+")
+
+
+def _is_prompt_echo(text: str, prompt: str) -> bool:
+    """True when the caption is the prompt read back rather than speech.
+
+    Real radio uses the prompt's words too ("Box, box, safety car"), so
+    matching words isn't enough. A read-back repeats the prompt in order:
+    look for runs of 4+ consecutive prompt words making up most of the text.
+    """
+    if "team radio" in text.lower():
+        return True
+    words = _WORD_RE.findall(text.lower())
+    prompt_words = _WORD_RE.findall(prompt.lower())
+    covered = [False] * len(words)
+    for i in range(len(words)):
+        for j in range(len(prompt_words)):
+            n = 0
+            while i + n < len(words) and j + n < len(prompt_words) and words[i + n] == prompt_words[j + n]:
+                n += 1
+            if n >= 4:
+                covered[i:i + n] = [True] * n
+    return bool(words) and sum(covered) >= len(words) / 2
+
+
+def transcribe(
+    audio: bytes, first_name: str | None = None, year: int | None = None, live: bool = False,
+) -> str | None:
+    """Caption one clip. None if captions are off or nothing was said.
+
+    live picks TEAM_RADIO_LIVE_MODEL; year picks the season's vocabulary.
+    """
     if not captions_enabled():
         return None
-    # Naming only this clip's driver helps with their name without making
-    # Whisper hear other drivers' names that weren't said.
-    prompt = "Formula 1 team radio" + (f" with {first_name}." if first_name else ".") + \
-        " Box, undercut, Plan B, DRS, safety car, softs, mediums, hards, copy."
+    prompt = _prompt(first_name, year)
     try:
-        model = _get_model()
+        model = _get_model(live)
         with _transcribe_lock:
             # The VAD filter skips silence, where Whisper otherwise makes
             # things up (often repeating the prompt).
@@ -124,8 +174,8 @@ def transcribe(audio: bytes, first_name: str | None = None) -> str | None:
     except Exception as e:
         logger.warning(f"Team radio transcription failed: {e}")
         return None
-    if "team radio" in text.lower() or "undercut, plan b" in text.lower():
-        return None  # the prompt echoed back, not speech
+    if _is_prompt_echo(text, prompt):
+        return None
     return text or None
 
 
@@ -162,6 +212,7 @@ def build_clips(
     start_date: datetime,
     drivers: dict[str, dict],
     on_progress=None,
+    year: int | None = None,
 ) -> list[dict]:
     """Replay clips with captions, timed in replay seconds from start_date.
 
@@ -184,7 +235,7 @@ def build_clips(
                 on_progress(i + 1, len(ordered))
             audio = fetch_audio(url)
             if audio:
-                transcript = transcribe(audio, drv.get("first_name"))
+                transcript = transcribe(audio, drv.get("first_name"), year)
             time.sleep(0.2)  # be gentle with F1's servers
         clips.append({
             "t": round((utc - start_date).total_seconds(), 1),
