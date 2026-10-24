@@ -7,6 +7,7 @@ import { apiUrl } from "@/lib/api";
 import StorageManager from "./StorageManager";
 import SiteFooter from "./SiteFooter";
 import SiteIntro, { useIntroVisibility } from "./SiteIntro";
+import PaywallNotice from "./PaywallNotice";
 import { useAppConfig } from "@/lib/config";
 
 interface SessionMenu {
@@ -726,6 +727,7 @@ export default function SessionPicker() {
       </div>
 
       <div className="max-w-7xl mx-auto px-6 py-8">
+        {publicMode && <PaywallNotice className="max-w-3xl mx-auto mb-6" />}
         {publicMode && intro.show && <SiteIntro onDismiss={intro.dismiss} />}
 
         {/* Season selector */}

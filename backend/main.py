@@ -13,7 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from app_config import (
+    PAYWALL_SINCE,
     is_public_mode,
+    public_archive_last,
     origin_secret,
     photo_sync_available,
     replay_player,
@@ -179,11 +181,19 @@ async def health():
 async def app_config():
     """Settings the frontend needs at runtime (the frontend is a static build)."""
     public = is_public_mode()
+    last = public_archive_last() if public else None
     return {
         "public_mode": public,
         "replay_player": replay_player(),
         "photo_sync": photo_sync_available(),
         "live": not public,
+        # Public sites only: the last round served, since F1 put timing data behind F1 TV.
+        "public_archive": {
+            "year": last[0],
+            "round": last[1],
+            "event_name": await sessions.event_name(last[0], last[1]),
+            "paywall_since": PAYWALL_SINCE,
+        } if last else None,
     }
 
 
