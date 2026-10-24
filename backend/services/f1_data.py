@@ -1955,7 +1955,7 @@ def _get_team_radio_sync(year: int, round_num: int, session_type: str, on_progre
 
     path = session.api_path.removeprefix("/static/")
     try:
-        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress)
+        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress, year)
     finally:
         team_radio.release_model()
 
