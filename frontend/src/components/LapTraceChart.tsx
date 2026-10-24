@@ -19,7 +19,7 @@ interface Props {
 const AXIS = { fill: "#6B7280", fontSize: 8 };
 const SYNC = "lap-trace";
 
-/** The values at the hovered point, in a fixed line above the charts. */
+/** The values at the hovered (or touched) point, in a fixed table above the charts. */
 function Readout({ p, nameA, nameB, colorA, colorB }: {
   p: TracePoint | null;
   nameA: string;
@@ -27,26 +27,33 @@ function Readout({ p, nameA, nameB, colorA, colorB }: {
   colorA: string;
   colorB: string;
 }) {
-  if (!p) {
-    return <div className="h-[34px] flex items-center px-1 text-[9px] text-f1-muted">Hover the charts to compare the two laps at any point</div>;
-  }
-  const driver = (name: string, color: string, speed: number, throttle: number, brake: number, gear: number) => (
-    <span className="flex items-center gap-1 tabular-nums">
-      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
-      <span className="font-bold text-white">{name}</span>
-      <span className="text-white">{Math.round(speed)}</span>
-      <span className="text-f1-muted">km/h G{gear} {brake ? "brake" : `${Math.round(throttle)}%`}</span>
-    </span>
+  const head = "text-[8px] font-bold text-f1-muted uppercase tracking-wider";
+  const row = (name: string, color: string, speed: number, gear: number, throttle: number, brake: number) => (
+    <div className="contents">
+      <span className="flex items-center gap-1 font-bold text-white">
+        <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />{name}
+      </span>
+      <span className="text-right text-white">{p ? `${Math.round(speed)} km/h` : "—"}</span>
+      <span className="text-right text-white">{p ? gear : "—"}</span>
+      <span className="text-right text-white">{p ? `${Math.round(throttle)}%` : "—"}</span>
+      <span className={`text-right ${p && brake ? "text-red-400 font-bold" : "text-f1-muted"}`}>{p ? (brake ? "On" : "Off") : "—"}</span>
+    </div>
   );
   return (
-    <div className="h-[34px] px-1 text-[9px] leading-tight">
-      <div className="flex items-center gap-2">
-        <span className="text-f1-muted tabular-nums w-11">{(p.d / 1000).toFixed(2)} km</span>
-        {driver(nameA, colorA, p.speedA, p.throttleA, p.brakeA, p.gearA)}
-        {driver(nameB, colorB, p.speedB, p.throttleB, p.brakeB, p.gearB)}
+    <div className="rounded border border-f1-border bg-f1-dark px-2 py-1.5 text-[10px] tabular-nums">
+      <div className="grid grid-cols-[1fr_64px_36px_56px_36px] gap-x-1 gap-y-0.5 items-center">
+        <span className={head}>{p ? `At ${(p.d / 1000).toFixed(2)} km` : "Point on lap"}</span>
+        <span className={`${head} text-right`}>Speed</span>
+        <span className={`${head} text-right`}>Gear</span>
+        <span className={`${head} text-right`}>Throttle</span>
+        <span className={`${head} text-right`}>Brake</span>
+        {row(nameA, colorA, p?.speedA ?? 0, p?.gearA ?? 0, p?.throttleA ?? 0, p?.brakeA ?? 0)}
+        {row(nameB, colorB, p?.speedB ?? 0, p?.gearB ?? 0, p?.throttleB ?? 0, p?.brakeB ?? 0)}
       </div>
-      <div className={`pl-[52px] tabular-nums ${p.delta < 0 ? "text-green-400" : p.delta > 0 ? "text-red-400" : "text-f1-muted"}`}>
-        {nameA} {p.delta <= 0 ? "ahead" : "behind"} by {Math.abs(p.delta).toFixed(3)}s
+      <div className={`mt-1 ${p ? (p.delta < 0 ? "text-green-400" : p.delta > 0 ? "text-red-400" : "text-f1-muted") : "text-f1-muted"}`}>
+        {p
+          ? `${nameA} ${p.delta <= 0 ? "ahead" : "behind"} by ${Math.abs(p.delta).toFixed(3)}s at this point`
+          : "Hover, tap or drag along the charts to see both laps at that point"}
       </div>
     </div>
   );
@@ -58,9 +65,20 @@ export default function LapTraceChart({ comparison, nameA, nameB, colorA, colorB
   const [hover, setHover] = useState<TracePoint | null>(null);
   // Only the cursor line: values go in the readout, not a pop-up per chart.
   const tooltip = <Tooltip cursor={{ stroke: "#6B7280", strokeWidth: 1 }} content={() => null} />;
+  // Mouse: follows the pointer and clears when it leaves. Touch: Recharts
+  // turns a drag into mouse moves and a tap into a press; the readout keeps
+  // the last point touched, since touch has no "leave".
+  type ChartState = { activePayload?: { payload: TracePoint }[] } | null;
+  const pick = (state: ChartState) => {
+    const p = state?.activePayload?.[0]?.payload;
+    if (p) setHover(p);
+  };
   const hoverProps = {
-    onMouseMove: (state: { activePayload?: { payload: TracePoint }[] }) => setHover(state?.activePayload?.[0]?.payload ?? null),
-    onMouseLeave: () => setHover(null),
+    onMouseMove: pick,
+    onMouseDown: pick,
+    onMouseLeave: () => {
+      if (!window.matchMedia("(pointer: coarse)").matches) setHover(null);
+    },
   };
   const xAxis = (show: boolean) => (
     <XAxis
@@ -84,7 +102,7 @@ export default function LapTraceChart({ comparison, nameA, nameB, colorA, colorB
   const Y_WIDTH = 38;
 
   return (
-    <div className="space-y-1">
+    <div className="space-y-1" style={{ touchAction: "pan-y" }}>
       <Readout p={hover} nameA={nameA} nameB={nameB} colorA={colorA} colorB={colorB} />
       {label("Gap (approx.)")}
       <ResponsiveContainer width="100%" height={70}>
