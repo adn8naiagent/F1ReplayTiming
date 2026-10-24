@@ -272,6 +272,12 @@ docker compose exec f1timing python precompute.py 2025 --skip-existing
 docker compose exec f1timing python precompute.py 2024 2025 2026 --chunks-only
 ```
 
+**Mini-sectors and deleted laps (2.4):** Sessions processed before 2.4 show normal sectors. To add mini-sectors, deleted laps and sector end times without downloading telemetry again (needs an F1 TV sign-in; a round at a time where you can):
+
+```bash
+docker compose exec f1timing python precompute.py 2026 --round 1 --lap-extras-only
+```
+
 **Re-computing a session:** Some updates (noted in the changelog as "requires re-compute") add new data to existing sessions. Re-run the same command **without** `--skip-existing` and it overwrites the stored session — that is the re-compute:
 
 ```bash
