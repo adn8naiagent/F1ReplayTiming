@@ -22,10 +22,14 @@ interface Bubble {
   lapTime: string;
   colorClass: string;
   sectors: SectorInfo[] | null;
+  /** S1–S3 times as F1 gives them, e.g. "27.506" */
+  sectorTimes: (string | null)[] | null;
 }
 
 interface Props {
   enabled: boolean;
+  /** Show each sector's time beside its colour marker */
+  showSectorTimes?: boolean;
   isQualifying: boolean;
   isRace: boolean;
   lapData: LapData | undefined;
@@ -36,6 +40,7 @@ interface Props {
 
 export default function LapNotifications({
   enabled,
+  showSectorTimes = true,
   isQualifying,
   isRace,
   lapData,
@@ -101,14 +106,14 @@ export default function LapNotifications({
     lastTimeRef.current = now;
 
     // Find each driver's newest flying lap completed since we last fired.
-    const candidates: { abbr: string; lapNum: number; time: string }[] = [];
+    const candidates: { abbr: string; lapNum: number; time: string; sectorTimes: (string | null)[] | null }[] = [];
     for (const [abbr, laps] of lapData) {
       const seen = seenRef.current.get(abbr) ?? 0;
-      let best: { lapNum: number; time: string } | null = null;
+      let best: { lapNum: number; time: string; sectorTimes: (string | null)[] | null } | null = null;
       for (const [lapNum, entry] of laps) {
         if (lapNum < 2 || entry.completedAt === null) continue;
         if (entry.completedAt <= now - FIRE_DELAY_S && lapNum > seen) {
-          if (!best || lapNum > best.lapNum) best = { lapNum, time: entry.time };
+          if (!best || lapNum > best.lapNum) best = { lapNum, time: entry.time, sectorTimes: entry.sectors ?? null };
         }
       }
       if (best) candidates.push({ abbr, ...best });
@@ -133,6 +138,7 @@ export default function LapNotifications({
         lapTime: c.time,
         colorClass: lapColorClass(c.time, c.abbr, lapData, now, currentLap || 0, isRace, drv?.has_fastest_lap ?? false),
         sectors: drv?.sectors ?? null,
+        sectorTimes: c.sectorTimes,
       });
     }
 
@@ -177,9 +183,28 @@ export default function LapNotifications({
           <span className="w-1.5 h-6 rounded-sm flex-shrink-0" style={{ backgroundColor: b.teamColor }} />
           <span className="text-base font-extrabold text-white tracking-wide flex-shrink-0">{b.abbr}</span>
           <span className={`text-base font-bold tabular-nums flex-shrink-0 ${b.colorClass}`}>{b.lapTime}</span>
-          <SectorMarkers sectors={b.sectors} className="flex-shrink-0" />
+          {showSectorTimes && b.sectorTimes ? <SectorTimes sectors={b.sectors} times={b.sectorTimes} /> : <SectorMarkers sectors={b.sectors} className="flex-shrink-0" />}
         </div>
       ))}
     </div>
+  );
+}
+
+// Each sector's marker with its time beside it, coloured to match.
+function SectorTimes({ sectors, times }: { sectors: SectorInfo[] | null; times: (string | null)[] }) {
+  return (
+    <span className="flex items-center gap-2 flex-shrink-0">
+      {[1, 2, 3].map((sn) => {
+        const color = sectors?.find((s) => s.num === sn)?.color;
+        const bg = color === "purple" ? "bg-purple-500" : color === "green" ? "bg-green-500" : color === "yellow" ? "bg-yellow-500" : "bg-white/15";
+        const text = color === "purple" ? "text-purple-400" : color === "green" ? "text-green-400" : "text-white/80";
+        return (
+          <span key={sn} className="flex items-center gap-1">
+            <span className={`w-[6px] h-[14px] rounded-[1px] ${bg}`} />
+            <span className={`text-sm font-semibold tabular-nums ${text}`}>{times[sn - 1] ?? "—"}</span>
+          </span>
+        );
+      })}
+    </span>
   );
 }

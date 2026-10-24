@@ -7,7 +7,7 @@ export interface SectorInfo {
   color: SectorColor;
 }
 
-export type LapData = Map<string, Map<number, { time: string; completedAt: number | null }>>;
+export type LapData = Map<string, Map<number, { time: string; completedAt: number | null; sectors?: (string | null)[] }>>;
 
 // Parse a lap time string ("1:34.567" or "94.567") into seconds.
 export function toSecs(t: string): number {

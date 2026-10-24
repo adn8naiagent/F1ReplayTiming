@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useEffect } from "react";
-import { drawTrack, drawDrivers, TrackPoint, DriverMarker, SectorOverlay, Corner, MarshalSector, SectorFlag, ELEVATION_FULL_SCALE_M } from "@/lib/trackRenderer";
+import { drawTrack, drawDrivers, TrackPoint, DriverMarker, SectorOverlay, SegmentOverlay, Corner, MarshalSector, SectorFlag, ELEVATION_FULL_SCALE_M } from "@/lib/trackRenderer";
 
 interface Props {
   trackPoints: TrackPoint[];
@@ -12,6 +12,8 @@ interface Props {
   playbackSpeed?: number;
   showDriverNames?: boolean;
   sectorOverlay?: SectorOverlay | null;
+  /** Track dominance or mini-sector colours; drawn over everything else */
+  segmentOverlay?: SegmentOverlay | null;
   corners?: Corner[] | null;
   marshalSectors?: MarshalSector[] | null;
   sectorFlags?: SectorFlag[] | null;
@@ -37,7 +39,7 @@ function getCanvasWindow(canvas: HTMLCanvasElement | null): Window {
 }
 
 
-export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers, playbackSpeed = 1, showDriverNames = true, sectorOverlay = null, corners = null, marshalSectors = null, sectorFlags = null, showElevation = false, elevationRangeM = null }: Props) {
+export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers, playbackSpeed = 1, showDriverNames = true, sectorOverlay = null, segmentOverlay = null, corners = null, marshalSectors = null, sectorFlags = null, showElevation = false, elevationRangeM = null }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -52,6 +54,8 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
   showNamesRef.current = showDriverNames;
   const sectorOverlayRef = useRef(sectorOverlay);
   sectorOverlayRef.current = sectorOverlay;
+  const segmentOverlayRef = useRef(segmentOverlay);
+  segmentOverlayRef.current = segmentOverlay;
   const cornersRef = useRef(corners);
   cornersRef.current = corners;
   const marshalSectorsRef = useRef(marshalSectors);
@@ -128,7 +132,7 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current, sectorOverlayRef.current, cornersRef.current, marshalSectorsRef.current, sectorFlagsRef.current, showElevationRef.current);
+      drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current, sectorOverlayRef.current, cornersRef.current, marshalSectorsRef.current, sectorFlagsRef.current, showElevationRef.current, segmentOverlayRef.current);
 
       const now = performance.now();
       const curr = driversRef.current;
