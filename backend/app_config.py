@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
+from functools import lru_cache
 
 from fastapi import HTTPException
+
+logger = logging.getLogger(__name__)
 
 SESSION_TYPES = ("R", "Q", "S", "SQ", "FP1", "FP2", "FP3")
 
@@ -26,6 +30,36 @@ def _flag(name: str, default: bool) -> bool:
 def is_public_mode() -> bool:
     """Public mode turns off admin and processing features for a shared site."""
     return _flag("PUBLIC_MODE", False)
+
+
+# The date F1 started requiring an F1 TV login for its timing archive.
+PAYWALL_SINCE = "2026-10-15"
+
+_ARCHIVE_LAST_RE = re.compile(r"^(\d{4})/(\d{1,2})$")
+
+
+@lru_cache(maxsize=1)
+def public_archive_last() -> tuple[int, int] | None:
+    """Last (year, round) a public site serves, from PUBLIC_ARCHIVE_LAST ("2026/17").
+
+    Rounds after it were never free to download, so a public site must not
+    serve them even when they're in the shared bucket. Unset means no cutoff.
+    """
+    value = os.environ.get("PUBLIC_ARCHIVE_LAST", "").strip()
+    if not value:
+        return None
+    m = _ARCHIVE_LAST_RE.match(value)
+    if not m:
+        logger.warning(f"Invalid PUBLIC_ARCHIVE_LAST '{value}' (expected YEAR/ROUND, e.g. 2026/17); no cutoff applied")
+        return None
+    return int(m.group(1)), int(m.group(2))
+
+
+def is_after_public_cutoff(year: int, round_num: int) -> bool:
+    if not is_public_mode():
+        return False
+    last = public_archive_last()
+    return last is not None and (year, round_num) > last
 
 
 def retention_sweep_enabled() -> bool:
@@ -69,6 +103,11 @@ def validate_session(year: int, round_num: int, session_type: str) -> None:
         raise HTTPException(status_code=400, detail=f"Unsupported round: {round_num}")
     if session_type not in SESSION_TYPES:
         raise HTTPException(status_code=400, detail=f"Unknown session type: {session_type}")
+    if is_after_public_cutoff(year, round_num):
+        raise HTTPException(
+            status_code=404,
+            detail="This session isn't available on this site. F1 now requires an F1 TV subscription for timing data.",
+        )
 
 
 def is_valid_session(year: int, round_num: int, session_type: str) -> bool:

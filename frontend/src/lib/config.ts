@@ -10,6 +10,15 @@ export interface AppConfig {
   replay_player: "static" | "websocket";
   photo_sync: boolean;
   live: boolean;
+  /** Public sites only: the last round served since F1 put timing data behind F1 TV. */
+  public_archive: PublicArchive | null;
+}
+
+export interface PublicArchive {
+  year: number;
+  round: number;
+  event_name: string | null;
+  paywall_since: string; // ISO date, e.g. "2026-10-15"
 }
 
 // Used if the backend predates /api/config: behave as before.
@@ -18,6 +27,7 @@ const FALLBACK: AppConfig = {
   replay_player: "websocket",
   photo_sync: true,
   live: true,
+  public_archive: null,
 };
 
 export const REPO_URL = "https://github.com/adn8naiagent/F1ReplayTiming";
