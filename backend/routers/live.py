@@ -120,6 +120,10 @@ class LiveSession:
         except Exception as e:
             logger.error(f"Replayer error: {e}")
 
+    def feed_error(self) -> str | None:
+        """Why the connection to F1 is failing, if it is."""
+        return self._signalr_client.last_error if self._signalr_client else None
+
     async def _run_signalr(self):
         """Run the real SignalR client, feeding messages into the state manager."""
         try:
@@ -367,8 +371,15 @@ async def live_websocket(
 
         command_task = asyncio.create_task(handle_commands())
 
+        sent_error: str | None = None
         try:
             while True:
+                # Tell the page when F1 refuses the connection, and when it recovers
+                error = session.feed_error()
+                if error != sent_error:
+                    await websocket.send_json({"type": "feed_error", "message": error})
+                    sent_error = error
+
                 frame = session.get_frame()
                 if frame:
                     await websocket.send_json({"type": "frame", **frame})

@@ -14,6 +14,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 ### Fixes
 
+- **Live timing stuck on "Waiting for session" when F1 refused the connection** — if F1 refuses the server's live timing connection (for example HTTP 403 from a blocked network such as a cloud host or VPN), the live page now says so instead of waiting, and keeps retrying. If it happens mid-session, a banner shows over the track map.
+
 - **No cars in the live Picture-in-Picture map** — the pop-out track map in live timing now shows the cars. ([@kungfoochef](https://github.com/kungfoochef))
 
 - **Parked cars showing 104% throttle with the brake on** — F1 sends 104 when it has no reading; live telemetry now shows these as zero. ([@kungfoochef](https://github.com/kungfoochef))

@@ -271,7 +271,9 @@ function LiveTiming() {
   const hasTelemetry = drivers.some((d) => d.speed != null);
 
   // Session hasn't started yet (connected but no driver data)
-  const waitingForSession = live.ready && drivers.length === 0;
+  const waitingForSession = live.ready && drivers.length === 0 && !live.feedError;
+  // The server can't get data from F1 (refused or unreachable); it keeps retrying
+  const feedRefused = live.ready && !!live.feedError;
 
   // Mini-sectors (qualifying and practice, desktop), straight from the feed
   const miniCounts = live.frame?.mini_sector_counts;
@@ -355,6 +357,24 @@ function LiveTiming() {
                     </p>
                   </div>
                 </div>
+              )}
+
+              {/* F1 refusing the connection: replaces "waiting" before any data,
+                  a banner once data has arrived */}
+              {feedRefused && (
+                drivers.length === 0 ? (
+                  <div className="absolute inset-0 z-30 flex items-center justify-center p-4">
+                    <div className="bg-f1-card/95 border border-f1-border rounded-lg px-8 py-6 backdrop-blur-sm text-center max-w-md">
+                      <p className="text-white text-lg font-bold mb-2">Can&apos;t get live timing from F1</p>
+                      <p className="text-f1-muted text-sm mb-3">{live.feedError}</p>
+                      <p className="text-f1-muted text-xs">Retrying automatically.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 max-w-md w-[calc(100%-1.5rem)] bg-f1-card/95 border border-red-500/40 rounded-lg px-3 py-2 backdrop-blur-sm text-center">
+                    <p className="text-xs text-white"><span className="font-bold">Live timing interrupted.</span> {live.feedError} Retrying.</p>
+                  </div>
+                )
               )}
 
               {/* Flag badge */}
