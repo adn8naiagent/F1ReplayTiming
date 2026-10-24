@@ -25,7 +25,7 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 - **Live timing** (Beta) - connect to live F1 sessions during race weekends with real-time data from the F1 SignalR stream, including a broadcast delay slider and automatic detection of post-session replays
 - **Track map** with real-time car positions from GPS telemetry, updating every 0.5 seconds with smooth interpolation, marshal sector flags, and toggleable corner numbers
 - **Driver leaderboard** showing position, gap to leader, interval, last lap time, sector indicators (qualifying/practice), tyre compound and age, tyre history, pit stop count and live pit timer, grid position changes, fastest lap indicator, investigation/penalty status, and sub-1-second interval highlighting
-- **Team radio** - the radio messages F1 picks for the world feed pop up over the track map with the driver, a caption and the audio, in replays and live timing (requires an F1 TV sign-in). Captions are made locally on your server with [Whisper](https://github.com/SYSTRAN/faster-whisper). Accuracy varies depending on quality and clarity
+- **Team radio** - the radio messages F1 picks for the world feed pop up over the track map with the driver, a caption and the audio, in replays and live timing (requires an F1 TV sign-in). Captions are made locally on your server with [Whisper](https://github.com/SYSTRAN/faster-whisper), and can optionally be improved by an AI model through OpenRouter. Choose the models in Settings > Team Radio. Accuracy varies depending on quality and clarity
 - **Race control messages** - steward decisions, investigations, penalties, track limits, and flag changes displayed in a draggable overlay on the track map with optional sound notifications
 - **Pit position prediction** estimates where a driver would rejoin if they pitted now, with predicted gap ahead and behind, using precomputed pit loss times per circuit with Safety Car and Virtual Safety Car adjustments
 - **Telemetry** for unlimited drivers showing speed, throttle, brake, gear, and DRS (2025 and earlier) plotted against track distance, with a moveable side panel for 3+ driver comparisons
@@ -111,8 +111,10 @@ All configuration is managed through the `.env` file. No need to edit `docker-co
 | `F1TV_SECRET_KEY` | | **Required.** Encrypts the saved F1 TV sign-in. Generate with `openssl rand -hex 32`, set once and don't change it (see [F1 TV account](#f1-tv-account)) |
 | `F1_USERNAME` / `F1_PASSWORD` | | Sign in to F1 TV here instead of in the app |
 | `TEAM_RADIO_CAPTIONS` | `true` | Set to `false` to skip captioning team radio (clips still play) |
-| `TEAM_RADIO_MODEL` | `small.en` | Whisper model for team radio captions. Downloads on first use (`small.en` is about 480 MB). `large-v3-turbo` (about 1.6 GB) is noticeably more accurate but about twice as slow; on a Raspberry Pi 5 it took about 24 s per clip against 12 s for `small.en` |
-| `TEAM_RADIO_LIVE_MODEL` | `TEAM_RADIO_MODEL` | Whisper model for live timing only, where a caption needs to be ready within your broadcast delay. For example, `large-v3-turbo` for replays and `small.en` for live |
+| `TEAM_RADIO_MODEL` | `small.en` | Whisper model for replay captions: `tiny.en` (75 MB), `base.en` (145 MB), `small.en` (480 MB), `medium.en` (1.5 GB) or `large-v3-turbo` (1.6 GB). Downloads on first use. `large-v3-turbo` is noticeably more accurate but about twice as slow; on a Raspberry Pi 5 it took about 24 s per clip against 12 s for `small.en`. Also settable in Settings > Team Radio; a value here wins |
+| `TEAM_RADIO_LIVE_MODEL` | `TEAM_RADIO_MODEL` | Whisper model for live timing only, where a caption needs to be ready within your broadcast delay. Same choices. For example, `large-v3-turbo` for replays and `small.en` for live |
+| `TEAM_RADIO_AI` | `false` | Improve captions with an AI model through OpenRouter (needs `OPENROUTER_API_KEY`). Sends each clip's audio and Whisper's caption, with the session's drivers and F1 terms. If a request fails, Whisper's caption is kept |
+| `TEAM_RADIO_AI_MODEL` | `google/gemini-3.5-flash-lite` | OpenRouter model for AI captions; it must accept audio. Also `google/gemini-3.5-flash`, `google/gemini-2.5-flash`, `openai/gpt-audio-mini`. The default costs a few cents a race weekend |
 
 ### F1 TV account
 

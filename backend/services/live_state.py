@@ -110,6 +110,7 @@ class _DriverState:
         "rpm",
         "drs",
         "first_name",
+        "last_name",
         "_sector_best_personal",
         "_sector_best_overall",
         "_stint_count",
@@ -159,6 +160,7 @@ class _DriverState:
         self.rpm: float | None = None
         self.drs: int | None = None
         self.first_name: str | None = None  # for team radio captions
+        self.last_name: str | None = None
         # Internal tracking for sector colours
         self._sector_best_personal: dict[int, float] = {}  # sector_num -> best time
         self._sector_best_overall: dict[int, bool] = {}  # sector_num -> ever overall fastest
@@ -297,6 +299,7 @@ class LiveStateManager:
         # Team radio (F1 TV sign-in only). Clips go out in frames once
         # captioned; "state" is "new", "captioning", "ready" or "skipped".
         self._session_path: str | None = None  # e.g. "2026/..._Grand_Prix/..._Race/"
+        self._session_label: str | None = None  # e.g. "United States Grand Prix, Qualifying"
         self._radio: dict[str, dict[str, Any]] = {}  # clip path -> clip
 
     # ------------------------------------------------------------------
@@ -364,6 +367,8 @@ class LiveStateManager:
                 drv.team = info["TeamName"]
             if "FirstName" in info:
                 drv.first_name = info["FirstName"]
+            if "LastName" in info:
+                drv.last_name = str(info["LastName"]).title()
             if "TeamColour" in info:
                 colour = info["TeamColour"]
                 if not colour.startswith("#"):
@@ -940,6 +945,26 @@ class LiveStateManager:
         path = data.get("Path")
         if isinstance(path, str) and path:
             self._session_path = path
+        meeting = (data.get("Meeting") or {}).get("Name") if isinstance(data.get("Meeting"), dict) else None
+        name = data.get("Name")
+        if meeting or name:
+            self._session_label = ", ".join(str(x) for x in (meeting, name) if x)
+
+    def radio_context(self, racing_number: str) -> dict[str, Any]:
+        """Who's speaking, the other drivers and the session, for the AI
+        caption step (services/caption_ai)."""
+        from services.team_radio import _driver_label
+
+        def label(d: _DriverState) -> str:
+            name = " ".join(x for x in (d.first_name, d.last_name) if x)
+            return _driver_label({"name": name, "abbr": d.abbr, "team": d.team})
+
+        speaker = self._drivers.get(racing_number)
+        return {
+            "speaker": label(speaker) if speaker and speaker.abbr else None,
+            "drivers": [label(d) for d in self._drivers.values() if d.abbr],
+            "session": self._session_label,
+        }
 
     def _handle_team_radio(self, data: dict, _ts: float) -> None:
         from services import team_radio

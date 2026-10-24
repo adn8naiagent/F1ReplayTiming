@@ -678,7 +678,9 @@ export default function FeaturesPage() {
             </p>
             <p className="text-f1-text leading-relaxed">
               Captions are made locally using Whisper. Accuracy varies depending on quality and clarity.
-              Turn team radio or its audio off in Settings &gt; Team Radio.
+              Turn team radio or its audio off in Settings &gt; Team Radio. The same tab chooses the caption
+              models for replays and live timing and, with an OpenRouter key, can have an AI model listen to
+              each clip and correct its caption.
             </p>
           </section>
           </>

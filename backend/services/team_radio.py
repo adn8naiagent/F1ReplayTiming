@@ -7,13 +7,12 @@ so the browser plays them straight from F1 and we never store the audio.
 
 F1 sends no text, so captions come from Whisper running locally
 (faster-whisper). The model downloads on first use to DATA_DIR/whisper.
+Optionally, an AI model then improves each caption (services/caption_ai.py).
 
 - TEAM_RADIO_CAPTIONS=false turns captions off (clips still play).
-- TEAM_RADIO_MODEL picks the Whisper model (default small.en, about 480 MB).
-- TEAM_RADIO_LIVE_MODEL picks a different model for live timing, where a
-  caption has to be ready within the broadcast delay. Unset, live uses
-  TEAM_RADIO_MODEL. A larger model (e.g. large-v3-turbo) is noticeably more
-  accurate but 2-3x slower, which suits replays but not live.
+- The Whisper models (replays and live) and the AI step are set in the app
+  or .env; see
+  services/caption_settings.py.
 """
 
 from __future__ import annotations
@@ -30,6 +29,8 @@ from typing import Any
 
 import requests
 
+from services import caption_ai, caption_settings
+
 logger = logging.getLogger(__name__)
 
 STATIC_URL = "https://livetiming.formula1.com/static/"
@@ -42,8 +43,13 @@ _unavailable_logged = False
 
 
 def captions_enabled() -> bool:
+    """Whether clips get captions: from Whisper, the AI step, or both."""
     if os.environ.get("TEAM_RADIO_CAPTIONS", "true").strip().lower() in ("false", "0", "off", "no"):
         return False
+    return whisper_available() or caption_settings.ai_enabled()
+
+
+def whisper_available() -> bool:
     try:
         import faster_whisper  # noqa: F401
     except ImportError:
@@ -60,16 +66,9 @@ def _model_dir() -> Path:
     return data_dir / "whisper"
 
 
-def model_name(live: bool = False) -> str:
-    """The Whisper model for replays, or for live timing when live is set."""
-    replay = os.environ.get("TEAM_RADIO_MODEL", "").strip() or "small.en"
-    if live:
-        return os.environ.get("TEAM_RADIO_LIVE_MODEL", "").strip() or replay
-    return replay
-
-
 def _get_model(live: bool = False):
-    name = model_name(live)
+    # Read each time, so a model chosen in the app is used from the next clip
+    name = caption_settings.whisper_model(live)
     with _model_lock:
         if name not in _models:
             from faster_whisper import WhisperModel
@@ -81,21 +80,22 @@ def _get_model(live: bool = False):
 
 def warm_up(live: bool = False) -> None:
     """Load the model ahead of the first clip (it downloads on first use)."""
-    if captions_enabled():
+    if captions_enabled() and whisper_available():
         try:
             _get_model(live)
         except Exception as e:
             logger.warning(f"Couldn't load the Whisper model: {e}")
 
 
-def release_model(live: bool = False) -> None:
+def release_model() -> None:
     """Free the model's memory (a few hundred MB to 1.5 GB) when nothing needs it."""
-    name = model_name(live)
     with _model_lock, _transcribe_lock:
-        if _models.pop(name, None) is not None:
-            import gc
-            gc.collect()
-            logger.info(f"Released the Whisper model {name} from memory")
+        names = list(_models)
+        _models.clear()
+    if names:
+        import gc
+        gc.collect()
+        logger.info(f"Released the Whisper model {', '.join(names)} from memory")
 
 
 def audio_url(session_path: str, clip_path: str) -> str:
@@ -159,11 +159,10 @@ def _is_prompt_echo(text: str, prompt: str) -> bool:
 def transcribe(
     audio: bytes, first_name: str | None = None, year: int | None = None, live: bool = False,
 ) -> str | None:
-    """Caption one clip. None if captions are off or nothing was said.
-
-    live picks TEAM_RADIO_LIVE_MODEL; year picks the season's vocabulary.
-    """
-    if not captions_enabled():
+    """Whisper's caption for one clip. None if Whisper isn't available or
+    nothing was said. year picks the season's vocabulary; live picks the
+    live timing model."""
+    if not whisper_available():
         return None
     prompt = _prompt(first_name, year)
     try:
@@ -183,6 +182,24 @@ def transcribe(
     # F1 spelling; the multilingual models write "tires" whatever the prompt says
     text = _TIRE_RE.sub(lambda m: m.group(0).replace("ire", "yre").replace("IRE", "YRE"), text)
     return text or None
+
+
+def caption(
+    audio: bytes, first_name: str | None, year: int | None, context: dict | None = None, live: bool = False,
+) -> str | None:
+    """Caption one clip: Whisper, then the AI step if it's on. If the AI step
+    fails, Whisper's caption is kept.
+
+    context is for the AI step: "speaker", "drivers" and "session" (see
+    caption_ai)."""
+    if not captions_enabled():
+        return None
+    text = transcribe(audio, first_name, year, live)
+    if caption_settings.ai_enabled():
+        ok, refined = caption_ai.refine(audio, text, {**(context or {}), "year": year})
+        if ok:
+            return refined
+    return text
 
 
 def parse_utc(value: str) -> datetime | None:
@@ -212,6 +229,13 @@ def captures_from(data: Any) -> list[dict]:
     return []
 
 
+def _driver_label(drv: dict) -> str:
+    """e.g. "Charles Leclerc (LEC, Ferrari)", for the AI caption step."""
+    name = drv.get("name") or drv.get("first_name") or ""
+    extra = ", ".join(x for x in (drv.get("abbr"), drv.get("team")) if x)
+    return f"{name} ({extra})" if name and extra else (name or extra)
+
+
 def build_clips(
     captures: list[dict],
     session_path: str,
@@ -219,11 +243,15 @@ def build_clips(
     drivers: dict[str, dict],
     on_progress=None,
     year: int | None = None,
+    session: str | None = None,
 ) -> list[dict]:
     """Replay clips with captions, timed in replay seconds from start_date.
 
-    drivers maps racing number -> {"abbr", "first_name"}.
+    drivers maps racing number -> {"abbr", "first_name"}, and optionally
+    "name" and "team" for the AI caption step. session names the session,
+    e.g. "2026 United States Grand Prix, Qualifying".
     """
+    roster = [_driver_label(d) for d in drivers.values() if d.get("abbr")]
     seen: set[str] = set()
     clips: list[dict] = []
     ordered = sorted(captures, key=lambda c: c.get("Utc", ""))
@@ -241,7 +269,11 @@ def build_clips(
                 on_progress(i + 1, len(ordered))
             audio = fetch_audio(url)
             if audio:
-                transcript = transcribe(audio, drv.get("first_name"), year)
+                transcript = caption(audio, drv.get("first_name"), year, {
+                    "speaker": _driver_label(drv) if drv else None,
+                    "drivers": roster,
+                    "session": session,
+                })
             time.sleep(0.2)  # be gentle with F1's servers
         clips.append({
             "t": round((utc - start_date).total_seconds(), 1),

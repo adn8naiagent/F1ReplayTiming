@@ -1951,11 +1951,15 @@ def _get_team_radio_sync(year: int, round_num: int, session_type: str, on_progre
             drivers[number] = {
                 "abbr": str(row.get("Abbreviation", "")),
                 "first_name": str(row.get("FirstName", "")) or None,
+                # For the AI caption step
+                "name": str(row.get("FullName", "")) or None,
+                "team": str(row.get("TeamName", "")) or None,
             }
 
     path = session.api_path.removeprefix("/static/")
+    label = f"{year} {session.event.get('EventName', '')}, {session.name}".strip(", ")
     try:
-        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress, year)
+        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress, year, label)
     finally:
         team_radio.release_model()
 

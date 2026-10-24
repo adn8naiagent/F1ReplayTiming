@@ -159,8 +159,9 @@ class LiveSession:
         if team_radio.captions_enabled():
             audio = await asyncio.to_thread(team_radio.fetch_audio, clip["url"])
             if audio:
+                context = self._state_manager.radio_context(clip["racing_number"]) if self._state_manager else {}
                 transcript = await asyncio.to_thread(
-                    team_radio.transcribe, audio, clip.get("first_name"), self._year, True,
+                    team_radio.caption, audio, clip.get("first_name"), self._year, context, True,
                 )
         if self._state_manager is not None:
             self._state_manager.set_radio_caption(clip["id"], transcript)
@@ -207,7 +208,7 @@ class LiveSession:
         # Free the Whisper model once no live session needs it
         if not any(s is not self and s._started for s in _live_sessions.values()):
             from services import team_radio
-            team_radio.release_model(live=True)
+            team_radio.release_model()
         if self._signalr_client:
             await self._signalr_client.disconnect()
         if self._task:

@@ -14,6 +14,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Team radio captions: separate live model, better prompt** — `TEAM_RADIO_LIVE_MODEL` sets a different Whisper model for live timing, so replays can use a larger, more accurate model (e.g. `large-v3-turbo`) while live captions stay fast enough for the broadcast delay. The caption prompt is shorter and follows the season (DRS up to 2025, boost and overtake mode from 2026), captions that are Whisper reading the prompt back on near-silent clips are dropped, and "tires" is spelled "tyres". ([@kungfoochef](https://github.com/kungfoochef))
 
+- **AI team radio captions and choosing caption models in the app** — with `OPENROUTER_API_KEY` set, turn on **Improve captions with AI** in Settings > Team Radio: each clip's audio and Whisper's caption go to an AI model (default `google/gemini-3.5-flash-lite`, a few cents a race weekend) with the session's drivers and F1 terms, which listens and fixes misheard words, such as "our course" → "our cause". If a request fails, Whisper's caption is kept. The same tab sets the Whisper models for replays and live timing, with each model's size and speed. Settings in `.env` (`TEAM_RADIO_MODEL`, `TEAM_RADIO_LIVE_MODEL`, `TEAM_RADIO_AI`, `TEAM_RADIO_AI_MODEL`) win and show as locked. Choices are saved on each server, so servers sharing storage can use different models.
+
 ### Fixes
 
 - **Live timing stuck on "Waiting for session" when F1 refused the connection** — if F1 refuses the server's live timing connection (for example HTTP 403 from a blocked network such as a cloud host or VPN), the live page now says so instead of waiting, and keeps retrying. If it happens mid-session, a banner shows over the track map.
