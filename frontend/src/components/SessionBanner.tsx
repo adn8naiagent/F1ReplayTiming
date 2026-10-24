@@ -42,6 +42,7 @@ const LEADERBOARD_SETTINGS: { key: keyof ReplaySettings; label: string; raceOnly
   { key: "showTyreAge", label: "Tyre age" },
   { key: "showTyreHistory", label: "Tyre history", raceOnly: true },
   { key: "showSectors", label: "Live sectors", nonRaceOnly: true },
+  { key: "showMiniSectors", label: "Mini-sectors", nonRaceOnly: true, parent: "showSectors" },
   { key: "showLapNotifications", label: "Lap notifications", qualiOnly: true },
   { key: "showLapNotificationSectors", label: "Sector times", qualiOnly: true, parent: "showLapNotifications" },
   { key: "showPitPrediction", label: "Pit prediction", raceOnly: true },

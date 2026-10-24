@@ -19,6 +19,8 @@ import LapAnalysisPanel from "@/components/LapAnalysisPanel";
 import SessionLapAnalysis from "@/components/SessionLapAnalysis";
 import type { LapData } from "@/lib/lapTiming";
 import type { DominanceOverlay } from "@/lib/lapCompare";
+import { miniStatesAt, miniMarkersWidth, MINI_HEX, type MiniSectorData } from "@/lib/miniSectors";
+import type { SegmentOverlay } from "@/lib/trackRenderer";
 import LapNotifications from "@/components/LapNotifications";
 import TeamRadio, { type RadioClip } from "@/components/TeamRadio";
 
@@ -344,6 +346,22 @@ export default function ReplayPage() {
   const dataError = sessionError || trackError || replayError;
 
   // Show loading until session + track + replay frames are all ready
+  // Mini-sectors (qualifying and practice, desktop, setting on). Hooks, so
+  // they stay above the early returns below.
+  const miniWanted = ["Q", "SQ", "FP1", "FP2", "FP3"].includes(sessionType)
+    && settings.showSectors && settings.showMiniSectors && !isMobile;
+  const { data: miniData } = useApi<MiniSectorData>(
+    miniWanted ? `/api/sessions/${year}/${round}/minisectors?type=${sessionType}` : null,
+  );
+  const miniTime = replay.frame?.timestamp ?? 0;
+  const miniFrameDrivers = replay.frame?.drivers;
+  const miniSectors = useMemo(() => {
+    if (!miniWanted || !miniData) return null;
+    const states = new Map<string, number[] | null>();
+    for (const d of miniFrameDrivers || []) states.set(d.abbr, miniStatesAt(miniData, d.abbr, miniTime));
+    return { counts: miniData.counts, states };
+  }, [miniWanted, miniData, miniTime, miniFrameDrivers]);
+
   if (isLoading || (!dataError && replay.loading)) {
     return (
       <div className="min-h-screen bg-f1-dark flex items-center justify-center">
@@ -424,6 +442,23 @@ export default function ReplayPage() {
     };
   })();
 
+  // Mini-sectors (qualifying and practice, desktop, setting on). Sessions
+  // without minisectors.json keep the three sector squares.
+  // (miniWanted, miniData and miniSectors are set above the early returns)
+
+  // Track map: the focused driver's mini-sectors instead of three sectors
+  const miniOverlay: SegmentOverlay | null = (() => {
+    if (!sectorOverlay || !miniSectors || !miniData || !sectorFocusDriver) return null;
+    const states = miniSectors.states.get(sectorFocusDriver);
+    if (!states) return null;
+    const segments: SegmentOverlay["segments"] = [];
+    miniData.ends.forEach((end, i) => {
+      const color = MINI_HEX[states[i]];
+      if (color) segments.push({ from: i === 0 ? 0 : miniData.ends[i - 1], to: end, color });
+    });
+    return { segments };
+  })();
+
   // Calculate leaderboard width based on active columns
   const leaderboardWidthFull = (() => {
     let w = 106; // base: position(24) + team bar(12) + driver(30) + flags(16) + padding(16) + right padding(8)
@@ -433,7 +468,9 @@ export default function ReplayPage() {
     if (!isRace && settings.showBestLapTime) w += 60; // best lap time column
     if (settings.showLastLapTime) w += 60; // last lap time column
     if (settings.showGapToLeader) w += 56 + (!isRace ? 8 : 0); // extra margin between lap time and gap in practice/qualifying
-    if (hasSectors && settings.showSectors) w += 36; // sector indicators (28 + 8 margin)
+    if (hasSectors && settings.showSectors) {
+      w += miniSectors ? miniMarkersWidth(miniSectors.counts) + 8 : 36; // sector indicators (+ 8 margin)
+    }
     if (isRace && settings.showPitStops) w += 24;
     if (isRace && settings.showTyreHistory) w += 36;
     if (settings.showTyreType) w += 24;
@@ -464,7 +501,7 @@ export default function ReplayPage() {
       playbackSpeed={replay.speed}
       showDriverNames={settings.showDriverNames}
       sectorOverlay={sectorOverlay}
-      segmentOverlay={dominance}
+      segmentOverlay={dominance ?? miniOverlay}
       corners={settings.showCorners ? trackData?.corners : null}
       marshalSectors={trackData?.marshal_sectors}
       sectorFlags={replay.frame?.sector_flags}
@@ -1078,6 +1115,7 @@ export default function ReplayPage() {
                   lapData={lapData}
                   currentLap={replay.frame?.lap || 0}
                   mobileTeamAbbrHidden={mobileTeamAbbrHidden}
+                  miniSectors={miniSectors}
                 />
               )}
             </div>

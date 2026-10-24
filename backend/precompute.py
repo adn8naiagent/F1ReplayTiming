@@ -23,6 +23,10 @@ Usage:
     # (no FastF1 processing; reads each stored replay.json)
     python precompute.py 2024 2025 2026 --chunks-only
 
+    # Add deleted laps, sector end times and mini-sectors to stored qualifying
+    # and practice sessions (loads laps only, not telemetry)
+    python precompute.py 2024 2025 2026 --lap-extras-only
+
     # Sign in to F1 TV (needed since 15 October 2026), then process
     python precompute.py --sign-in
     python precompute.py 2026 --round 18
@@ -56,7 +60,10 @@ from services.schedule import refresh_schedule
 from services.f1_data import (
     _fetch_schedule_sync,
     SESSION_NAME_TO_TYPE,
+    rebuild_lap_extras_sync,
+    release_sessions,
 )
+from services.minisectors import SESSION_TYPES as LAP_EXTRAS_TYPES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -154,6 +161,41 @@ def backfill_chunks(year: int, target_round: int | None = None, target_session: 
             traceback.print_exc()
 
 
+def backfill_lap_extras(year: int, target_round: int | None = None, target_session: str | None = None,
+                        gap: float = 60, redo: bool = False) -> None:
+    """Deleted laps, sector end times and mini-sectors for stored qualifying,
+    sprint qualifying and practice sessions."""
+    keys = set(storage.list_keys(f"sessions/{year}/"))
+    sessions = sorted({
+        (int(k.split("/")[2]), k.split("/")[3]) for k in keys
+        if k.endswith("/laps.json") and len(k.split("/")) == 5
+    })
+    first = True
+    for rnd, st in sessions:
+        if st not in LAP_EXTRAS_TYPES:
+            continue
+        if target_round is not None and rnd != target_round:
+            continue
+        if target_session is not None and st != target_session:
+            continue
+        if not redo and f"sessions/{year}/{rnd}/{st}/minisectors.json" in keys:
+            logger.info(f"{year} R{rnd} {st}: already has mini-sectors")
+            continue
+        if not first and gap > 0:
+            time.sleep(gap)  # be gentle with F1's servers
+        first = False
+        try:
+            rebuild_lap_extras_sync(year, rnd, st)
+        except f1_account.F1AccountError as e:
+            logger.error(f"{year} R{rnd} {st}: {e}")
+            return
+        except Exception as e:
+            logger.error(f"{year} R{rnd} {st}: failed: {e}")
+            traceback.print_exc()
+        finally:
+            release_sessions(year, rnd)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pre-compute F1 data and upload to storage")
     parser.add_argument("years", type=int, nargs="*", help="Year(s) to process")
@@ -161,6 +203,9 @@ def main():
     parser.add_argument("--session", type=str, default=None, help="Session type (R, Q, S, FP1, FP2, FP3, SQ)")
     parser.add_argument("--skip-existing", action="store_true", help="Skip sessions already in R2")
     parser.add_argument("--chunks-only", action="store_true", help="Only write replay chunks for already-processed sessions")
+    parser.add_argument("--lap-extras-only", action="store_true",
+                        help="Add deleted laps, sector end times and mini-sectors to stored qualifying and practice sessions")
+    parser.add_argument("--redo", action="store_true", help="With --lap-extras-only: redo sessions that already have them")
     parser.add_argument("--sign-in", action="store_true", help="Sign in to your F1 TV account (prompts for email and password)")
     parser.add_argument("--gap", type=float, default=60, help="Seconds to wait between session downloads (default 60)")
     args = parser.parse_args()
@@ -179,6 +224,10 @@ def main():
     for year in args.years:
         if args.chunks_only:
             backfill_chunks(year, target_round=args.round, target_session=args.session)
+            continue
+        if args.lap_extras_only:
+            backfill_lap_extras(year, target_round=args.round, target_session=args.session,
+                                gap=args.gap, redo=args.redo)
             continue
         if not process_year(year, target_round=args.round, target_session=args.session,
                             skip_existing=args.skip_existing, gap=args.gap):

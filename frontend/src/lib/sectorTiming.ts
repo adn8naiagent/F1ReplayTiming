@@ -1,8 +1,9 @@
 // Sector and lap maths for Lap Analysis (qualifying, sprint qualifying and
 // practice). Follows the backend's rules for the timing tower's sector
 // colours (f1_data.py): out laps don't count, and purple/green use a 0.0005s
-// tolerance. One difference: the tower counts a sector as soon as it's set,
-// while laps.json only gives a lap's sectors once the lap completes.
+// tolerance. Deleted laps (stewards' decisions) don't count either. Sessions
+// processed with sector end times count each sector as soon as it's set, like
+// the tower; older ones only once the lap completes.
 
 import type { LapEntry } from "@/components/Leaderboard";
 import { toSecs } from "./lapTiming";
@@ -19,6 +20,11 @@ export interface ParsedLap {
   kind: LapKind;
   /** Replay seconds when the lap completed */
   completedAt: number | null;
+  /** When each sector ended (replay seconds), if known */
+  sectorEnds: [number | null, number | null, number | null];
+  /** Lap time deleted by the stewards */
+  deleted: boolean;
+  deletedReason: string | null;
   compound: string | null;
   tyreLife: number | null;
 }
@@ -67,6 +73,9 @@ export function parseLaps(laps: LapEntry[]): Map<string, ParsedLap[]> {
       sectors: [secsOrNull(lap.sector1), secsOrNull(lap.sector2), secsOrNull(lap.sector3)],
       kind: classifyLap(lap),
       completedAt: lap.time ?? null,
+      sectorEnds: [lap.s1_end ?? null, lap.s2_end ?? null, lap.time ?? null],
+      deleted: !!lap.deleted,
+      deletedReason: lap.deleted_reason ?? null,
       compound: lap.compound,
       tyreLife: lap.tyre_life ?? null,
     };
@@ -94,14 +103,17 @@ export function computeSessionBests(driverLaps: Map<string, ParsedLap[]>, t: num
   for (const [driver, laps] of driverLaps) {
     const personal: [number | null, number | null, number | null] = [null, null, null];
     for (const lap of laps) {
-      if (lap.kind === "out" || !isComplete(lap, t)) continue;
+      if (lap.kind === "out" || lap.deleted) continue;
       lap.sectors.forEach((s, i) => {
         if (s === null) return;
+        // Counted once that sector has been set (its end time, else the lap's)
+        const end = lap.sectorEnds[i] ?? lap.completedAt;
+        if (end === null || end > t) return;
         if (personal[i] === null || s < personal[i]!) personal[i] = s;
         const overall = bests.sectors[i];
         if (!overall || s < overall.secs) bests.sectors[i] = { secs: s, driver, lapNumber: lap.lapNumber };
       });
-      if (lap.lapSecs !== null) {
+      if (lap.lapSecs !== null && isComplete(lap, t)) {
         const pb = bests.personalLap.get(driver);
         if (!pb || lap.lapSecs < pb.secs) bests.personalLap.set(driver, { secs: lap.lapSecs, lapNumber: lap.lapNumber });
         if (!bests.lap || lap.lapSecs < bests.lap.secs) bests.lap = { secs: lap.lapSecs, driver, lapNumber: lap.lapNumber };

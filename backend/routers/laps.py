@@ -24,3 +24,18 @@ async def lap_data(
         )
     set_cache(response, 300)
     return {"laps": data}
+
+
+@router.get("/sessions/{year}/{round_num}/minisectors")
+async def minisector_data(
+    year: int,
+    round_num: int,
+    response: Response,
+    type: str = Query("Q", description="Session type"),
+):
+    validate_session(year, round_num, type)
+    data = await aget_json(f"sessions/{year}/{round_num}/{type}/minisectors.json")
+    if data is None:
+        raise HTTPException(status_code=404, detail="Mini-sectors not available for this session.")
+    set_cache(response, 300)
+    return data

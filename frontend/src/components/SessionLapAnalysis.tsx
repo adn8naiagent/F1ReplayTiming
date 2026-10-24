@@ -528,7 +528,7 @@ function LapRow({ lap, bests, selected, onClick, lapClass }: {
   onClick?: () => void;
   lapClass: string;
 }) {
-  const muted = lap.kind !== "push";
+  const muted = lap.kind !== "push" || lap.deleted;
   const tyreColor = lap.compound ? TYRE_COLORS[lap.compound] || "#888" : undefined;
   const tyreLabel = lap.compound ? TYRE_SHORT[lap.compound] || "?" : null;
   return (
@@ -541,13 +541,18 @@ function LapRow({ lap, bests, selected, onClick, lapClass }: {
     >
       <span className="w-9 text-[10px] font-bold text-f1-muted tabular-nums flex items-center gap-0.5">
         {lap.lapNumber}
-        {muted && <span className="text-[7px] font-bold text-f1-muted">{lap.kind === "out" ? "OUT" : "IN"}</span>}
+        {lap.deleted ? (
+          <span className="text-[7px] font-bold text-red-400">DEL</span>
+        ) : muted && <span className="text-[7px] font-bold text-f1-muted">{lap.kind === "out" ? "OUT" : "IN"}</span>}
       </span>
-      <span className={`w-[62px] text-[10px] font-bold tabular-nums ${muted ? "text-f1-muted" : lapClass === "text-f1-muted" ? "text-white" : lapClass}`}>
+      <span
+        className={`w-[62px] text-[10px] font-bold tabular-nums ${lap.deleted ? "text-f1-muted line-through" : muted ? "text-f1-muted" : lapClass === "text-f1-muted" ? "text-white" : lapClass}`}
+        title={lap.deleted ? `Deleted: ${lap.deletedReason ?? "by the stewards"}` : undefined}
+      >
         {lap.lapTime || "—"}
       </span>
       {lap.sectors.map((s, i) => {
-        const color = lap.kind === "out" ? null : sectorColor(s, lap.driver, i, bests);
+        const color = lap.kind === "out" || lap.deleted ? null : sectorColor(s, lap.driver, i, bests);
         return (
           <span key={i} className={`flex-1 text-right text-[10px] tabular-nums ${color ? SECTOR_COLOR_CLASS[color] : "text-white/80"}`}>
             {s === null ? "—" : s.toFixed(3)}
@@ -582,6 +587,9 @@ function LapCard({ lap, bests }: { lap: ParsedLap; bests: SessionBests }) {
       <div className="text-[9px] font-bold text-f1-muted uppercase tracking-wider mb-1">
         {lap.driver} · Lap {lap.lapNumber}{lap.kind !== "push" ? ` (${lap.kind === "out" ? "out lap" : "in lap"})` : ""}
       </div>
+      {lap.deleted && (
+        <p className="text-[10px] text-red-400 mb-1">Deleted: {lap.deletedReason ?? "by the stewards"}. It doesn&apos;t count towards bests.</p>
+      )}
       <div className="grid grid-cols-[28px_1fr_1fr_1fr] gap-x-2 text-[10px] tabular-nums">
         <span />
         <span className="text-f1-muted text-[9px]">TIME</span>
