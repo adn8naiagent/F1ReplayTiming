@@ -2,7 +2,13 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
-## 2.4.0 (unreleased)
+## 2.4.1 (unreleased)
+
+### Improvements
+
+- **Mini-sectors in live timing** — in live qualifying and practice, the leaderboard's sector markers fill in mini-sector by mini-sector, as in replays. Desktop only; uses the same Mini-sectors setting. Nothing to reprocess: they come straight from F1's live timing.
+
+## 2.4.0
 
 ### Improvements
 

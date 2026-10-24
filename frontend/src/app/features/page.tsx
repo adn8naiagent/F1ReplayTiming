@@ -289,7 +289,7 @@ export default function FeaturesPage() {
             leaderboard fills in mini-sector by mini-sector as they go round &mdash; purple for the
             session best, green for a personal best, yellow otherwise &mdash; and the focused driver&apos;s
             colours are drawn on the track map. Switch between Sectors and Mini-sectors next to the
-            Show/Hide Sectors button on the track map.
+            Show/Hide Sectors button on the track map. Live timing shows them on the leaderboard too.
           </p>
           <p className="text-f1-text leading-relaxed">
             Sessions processed before mini-sectors were added show normal sectors until they&apos;re reprocessed.

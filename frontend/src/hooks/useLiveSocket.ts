@@ -124,6 +124,7 @@ export function useLiveSocket(
             weather: msg.weather,
             quali_phase: msg.quali_phase,
             team_radio: msg.team_radio,
+            mini_sector_counts: msg.mini_sector_counts,
           };
           const rcMessages: RCMessage[] = msg.rc_messages || [];
 

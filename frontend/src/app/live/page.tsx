@@ -11,6 +11,7 @@ import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
 import TeamRadio from "@/components/TeamRadio";
 import Leaderboard from "@/components/Leaderboard";
+import { miniMarkersWidth } from "@/lib/miniSectors";
 import PiPWindow from "@/components/PiPWindow";
 import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
 
@@ -261,6 +262,12 @@ function LiveTiming() {
   // Session hasn't started yet (connected but no driver data)
   const waitingForSession = live.ready && drivers.length === 0;
 
+  // Mini-sectors (qualifying and practice, desktop), straight from the feed
+  const miniCounts = live.frame?.mini_sector_counts;
+  const miniSectors = !isRace && !isMobile && settings.showSectors && settings.showMiniSectors && miniCounts
+    ? { counts: miniCounts, states: new Map(drivers.map((d) => [d.abbr, d.mini_sectors ?? null])) }
+    : null;
+
   // Calculate leaderboard width
   const leaderboardWidth = (() => {
     let w = 106;
@@ -270,7 +277,7 @@ function LiveTiming() {
     if (!isRace && settings.showBestLapTime) w += 60; // best lap time column
     if (settings.showLastLapTime) w += 60; // last lap time column
     if (settings.showGapToLeader) w += 56 + (!isRace ? 8 : 0); // extra margin between lap time and gap in practice/qualifying
-    if (!isRace && settings.showSectors) w += 36; // sector indicators (practice + qualifying)
+    if (!isRace && settings.showSectors) w += miniSectors ? miniMarkersWidth(miniSectors.counts) + 8 : 36; // sector indicators (practice + qualifying)
     if (isRace && settings.showPitStops) w += 24;
     if (isRace && settings.showTyreHistory) w += 36;
     if (settings.showTyreType) w += 24;
@@ -590,6 +597,7 @@ function LiveTiming() {
                 isRace={isRace}
                 isQualifying={isQualifying}
                 onScaleChange={setLeaderboardScale}
+                miniSectors={miniSectors}
               />
             )}
           </div>
