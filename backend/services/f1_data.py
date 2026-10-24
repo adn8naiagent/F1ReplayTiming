@@ -13,6 +13,8 @@ from fastf1 import api as f1api
 import numpy as np
 import pandas as pd
 
+from services import f1_account
+
 logger = logging.getLogger(__name__)
 
 CACHE_DIR = os.environ.get("FASTF1_CACHE_DIR", os.path.join(os.path.dirname(__file__), "..", ".fastf1-cache"))
@@ -27,6 +29,9 @@ except OSError:
     CACHE_DIR = os.path.join(tempfile.gettempdir(), "fastf1-cache")
     os.makedirs(CACHE_DIR, exist_ok=True)
     fastf1.Cache.enable_cache(CACHE_DIR)
+
+# F1 TV sign-in and request timeouts for FastF1's downloads
+f1_account.configure()
 
 # In-memory cache for loaded sessions (with lock to prevent concurrent duplicate loads)
 _session_cache: dict[str, fastf1.core.Session] = {}
@@ -231,13 +236,22 @@ def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.S
             return _session_cache[key]
 
         logger.info(f"Loading session {year}/{round_num}/{session_type} from FastF1...")
-        session = fastf1.get_session(year, round_num, session_type)
-        session.load(
-            telemetry=True,
-            laps=True,
-            weather=True,
-            messages=True,
-        )
+        f1_account.require_ready()
+
+        def load() -> tuple[fastf1.core.Session, bool]:
+            before = f1_account.timeout_count()
+            s = fastf1.get_session(year, round_num, session_type)
+            s.load(telemetry=True, laps=True, weather=True, messages=True)
+            return s, f1_account.timeout_count() > before
+
+        session, stalled = load()
+        if stalled:
+            # FastF1 logs failed parts and carries on, so a timed-out download
+            # leaves gaps. Load again: the cache keeps what already arrived.
+            logger.warning(f"Requests timed out loading {year}/{round_num}/{session_type}; retrying once")
+            session, stalled = load()
+            if stalled:
+                raise f1_account.F1AccountError(f1_account.SERVER_STALLED)
 
         # Only cache if we actually got meaningful data
         if len(session.laps) > 0:

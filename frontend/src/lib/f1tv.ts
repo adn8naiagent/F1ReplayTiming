@@ -1,17 +1,20 @@
 import { apiUrl } from "./api";
 import { getToken } from "./auth";
 
-// F1 TV sign-in and video lookups (self-hosted only; the backend blocks
-// these in public mode).
+// F1 TV account sign-in (for downloading session data and live timing) and
+// video lookups (self-hosted only; the backend blocks these in public mode).
 
 export interface F1TVStatus {
   signed_in: boolean;
-  valid?: boolean;
-  error?: string | null;
-  expires_at?: number | null;
-  product?: string | null;
-  subscription_status?: string | null;
-  claim_names?: string[];
+  token_valid: boolean;
+  expires_at: number | null; // unix seconds
+  product: string | null;
+  subscription_status: string | null;
+  /** "env" or "saved" when the sign-in renews by itself, else null */
+  renews: "env" | "saved" | null;
+  email: string | null;
+  /** Whether F1TV_SECRET_KEY is set, so a saved sign-in survives rebuilds */
+  secret_key_set: boolean;
 }
 
 export interface F1TVChannel {
@@ -56,7 +59,7 @@ export function authHeaders(): Record<string, string> {
 }
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(apiUrl(path), {
+  const res = await fetch(apiUrl(`/api/f1tv${path}`), {
     method,
     headers: { ...authHeaders(), ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
     body: body !== undefined ? JSON.stringify(body) : undefined,
@@ -69,10 +72,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const f1tv = {
-  status: () => request<F1TVStatus>("GET", "/api/f1tv/status"),
-  signIn: (value: string) => request<F1TVStatus>("POST", "/api/f1tv/token", { value }),
-  signOut: () => request<F1TVStatus>("DELETE", "/api/f1tv/token"),
-  content: (q: string) => request<F1TVContent>("GET", `/api/f1tv/content?q=${encodeURIComponent(q)}`),
+  status: () => request<F1TVStatus>("GET", "/status"),
+  signIn: (email: string, password: string, remember: boolean) =>
+    request<F1TVStatus>("POST", "/sign-in", { email, password, remember }),
+  signInToken: (token: string) => request<F1TVStatus>("POST", "/sign-in", { token }),
+  signOut: () => request<F1TVStatus>("DELETE", "/sign-in"),
+  content: (q: string) => request<F1TVContent>("GET", `/content?q=${encodeURIComponent(q)}`),
   play: (content: string, channelId: string | null) =>
-    request<F1TVPlayback>("POST", "/api/f1tv/play", { content, channel_id: channelId }),
+    request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId }),
 };

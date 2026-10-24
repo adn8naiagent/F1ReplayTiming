@@ -358,7 +358,6 @@ export default function SessionBanner({
                   </>)}
 
                   {settingsTab === "F1 TV" && appConfig?.f1tv && <F1TVAccount />}
-
                   {settingsTab === "Report a bug" && onReportProblem && (
                     <div className="px-2 sm:px-6 py-2 space-y-3">
                       <p className="text-sm text-f1-muted leading-relaxed">

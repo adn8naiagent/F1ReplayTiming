@@ -1,4 +1,6 @@
-"""F1 TV account and video endpoints. Self-hosted only: blocked in public mode."""
+"""F1 TV video endpoints. Self-hosted only: blocked in public mode.
+
+Sign-in lives in routers/f1_account.py; the token comes from services.f1_account."""
 
 from __future__ import annotations
 
@@ -10,14 +12,10 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
-from services import f1tv_auth, f1tv_video
+from services import f1tv_video
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/f1tv", tags=["f1tv"])
-
-
-class TokenRequest(BaseModel):
-    value: str
 
 
 class PlayRequest(BaseModel):
@@ -28,28 +26,6 @@ class PlayRequest(BaseModel):
 def _error(e: f1tv_video.F1TVError) -> JSONResponse:
     status = e.status if e.status and 400 <= e.status < 600 else 502
     return JSONResponse(status_code=status, content={"detail": str(e), "f1tv_status": e.status, "f1tv_body": e.body})
-
-
-@router.get("/status")
-async def status():
-    return f1tv_auth.status()
-
-
-@router.post("/token")
-async def set_token(body: TokenRequest):
-    try:
-        f1tv_auth.save(f1tv_auth.extract_token(body.value))
-    except f1tv_auth.F1TVTokenError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except httpx.HTTPError as e:
-        raise HTTPException(status_code=502, detail=f"Couldn't reach F1 to check the token: {e}")
-    return f1tv_auth.status()
-
-
-@router.delete("/token")
-async def delete_token():
-    f1tv_auth.clear()
-    return {"signed_in": False}
 
 
 @router.get("/content")

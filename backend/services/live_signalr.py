@@ -201,7 +201,7 @@ class LiveSignalRClient:
     def _auth_token(self) -> str | None:
         if self._auth_rejected:
             return None
-        from services.f1tv_auth import get_token
+        from services.f1_account import get_token
         return get_token()
 
     @staticmethod

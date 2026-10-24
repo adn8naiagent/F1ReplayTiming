@@ -13,7 +13,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 
 from app_config import (
+    PAYWALL_SINCE,
     is_public_mode,
+    public_archive_last,
     origin_secret,
     photo_sync_available,
     replay_player,
@@ -22,6 +24,7 @@ from app_config import (
 from auth import is_auth_enabled, verify_token
 from routers import sessions, track, laps, results, replay, replay_data, telemetry, sync, live, live_status
 from routers import auth_routes, f1tv
+from routers import f1_account as f1_account_routes
 from services.auto_precompute import auto_precompute_loop, get_allowed_session_types
 from services.retention import retention_loop
 
@@ -169,6 +172,7 @@ app.include_router(telemetry.router)
 app.include_router(sync.router)
 app.include_router(live.router)
 app.include_router(live_status.router)
+app.include_router(f1_account_routes.router)
 app.include_router(f1tv.router)
 
 
@@ -181,12 +185,21 @@ async def health():
 async def app_config():
     """Settings the frontend needs at runtime (the frontend is a static build)."""
     public = is_public_mode()
+    last = public_archive_last() if public else None
     return {
         "public_mode": public,
         "replay_player": replay_player(),
         "photo_sync": photo_sync_available(),
         "live": not public,
+        # F1 TV sign-in for downloading session data (self-hosted only)
         "f1tv": not public,
+        # Public sites only: the last round served, since F1 put timing data behind F1 TV.
+        "public_archive": {
+            "year": last[0],
+            "round": last[1],
+            "event_name": await sessions.event_name(last[0], last[1]),
+            "paywall_since": PAYWALL_SINCE,
+        } if last else None,
     }
 
 

@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from services import f1tv_auth
+from services import f1_account
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,7 @@ _entitlement: tuple[str, str] | None = None  # (subscription token it came from,
 
 
 def _token() -> str:
-    token = f1tv_auth.get_token()
+    token = f1_account.get_token()
     if not token:
         raise F1TVError("Not signed in to F1 TV, or the token has expired", status=401)
     return token

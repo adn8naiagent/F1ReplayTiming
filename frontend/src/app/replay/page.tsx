@@ -246,7 +246,7 @@ export default function ReplayPage() {
 
   useEffect(() => {
     if (!appConfig?.f1tv) return;
-    f1tv.status().then((s) => setF1tvSignedIn(s.signed_in && s.valid !== false)).catch(() => {});
+    f1tv.status().then((s) => setF1tvSignedIn(s.signed_in)).catch(() => {});
   }, [appConfig?.f1tv]);
 
   const reportProblem = useCallback(() => {

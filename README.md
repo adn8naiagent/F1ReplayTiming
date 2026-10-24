@@ -3,9 +3,20 @@
 
 
 
-https://github.com/user-attachments/assets/952b8634-2470-46d9-96e2-67a820459a49
+https://github.com/user-attachments/assets/5c62dcf8-3156-4079-96d1-bd24ce64ebda
 
 
+
+
+> [!IMPORTANT]
+> **From 15 October 2026, F1 requires an F1 TV subscription to access its timing data, which is now behind a paywall.** F1 Replay Timing has been updated (2.3.0) to download sessions with your own F1 TV account (Access or higher). Sessions you've already downloaded keep working, and so does live timing.
+>
+> **What you need to do after updating:**
+> 1. Update dependencies: `pip install -r requirements.txt`, or rebuild the Docker image.
+> 2. Set `F1TV_SECRET_KEY` in `.env`. Generate one with `openssl rand -hex 32`.
+> 3. Sign in: click **F1 TV** on the home page and sign in with your F1 account. **Or** set `F1_USERNAME` and `F1_PASSWORD` in `.env` instead, which is best on hosts that wipe files on redeploy (Railway, Render, Fly.io).
+>
+> Full details in [F1 TV account](#f1-tv-account).
 
 A web app for watching Formula 1 sessions with real timing data, car positions on track, driver telemetry, and more - both live during race weekends and as replays of past sessions. Built with Next.js and FastAPI.
 
@@ -61,7 +72,7 @@ cd F1timing
 cp .env.example .env
 ```
 
-Edit `.env` — the defaults work out of the box. Change `PORT` if you want a different port.
+Edit `.env` and set `F1TV_SECRET_KEY` to a random key, which you can generate with `openssl rand -hex 32`. Everything else works out of the box. Change `PORT` if you want a different port.
 
 **3. Run:**
 
@@ -69,7 +80,11 @@ Edit `.env` — the defaults work out of the box. Change `PORT` if you want a di
 docker compose up
 ```
 
-Open http://localhost:8000. Select any past session and it will be processed on demand.
+Open http://localhost:8000.
+
+**4. Sign in to F1 TV:**
+
+Click **F1 TV** on the home page and sign in with your F1 account. An F1 TV subscription (Access or higher) is needed to download session data. See [F1 TV account](#f1-tv-account). Then select any past session and it will be processed on demand.
 
 The app runs as a single container on one port — no URL configuration required.
 
@@ -92,6 +107,35 @@ All configuration is managed through the `.env` file. No need to edit `docker-co
 | `AUTO_PRECOMPUTE` | `race+qual` | Which sessions to fetch in the background on race weekends (see [Session data](#session-data)) |
 | `RETENTION_SWEEP_ENABLED` | `true` | Set to `false` to stop this instance running the daily retention sweep, e.g. when several instances share one bucket |
 | `REPLAY_PLAYER` | `static` | `static` plays replays in the browser from small compressed files. `websocket` uses the previous player, which streams frames from the server |
+| `F1TV_SECRET_KEY` | | **Required.** Encrypts the saved F1 TV sign-in. Generate with `openssl rand -hex 32`, set once and don't change it (see [F1 TV account](#f1-tv-account)) |
+| `F1_USERNAME` / `F1_PASSWORD` | | Sign in to F1 TV here instead of in the app. Use this on hosts that wipe files on redeploy (Railway, Render, Fly.io) |
+
+### F1 TV account
+
+Since 15 October 2026, F1 only serves past-session timing data to signed-in F1 TV subscribers ([FastF1 #978](https://github.com/theOehrly/Fast-F1/issues/978)). Without a sign-in, new sessions can't be downloaded. Sessions you've already downloaded keep working, and live timing doesn't need a sign-in.
+
+**What you need:** an F1 TV subscription, Access or higher, on an F1 account. In the US, F1 TV Premium comes with Apple TV: create an F1 account and activate the subscription on it.
+
+**Signing in:** click **F1 TV** on the home page (or the **F1 TV** tab in a replay's Settings) and sign in with your F1 account email and password. The app signs in with F1 directly through [FastF1](https://github.com/theOehrly/Fast-F1). Your details only go to F1.
+
+**Staying signed in:** F1's sign-in lasts about 4 days and can't be refreshed. With **Keep me signed in** ticked (the default), the app stores your password encrypted and signs in again by itself before it expires, including for the race-weekend background downloads. Untick it to have the password used once and forgotten. You'll then need to sign in again every few days.
+
+**How the password is stored:**
+- It's encrypted with `F1TV_SECRET_KEY`, which lives in your `.env`, separate from the data folder. If it isn't set, the app generates a key file at `~/.config/f1replaytiming/f1tv.key` instead.
+- A copy of the data folder or a backup can't be read without that key.
+- The app has to decrypt it by itself to renew the sign-in, so anyone with full access to the server can still recover it. Only run the app on a machine you trust.
+- Nothing is ever uploaded to R2.
+
+**Docker:** set `F1TV_SECRET_KEY`. Without it, the generated key file lives inside the container. A rebuild loses it, and the saved password can no longer be read, so you'd sign in again.
+
+**Hosts that wipe files on redeploy** (Railway, Render, Fly.io without a volume): set `F1_USERNAME` and `F1_PASSWORD` in the platform's variables. Anything saved from the app would be lost on each deploy. Variables are set once and carry over to every deploy.
+
+**Other ways to sign in:**
+- `F1_USERNAME` and `F1_PASSWORD` environment variables, which take priority over a saved sign-in.
+- From the command line: `python precompute.py --sign-in` (Docker: `docker compose exec f1timing python precompute.py --sign-in`).
+- If password sign-in doesn't work for your account, use **Paste a token instead**. It takes the `loginSession` cookie from f1tv.formula1.com and doesn't renew by itself.
+
+**Downloads are throttled:** F1 may rate limit downloads. The app downloads one session at a time and waits between sessions in the background and in `precompute.py`.
 
 ### Reverse Proxy / Remote Access
 
@@ -153,7 +197,7 @@ No other configuration required. The app uses relative URLs, so it works on any 
 
 ### Pre-built Docker images
 
-You can also use pre-built images instead of building from source:
+You can also use pre-built images instead of building from source. Both ways read your `.env`, so set `F1TV_SECRET_KEY` there first, then sign in under **F1 TV** (see [F1 TV account](#f1-tv-account)):
 
 ```bash
 # Pull and run directly
@@ -189,13 +233,15 @@ Deploy as a single service. Most platforms will detect the `Dockerfile` at the p
 
 Set your environment variables in the platform's dashboard. R2 credentials are recommended since most cloud platforms have ephemeral filesystems, so locally computed session data would be lost on redeploy.
 
+For the same reason, sign in to F1 TV with variables rather than in the app: set `F1_USERNAME` and `F1_PASSWORD` in the dashboard. A sign-in saved from the app would be lost on each redeploy. See [F1 TV account](#f1-tv-account).
+
 ### Session data
 
 Session data is persisted in a Docker volume, so it survives restarts.
 
 **On-demand processing:** Simply select any past session from the homepage. If the data hasn't been processed yet, the app will automatically fetch and process it. The first load of a session takes **1-3 minutes**. After that, it's instant.
 
-**Bulk pre-compute:** Use the CLI script to process sessions ahead of time:
+**Bulk pre-compute:** Use the CLI script to process sessions ahead of time. It needs an F1 TV sign-in (see [F1 TV account](#f1-tv-account)) and waits 60 seconds between sessions (`--gap` to change). Process a round at a time where you can: F1's servers aren't meant for bulk downloads, and whole seasons risk being rate limited.
 
 ```bash
 # Process a specific race weekend
@@ -204,11 +250,8 @@ docker compose exec f1timing python precompute.py 2026 --round 1
 # Process only the race session (skip practice/qualifying)
 docker compose exec f1timing python precompute.py 2026 --round 1 --session R
 
-# Process an entire season (will take several hours)
+# Process an entire season (not recommended: several hours, and may be rate limited)
 docker compose exec f1timing python precompute.py 2025 --skip-existing
-
-# Process multiple years
-docker compose exec f1timing python precompute.py 2024 2025 --skip-existing
 ```
 
 **Replay files from older versions:** Sessions processed before 2.2 are converted to the new replay files automatically the first time they're opened (a few seconds per session). To convert everything in advance instead:
@@ -228,7 +271,7 @@ This reprocesses from FastF1's local cache where available, so it usually does n
 **Timing estimates:**
 - A single session (e.g. one race) takes **1-3 minutes**
 - A full race weekend (FP1, FP2, FP3, Qualifying, Race) takes **3-5 minutes**
-- A complete season (~24 rounds, all sessions) takes **2-3 hours**
+- A complete season (~24 rounds, all sessions) takes **3-5 hours**, including the pauses between downloads
 
 **Background auto-precompute:** On race weekends (Fri–Mon), a background task checks every 30 minutes for new session data and processes it ahead of time so the first click is instant. Which session types it fetches is controlled by the `AUTO_PRECOMPUTE` env var:
 
@@ -254,7 +297,7 @@ Sessions outside the configured set are still available — they're just process
 git clone <repo-url>
 cd F1timing
 cp .env.example .env
-# Edit .env with your settings
+# Edit .env: set F1TV_SECRET_KEY (openssl rand -hex 32) and anything else you need
 ```
 
 #### 2. Build the frontend
@@ -278,7 +321,7 @@ pip install -r requirements.txt
 STATIC_DIR=../frontend/out uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
-Open http://localhost:8000.
+Open http://localhost:8000 and sign in under **F1 TV** on the home page (or run `python precompute.py --sign-in` from `backend/`).
 
 ### Photo Sync Feature
 

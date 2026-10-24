@@ -22,14 +22,23 @@ Usage:
     # Write replay chunks for sessions processed before they existed
     # (no FastF1 processing; reads each stored replay.json)
     python precompute.py 2024 2025 2026 --chunks-only
+
+    # Sign in to F1 TV (needed since 15 October 2026), then process
+    python precompute.py --sign-in
+    python precompute.py 2026 --round 18
+
+Downloads pause --gap seconds (default 60) between sessions so F1's servers
+aren't hit with a whole season at once. Prefer a round at a time.
 """
 
 from __future__ import annotations
 
 import argparse
+import getpass
 import logging
 import sys
 import os
+import time
 import traceback
 
 from dotenv import load_dotenv
@@ -41,6 +50,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from services import storage
 from services import replay_chunks
+from services import f1_account
 from services.process import process_session_sync
 from services.schedule import refresh_schedule
 from services.f1_data import (
@@ -55,8 +65,14 @@ logging.basicConfig(
 logger = logging.getLogger("precompute")
 
 
-def process_year(year: int, target_round: int | None = None, target_session: str | None = None, skip_existing: bool = False):
-    """Process all (or specific) sessions for a year."""
+_downloaded_any = False
+
+
+def process_year(year: int, target_round: int | None = None, target_session: str | None = None,
+                 skip_existing: bool = False, gap: float = 60) -> bool:
+    """Process all (or specific) sessions for a year. Returns False if F1
+    refused the download, so the run should stop."""
+    global _downloaded_any
     # Upload schedule
     logger.info(f"Processing schedule for {year}...")
     try:
@@ -64,7 +80,7 @@ def process_year(year: int, target_round: int | None = None, target_session: str
         logger.info(f"Uploaded schedule for {year} ({len(events)} events)")
     except Exception as e:
         logger.error(f"Failed to get schedule for {year}: {e}")
-        return
+        return True
 
     raw_events = _fetch_schedule_sync(year)
 
@@ -83,11 +99,35 @@ def process_year(year: int, target_round: int | None = None, target_session: str
                 session_types.append(st)
 
         for st in session_types:
+            if skip_existing and storage.exists(f"sessions/{year}/{round_num}/{st}/replay.json"):
+                logger.info(f"[{year} R{round_num} {st}] Already exists, skipping")
+                continue
+            if _downloaded_any and gap > 0:
+                logger.info(f"Waiting {gap:g}s before the next download...")
+                time.sleep(gap)
+            _downloaded_any = True
             try:
                 process_session_sync(year, round_num, st, skip_existing=skip_existing)
+            except f1_account.F1AccountError as e:
+                logger.error(f"{year} R{round_num} {st}: {e} Stopping.")
+                return False
             except Exception as e:
                 logger.error(f"Failed {year} R{round_num} {st}: {e}")
                 traceback.print_exc()
+    return True
+
+
+def sign_in() -> None:
+    """Interactive F1 TV sign-in for command-line setups."""
+    email = input("F1 account email: ").strip()
+    password = getpass.getpass("F1 account password: ")
+    remember = input("Keep me signed in (store the password encrypted)? [Y/n] ").strip().lower() != "n"
+    try:
+        st = f1_account.sign_in_password(email, password, remember)
+    except f1_account.F1AccountError as e:
+        logger.error(f"Sign-in failed: {e}")
+        sys.exit(1)
+    logger.info(f"Signed in to F1 TV ({st.get('product') or 'subscription'}); renews automatically: {bool(st.get('renews'))}")
 
 
 def backfill_chunks(year: int, target_round: int | None = None, target_session: str | None = None):
@@ -116,18 +156,33 @@ def backfill_chunks(year: int, target_round: int | None = None, target_session: 
 
 def main():
     parser = argparse.ArgumentParser(description="Pre-compute F1 data and upload to storage")
-    parser.add_argument("years", type=int, nargs="+", help="Year(s) to process")
+    parser.add_argument("years", type=int, nargs="*", help="Year(s) to process")
     parser.add_argument("--round", type=int, default=None, help="Specific round number")
     parser.add_argument("--session", type=str, default=None, help="Session type (R, Q, S, FP1, FP2, FP3, SQ)")
     parser.add_argument("--skip-existing", action="store_true", help="Skip sessions already in R2")
     parser.add_argument("--chunks-only", action="store_true", help="Only write replay chunks for already-processed sessions")
+    parser.add_argument("--sign-in", action="store_true", help="Sign in to your F1 TV account (prompts for email and password)")
+    parser.add_argument("--gap", type=float, default=60, help="Seconds to wait between session downloads (default 60)")
     args = parser.parse_args()
+
+    if args.sign_in:
+        sign_in()
+        if not args.years:
+            return
+    if not args.years:
+        parser.error("give at least one year, or --sign-in")
+
+    if not args.chunks_only and not f1_account.ready():
+        logger.error(f1_account.SIGN_IN_NEEDED.replace("under Settings → F1 TV", "with: python precompute.py --sign-in"))
+        sys.exit(1)
 
     for year in args.years:
         if args.chunks_only:
             backfill_chunks(year, target_round=args.round, target_session=args.session)
             continue
-        process_year(year, target_round=args.round, target_session=args.session, skip_existing=args.skip_existing)
+        if not process_year(year, target_round=args.round, target_session=args.session,
+                            skip_existing=args.skip_existing, gap=args.gap):
+            sys.exit(1)
 
     logger.info("Pre-compute complete.")
 
