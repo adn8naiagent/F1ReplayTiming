@@ -23,7 +23,7 @@ from app_config import (
 )
 from auth import is_auth_enabled, verify_token
 from routers import sessions, track, laps, results, replay, replay_data, telemetry, sync, live, live_status
-from routers import auth_routes
+from routers import auth_routes, f1tv, team_radio
 from routers import f1_account as f1_account_routes
 from services.auto_precompute import auto_precompute_loop, get_allowed_session_types
 from services.retention import retention_loop
@@ -165,6 +165,7 @@ app.include_router(auth_routes.router)
 app.include_router(sessions.router)
 app.include_router(track.router)
 app.include_router(laps.router)
+app.include_router(team_radio.router)
 app.include_router(results.router)
 app.include_router(replay.router)
 app.include_router(replay_data.router)
@@ -173,6 +174,7 @@ app.include_router(sync.router)
 app.include_router(live.router)
 app.include_router(live_status.router)
 app.include_router(f1_account_routes.router)
+app.include_router(f1tv.router)
 
 
 @app.get("/api/health")

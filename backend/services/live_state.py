@@ -11,6 +11,8 @@ import logging
 import math
 import re
 import time
+from collections import deque
+from datetime import timezone
 from typing import Any
 
 import numpy as np
@@ -100,6 +102,13 @@ class _DriverState:
         "y",
         "relative_distance",
         "on_track",
+        "speed",
+        "throttle",
+        "brake",
+        "gear",
+        "rpm",
+        "drs",
+        "first_name",
         "_sector_best_personal",
         "_sector_best_overall",
         "_stint_count",
@@ -138,6 +147,14 @@ class _DriverState:
         self.y: float = 0.0
         self.relative_distance: float = 0.0
         self.on_track: bool = False
+        # Telemetry from CarData.z, only sent with an F1 TV sign-in
+        self.speed: float | None = None
+        self.throttle: float | None = None
+        self.brake: bool = False
+        self.gear: int | None = None
+        self.rpm: float | None = None
+        self.drs: int | None = None
+        self.first_name: str | None = None  # for team radio captions
         # Internal tracking for sector colours
         self._sector_best_personal: dict[int, float] = {}  # sector_num -> best time
         self._sector_best_overall: dict[int, bool] = {}  # sector_num -> ever overall fastest
@@ -173,13 +190,12 @@ class _DriverState:
             "x": self.x,
             "y": self.y,
             "relative_distance": self.relative_distance,
-            # No telemetry data in live
-            "speed": None,
-            "throttle": None,
-            "brake": False,
-            "gear": None,
-            "rpm": None,
-            "drs": None,
+            "speed": self.speed,
+            "throttle": self.throttle,
+            "brake": self.brake,
+            "gear": self.gear,
+            "rpm": self.rpm,
+            "drs": self.drs,
         }
 
 
@@ -207,6 +223,7 @@ class LiveStateManager:
         pit_loss_vsc: float = 0.0,
         track_norm: dict[str, float] | None = None,
         track_points: list[dict[str, float]] | None = None,
+        clock_rate: float = 1.0,
     ) -> None:
         self._session_type: str = session_type
         self._pit_loss_green: float = pit_loss_green
@@ -234,6 +251,18 @@ class LiveStateManager:
         # Per-driver state keyed by racing number string
         self._drivers: dict[str, _DriverState] = {}
 
+        # Car positions arrive about once a second, each message holding the
+        # last few samples (~0.3s apart). Showing only the newest makes cars
+        # jump once a second, so keep the samples and play them out a little
+        # behind, interpolating between them like the replay does.
+        # number -> deque of (sample time, x, y, relative distance)
+        self._pos_samples: dict[str, deque[tuple[float, float, float, float]]] = {}
+        self._pos_newest: float | None = None  # newest sample time seen
+        self._pos_newest_at: float = 0.0  # monotonic time it arrived
+        self._pos_display: float | None = None  # sample time shown now
+        self._pos_display_at: float = 0.0  # monotonic time of that
+        self._clock_rate: float = clock_rate  # test replayer speed, else 1
+
         # Session-level state
         self._status: str = "green"
         self._weather: dict[str, Any] | None = None
@@ -254,6 +283,11 @@ class LiveStateManager:
 
         # Overall sector bests (sector index 0-2 -> best time)
         self._overall_sector_bests: dict[int, float] = {}
+
+        # Team radio (F1 TV sign-in only). Clips go out in frames once
+        # captioned; "state" is "new", "captioning", "ready" or "skipped".
+        self._session_path: str | None = None  # e.g. "2026/..._Grand_Prix/..._Race/"
+        self._radio: dict[str, dict[str, Any]] = {}  # clip path -> clip
 
     # ------------------------------------------------------------------
     # Driver helpers
@@ -318,6 +352,8 @@ class LiveStateManager:
                 drv.abbr = info["Tla"]
             if "TeamName" in info:
                 drv.team = info["TeamName"]
+            if "FirstName" in info:
+                drv.first_name = info["FirstName"]
             if "TeamColour" in info:
                 colour = info["TeamColour"]
                 if not colour.startswith("#"):
@@ -517,12 +553,16 @@ class LiveStateManager:
         if not position_list or not isinstance(position_list, list):
             return
 
-        # Collect all raw coordinates from this batch
-        raw_positions: list[tuple[str, float, float, str]] = []
+        from services.team_radio import parse_utc
+
+        # Collect all raw coordinates from this batch, with each sample's time
+        raw_positions: list[tuple[str, float, float, str, float | None]] = []
         for sample in position_list:
             entries = sample.get("Entries")
             if not entries or not isinstance(entries, dict):
                 continue
+            utc = parse_utc(sample.get("Timestamp", ""))
+            sample_t = utc.replace(tzinfo=timezone.utc).timestamp() if utc else None
             for number, pos_data in entries.items():
                 if not isinstance(pos_data, dict):
                     continue
@@ -531,14 +571,14 @@ class LiveStateManager:
                 if raw_x is None or raw_y is None:
                     continue
                 status = pos_data.get("Status", "")
-                raw_positions.append((str(number), float(raw_x), float(raw_y), status))
+                raw_positions.append((str(number), float(raw_x), float(raw_y), status, sample_t))
 
         if not raw_positions:
             return
 
         # If no precomputed track_norm, auto-compute from position data
         if self._track_norm is None:
-            for _, rx, ry, _ in raw_positions:
+            for _, rx, ry, _, _ in raw_positions:
                 self._raw_x_min = min(self._raw_x_min, rx)
                 self._raw_x_max = max(self._raw_x_max, rx)
                 self._raw_y_min = min(self._raw_y_min, ry)
@@ -563,7 +603,7 @@ class LiveStateManager:
             y_min = self._track_norm["y_min"]
             scale = self._track_norm["scale"]
 
-        for number, raw_x, raw_y, status in raw_positions:
+        for number, raw_x, raw_y, status, sample_t in raw_positions:
             drv = self._get_driver(number)
             drv.on_track = status == "OnTrack"
 
@@ -583,6 +623,84 @@ class LiveStateManager:
             else:
                 drv.x = norm_x
                 drv.y = norm_y
+
+            if sample_t is not None:
+                samples = self._pos_samples.setdefault(number, deque(maxlen=40))
+                if not samples or sample_t > samples[-1][0]:
+                    samples.append((sample_t, drv.x, drv.y, drv.relative_distance))
+                if self._pos_newest is None or sample_t > self._pos_newest:
+                    self._pos_newest = sample_t
+                    self._pos_newest_at = time.monotonic()
+
+    # How far behind the newest sample positions are shown: longer than the
+    # gap between messages (up to ~1.2s), so there's always a next sample.
+    _POS_LAG = 1.5
+
+    def _apply_smoothed_positions(self) -> None:
+        """Set each car's x/y to its interpolated position on the display clock."""
+        if self._pos_newest is None:
+            return
+        now = time.monotonic()
+        # Where the newest sample is now, allowing for time since it arrived
+        target = self._pos_newest + (now - self._pos_newest_at) * self._clock_rate - self._POS_LAG
+        if self._pos_display is None or abs(target - self._pos_display) > 3 * max(self._clock_rate, 1):
+            display = target  # start, or a skip forward
+        else:
+            # Advance steadily, easing towards the target, so message timing
+            # jitter doesn't make the clock (and the cars) lurch.
+            display = self._pos_display + (now - self._pos_display_at) * self._clock_rate
+            display += (target - display) * 0.1
+            display = max(display, self._pos_display)
+        display = min(display, self._pos_newest)
+        self._pos_display, self._pos_display_at = display, now
+
+        for number, samples in self._pos_samples.items():
+            drv = self._drivers.get(number)
+            if drv is None or not samples:
+                continue
+            if display <= samples[0][0]:
+                _, drv.x, drv.y, drv.relative_distance = samples[0]
+                continue
+            if display >= samples[-1][0]:
+                _, drv.x, drv.y, drv.relative_distance = samples[-1]
+                continue
+            for (t0, x0, y0, d0), (t1, x1, y1, d1) in zip(samples, list(samples)[1:]):
+                if t0 <= display <= t1:
+                    f = (display - t0) / (t1 - t0) if t1 > t0 else 1.0
+                    drv.x = x0 + (x1 - x0) * f
+                    drv.y = y0 + (y1 - y0) * f
+                    if d1 < d0 - 0.5:  # crossed the line
+                        d1 += 1.0
+                    drv.relative_distance = (d0 + (d1 - d0) * f) % 1.0
+                    break
+
+    # --- CarData (decoded from CarData.z, F1 TV sign-in only) -----------
+
+    # Channel numbers in CarData entries, as used by FastF1.
+    _CAR_CHANNELS = {"0": "rpm", "2": "speed", "3": "gear", "4": "throttle", "5": "brake", "45": "drs"}
+
+    def _handle_car_data(self, data: dict, _ts: float) -> None:
+        """Expected structure:
+        {"Entries": [{"Utc": "...", "Cars": {"1": {"Channels": {"0": 11000, "2": 290, ...}}}}]}
+        Only the latest entry matters for a 2 Hz frame.
+        """
+        entries = data.get("Entries")
+        if not entries or not isinstance(entries, list):
+            return
+        cars = (entries[-1] or {}).get("Cars") or {}
+        for number, car in cars.items():
+            channels = (car or {}).get("Channels") or {}
+            drv = self._get_driver(number)
+            for channel, name in self._CAR_CHANNELS.items():
+                if channel not in channels:
+                    continue
+                value = _sanitize_value(channels[channel])
+                if name == "brake":
+                    drv.brake = bool(value)
+                elif name in ("gear", "drs"):
+                    setattr(drv, name, int(value) if value is not None else None)
+                else:
+                    setattr(drv, name, value)
 
     def _snap_to_track(self, x: float, y: float) -> tuple[float, float, float]:
         """Snap a position to the nearest point on the track outline.
@@ -755,6 +873,73 @@ class LiveStateManager:
             elif ("TIME PENALTY" in upper_msg or "PENALTY" in upper_msg) and "NO FURTHER" not in upper_msg:
                 drv.flag = "penalty"
 
+    # --- SessionInfo / TeamRadio --------------------------------------
+
+    def _handle_session_info(self, data: dict, _ts: float) -> None:
+        path = data.get("Path")
+        if isinstance(path, str) and path:
+            self._session_path = path
+
+    def _handle_team_radio(self, data: dict, _ts: float) -> None:
+        from services import team_radio
+
+        for cap in team_radio.captures_from(data):
+            path = cap.get("Path")
+            if not path or path in self._radio:
+                continue
+            self._radio[path] = {
+                "id": path,
+                "utc": cap.get("Utc"),
+                "racing_number": str(cap.get("RacingNumber", "")),
+                "transcript": None,
+                "state": "new",
+            }
+
+    def take_new_radio(self) -> list[dict[str, Any]]:
+        """Clips to caption, marked as in progress. Each comes with its audio
+        URL and the driver's first name. Waits for SessionInfo's path."""
+        from services import team_radio
+
+        if not self._session_path:
+            return []
+        out = []
+        for clip in self._radio.values():
+            if clip["state"] != "new":
+                continue
+            clip["state"] = "captioning"
+            clip["url"] = team_radio.audio_url(self._session_path, clip["id"])
+            drv = self._drivers.get(clip["racing_number"])
+            out.append({**clip, "first_name": drv.first_name if drv else None})
+        return out
+
+    def set_radio_caption(self, clip_id: str, transcript: str | None) -> None:
+        clip = self._radio.get(clip_id)
+        if clip and clip["state"] == "captioning":
+            clip["transcript"] = transcript
+            clip["state"] = "ready"
+
+    def skip_new_radio(self) -> None:
+        """Clips passed over by a skip forward: never shown or played."""
+        for clip in self._radio.values():
+            if clip["state"] == "new":
+                clip["state"] = "skipped"
+
+    def _radio_frame(self) -> list[dict[str, Any]]:
+        """The last few captioned clips, oldest first."""
+        ready = [c for c in self._radio.values() if c["state"] == "ready"][-10:]
+        out = []
+        for c in ready:
+            drv = self._drivers.get(c["racing_number"])
+            out.append({
+                "id": c["id"],
+                "utc": c["utc"],
+                "racing_number": c["racing_number"],
+                "driver": drv.abbr if drv else "",
+                "url": c.get("url"),
+                "transcript": c["transcript"],
+            })
+        return out
+
     # --- TrackStatus --------------------------------------------------
 
     def _handle_track_status(self, data: dict, _ts: float) -> None:
@@ -854,6 +1039,9 @@ class LiveStateManager:
         "SessionStatus": _handle_session_status,
         "SessionData": _handle_session_data,
         "Position": _handle_position,
+        "CarData": _handle_car_data,
+        "SessionInfo": _handle_session_info,
+        "TeamRadio": _handle_team_radio,
     }
 
     # ------------------------------------------------------------------
@@ -867,6 +1055,8 @@ class LiveStateManager:
         """
         SECTOR_LINGER = 5.0
         now = time.monotonic()
+
+        self._apply_smoothed_positions()
 
         drivers_list: list[dict[str, Any]] = []
         for drv in self._drivers.values():
@@ -923,6 +1113,7 @@ class LiveStateManager:
             "quali_phase": quali_phase,
             "drivers": drivers_list,
             "rc_messages": list(reversed(self._rc_messages)),
+            "team_radio": self._radio_frame(),
         }
 
         # Add pit predictions for race sessions

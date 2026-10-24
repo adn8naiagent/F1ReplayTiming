@@ -123,6 +123,7 @@ export function useLiveSocket(
             status: msg.status,
             weather: msg.weather,
             quali_phase: msg.quali_phase,
+            team_radio: msg.team_radio,
           };
           const rcMessages: RCMessage[] = msg.rc_messages || [];
 

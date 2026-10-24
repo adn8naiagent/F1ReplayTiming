@@ -60,6 +60,10 @@ def release_sessions(year: int, round_num: int) -> None:
         logger.info(f"Released FastF1 sessions from memory: {', '.join(keys)}")
 
 
+# Replay time 0 (the earliest telemetry Date, naive UTC) per session, set
+# while building frames: key -> Timestamp
+_replay_start_dates: dict[str, pd.Timestamp] = {}
+
 # Cache for session availability checks: key -> bool
 _availability_cache: dict[str, bool] = {}
 
@@ -716,6 +720,8 @@ def _get_driver_positions_by_time_sync(
     min_date = min(all_dates)
     max_date = max(all_dates)
     total_seconds = (max_date - min_date).total_seconds()
+    # Replay time 0, for timing team radio clips against the frames
+    _replay_start_dates[_cache_key(year, round_num, session_type)] = min_date
 
     # Sample every 0.5 seconds for smooth replay
     sample_interval = 0.5
@@ -1875,6 +1881,38 @@ def _get_driver_positions_by_time_sync(
         frames.append(frame)
 
     return frames
+
+
+def _get_team_radio_sync(year: int, round_num: int, session_type: str, on_progress=None) -> list[dict] | None:
+    """Team radio clips with captions, timed against the replay frames.
+    Run after _get_driver_positions_by_time_sync. None if there's no replay
+    to time them against."""
+    from services import team_radio
+
+    start = _replay_start_dates.get(_cache_key(year, round_num, session_type))
+    if start is None:
+        return None
+    session = _load_session(year, round_num, session_type)
+    pages = f1api.fetch_page(session.api_path, "team_radio") or []
+    captures: list[dict] = []
+    for entry in pages:
+        if isinstance(entry, (list, tuple)) and len(entry) == 2:
+            captures.extend(team_radio.captures_from(entry[1]))
+
+    drivers: dict[str, dict] = {}
+    for _, row in session.results.iterrows():
+        number = str(row.get("DriverNumber", ""))
+        if number and number != "nan":
+            drivers[number] = {
+                "abbr": str(row.get("Abbreviation", "")),
+                "first_name": str(row.get("FirstName", "")) or None,
+            }
+
+    path = session.api_path.removeprefix("/static/")
+    try:
+        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress)
+    finally:
+        team_radio.release_model()
 
 
 async def get_driver_positions_by_time(

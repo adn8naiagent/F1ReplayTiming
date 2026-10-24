@@ -14,7 +14,8 @@
     "next": "^15.5.12",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "recharts": "^2.15.0"
+    "recharts": "^2.15.0",
+    "shaka-player": "5.2.12"
   },
   "devDependencies": {
     "@types/node": "^22.10.5",

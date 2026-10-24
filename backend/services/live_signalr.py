@@ -55,6 +55,16 @@ _TOPICS = [
     "Position.z",
 ]
 
+# Only sent when the user has signed in with F1 TV (self-hosted). Without a
+# token F1 doesn't send these during a live session.
+_AUTH_TOPICS = [
+    "CarData.z",
+    "ChampionshipPrediction",
+    "PitStopSeries",
+    "DriverRaceInfo",
+    "TeamRadio",
+]
+
 # Reconnect parameters
 _INITIAL_BACKOFF = 1.0  # seconds
 _MAX_BACKOFF = 30.0  # seconds
@@ -95,6 +105,9 @@ class LiveSignalRClient:
         self._stop_event: asyncio.Event = asyncio.Event()
         self._ping_task: asyncio.Task[None] | None = None
         self._seen_targets: set[str] = set()
+        # Set when F1 rejects the token, so we fall back to the free feed
+        # instead of retrying with it on every reconnect.
+        self._auth_rejected = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -185,8 +198,14 @@ class LiveSignalRClient:
     # Negotiate
     # ------------------------------------------------------------------
 
+    def _auth_token(self) -> str | None:
+        if self._auth_rejected:
+            return None
+        from services.f1_account import get_token
+        return get_token()
+
     @staticmethod
-    def _negotiate() -> tuple[str, str]:
+    def _negotiate(token: str | None = None) -> tuple[str, str]:
         """Perform the SignalR negotiate handshake over HTTP.
 
         Returns
@@ -219,6 +238,8 @@ class LiveSignalRClient:
         )
         post_req.add_header("Content-Type", "application/json")
         post_req.add_header("Accept", "application/json")
+        if token:
+            post_req.add_header("Authorization", f"Bearer {token}")
 
         resp = opener.open(post_req, timeout=10)
         body = json.loads(resp.read().decode())
@@ -257,15 +278,29 @@ class LiveSignalRClient:
         """
         # Negotiate happens on a regular HTTP request — run in a thread so
         # we don't block the event loop.
-        connection_token, cookie = await asyncio.get_event_loop().run_in_executor(
-            None, self._negotiate
-        )
+        token = self._auth_token()
+        try:
+            connection_token, cookie = await asyncio.get_event_loop().run_in_executor(
+                None, self._negotiate, token
+            )
+        except urllib.error.HTTPError as e:
+            if not token or e.code not in (401, 403):
+                raise
+            logger.warning("F1 rejected the F1 TV token (HTTP %s), using the free feed", e.code)
+            self._auth_rejected = True
+            token = None
+            connection_token, cookie = await asyncio.get_event_loop().run_in_executor(
+                None, self._negotiate, None
+            )
+        topics = _TOPICS + _AUTH_TOPICS if token else _TOPICS
 
         ws_url = f"{_WS_URL}?id={connection_token}"
 
         extra_headers: dict[str, str] = {}
         if cookie:
             extra_headers["Cookie"] = cookie
+        if token:
+            extra_headers["Authorization"] = f"Bearer {token}"
 
         ssl_context = ssl.create_default_context()
 
@@ -304,10 +339,14 @@ class LiveSignalRClient:
                 "type": _MSG_INVOCATION,
                 "invocationId": "1",
                 "target": "Subscribe",
-                "arguments": [_TOPICS],
+                "arguments": [topics],
             }
             await self._send(ws, subscribe_msg)
-            logger.info("Subscribed to %d topics", len(_TOPICS))
+            logger.info(
+                "Subscribed to %d topics (%s)",
+                len(topics),
+                "F1 TV authenticated" if token else "unauthenticated",
+            )
 
             # --- Receive loop ---
             buffer = ""
