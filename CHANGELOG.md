@@ -8,6 +8,16 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Mini-sectors in live timing** — in live qualifying and practice, the leaderboard's sector markers fill in mini-sector by mini-sector, as in replays. Desktop only; uses the same Mini-sectors setting. Nothing to reprocess: they come straight from F1's live timing.
 
+- **Live telemetry** — when signed in to F1 TV, selected drivers show speed, throttle, brake, gear and RPM in live timing, as in replays. Cars parked in their pit box are left off the live map instead of piling up on the start/finish straight. ([@kungfoochef](https://github.com/kungfoochef))
+
+- **Out-lap indicator** — in practice and qualifying, the leaderboard shows OUT in place of the sector markers (or mini-sectors) while a driver is on an out-lap, from pit exit until the lap is completed. Works in live timing and in replays. Replays of sessions processed before this version need a full reprocess to show it; `--lap-extras-only` doesn't add it. ([@kungfoochef](https://github.com/kungfoochef))
+
+### Fixes
+
+- **No cars in the live Picture-in-Picture map** — the pop-out track map in live timing now shows the cars. ([@kungfoochef](https://github.com/kungfoochef))
+
+- **Parked cars showing 104% throttle with the brake on** — F1 sends 104 when it has no reading; live telemetry now shows these as zero. ([@kungfoochef](https://github.com/kungfoochef))
+
 ## 2.4.0
 
 ### Improvements
@@ -40,11 +50,7 @@ Mini-sectors, deleted laps and sector end times need sessions reprocessed. Witho
 
 - **Team radio** — the radio messages F1 picks for the world feed pop up over the track map with the driver, a caption and the audio, in replays and live timing. Needs an F1 TV sign-in. Captions are made locally on your server by [Whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, about 480 MB, downloaded on first use). Accuracy varies depending on quality and clarity. Set `TEAM_RADIO_CAPTIONS=false` to turn them off. Turn team radio or its audio off in Settings. Sessions downloaded before this update get team radio when reprocessed.
 
-- **Out-lap indicator** — in practice and qualifying, the leaderboard shows OUT in place of the sector markers while a driver is on an out-lap, from pit exit until the lap is completed. Works in live timing and in replays; sessions processed before this version need reprocessing to show it in replays.
-
 - **Live track positions** — when signed in to F1 TV, live timing receives car positions, so the live track map shows every car on track. F1 sends positions about once a second; the map plays them about 1.5 seconds behind so cars move smoothly instead of jumping.
-
-- **Live telemetry** — when signed in to F1 TV, selected drivers show speed, throttle, brake, gear and RPM in live timing, as in replays, and the Picture-in-Picture track map shows the cars too. Cars parked in their pit box are left off the map (they all snapped onto the start/finish straight), and parked cars no longer read 104% throttle with the brake on (F1's "no data" value).
 
 - **F1 TV sign-in** — since 15 October 2026 F1 requires an F1 TV subscription (Access or higher) to download timing data. Sign in from **F1 TV** on the home page or the F1 TV tab in a replay's Settings. With **Keep me signed in**, the password is stored encrypted and you stay signed in, including for race-weekend background downloads. **Alternatively**, set `F1_USERNAME` and `F1_PASSWORD` as environment variables instead of signing in through the app. From the command line, `python precompute.py --sign-in` also works. Sessions already downloaded keep working. Requires FastF1 3.9 (`pip install -r requirements.txt`). See the README's F1 TV account section. (issue raised, and F1 TV sign-in contributed, by [@kungfoochef](https://github.com/kungfoochef))
 
