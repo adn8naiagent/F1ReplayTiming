@@ -1042,6 +1042,8 @@ export default function ReplayPage() {
                     year={year}
                     round={round}
                     sessionType={sessionType}
+                    trackPoints={trackData?.track_points}
+                    corners={trackData?.corners}
                     onDominanceChange={setDominance}
                     onClose={() => closePanel(() => setLapAnalysisOpen(false))}
                   />

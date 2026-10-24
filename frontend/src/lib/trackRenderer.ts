@@ -75,7 +75,7 @@ export interface SegmentOverlay {
 }
 
 /** Each outline point's position along the lap, 0–1 by distance. */
-function lapFractions(points: { x: number; y: number }[]): number[] {
+export function lapFractions(points: { x: number; y: number }[]): number[] {
   const cum = [0];
   for (let i = 1; i < points.length; i++) {
     cum.push(cum[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));

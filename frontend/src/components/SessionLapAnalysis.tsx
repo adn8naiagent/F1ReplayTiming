@@ -13,7 +13,7 @@ import { ReplayDriver, QualiPhaseInfo } from "@/hooks/useReplaySocket";
 import { LapEntry } from "@/components/Leaderboard";
 import DriverDropdown from "@/components/DriverDropdown";
 import LapTraceChart from "@/components/LapTraceChart";
-import { fetchLapTelemetry, compareLaps, dominanceOverlay, LapComparison, DominanceOverlay } from "@/lib/lapCompare";
+import { fetchLapTelemetry, compareLaps, dominanceOverlay, cornerFractions, LapComparison, DominanceOverlay } from "@/lib/lapCompare";
 import { TYRE_COLORS, TYRE_SHORT } from "@/lib/constants";
 import { lapColorClass, LapData } from "@/lib/lapTiming";
 import {
@@ -45,6 +45,9 @@ interface Props {
   year: number;
   round: number;
   sessionType: string;
+  /** Track outline and corners, for corner numbers on the lap traces */
+  trackPoints?: { x: number; y: number }[];
+  corners?: { x: number; y: number; number: number; letter?: string }[] | null;
   /** Shows track dominance on the main track map (desktop) */
   onDominanceChange?: (overlay: DominanceOverlay | null) => void;
   onClose?: () => void;
@@ -82,7 +85,7 @@ type Tab = "sectors" | "compare";
 
 export default function SessionLapAnalysis({
   laps, drivers, currentTime, currentLap, lapData, qualiPhases, isQualifying,
-  year, round, sessionType, onDominanceChange, onClose,
+  year, round, sessionType, trackPoints, corners, onDominanceChange, onClose,
 }: Props) {
   // The desktop panel has a Hide button; the mobile section doesn't. Lap
   // traces and track dominance are desktop only.
@@ -232,6 +235,10 @@ export default function SessionLapAnalysis({
   }, [traceKey, year, round, sessionType]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const comparison = traces?.key === traceKey ? traces?.comparison ?? null : null;
+  const cornerMarks = useMemo(
+    () => (trackPoints && corners ? cornerFractions(trackPoints, corners) : []),
+    [trackPoints, corners],
+  );
   const colorA = active[0] ? getDriverColor(active[0]) : "";
   const colorB = active[1] ? getDriverColor(active[1]) : "";
 
@@ -450,12 +457,12 @@ export default function SessionLapAnalysis({
           </>
         ) : (
           <>
-            <div className="px-3 py-2 space-y-1.5 border-b border-f1-border">
+            <div className="px-3 py-2 grid grid-cols-2 gap-1.5 border-b border-f1-border">
               <DriverDropdown
                 value={compare[0]}
                 onChange={(abbr) => setCompare((prev) => [abbr, prev[1]])}
                 drivers={sortedDrivers}
-                placeholder="First driver..."
+                placeholder="Driver..."
                 getColor={getDriverColor}
               />
               <DriverDropdown
@@ -498,7 +505,7 @@ export default function SessionLapAnalysis({
                     {!traceKey ? null : traces?.key !== traceKey ? (
                       <p className="py-3 text-center text-[10px] text-f1-muted">Loading telemetry…</p>
                     ) : comparison ? (
-                      <LapTraceChart comparison={comparison} nameA={active[0]} nameB={active[1]} colorA={colorA} colorB={colorB} />
+                      <LapTraceChart comparison={comparison} nameA={active[0]} nameB={active[1]} colorA={colorA} colorB={colorB} corners={cornerMarks} />
                     ) : (
                       <p className="py-3 text-center text-[10px] text-f1-muted">Telemetry not available for these laps</p>
                     )}

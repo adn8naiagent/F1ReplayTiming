@@ -2,7 +2,7 @@
 // along the lap between two laps, and track dominance.
 
 import { apiFetch } from "./api";
-import type { SegmentOverlay } from "./trackRenderer";
+import { lapFractions, type SegmentOverlay } from "./trackRenderer";
 
 export interface LapTelemetry {
   driver: string;
@@ -162,4 +162,24 @@ export function dominanceOverlay(
       { abbr: abbrB, color: colorB, count: c.chunksWonB },
     ],
   };
+}
+
+/** Each corner's position along the lap (0–1): the nearest outline point. */
+export function cornerFractions(
+  outline: { x: number; y: number }[],
+  corners: { x: number; y: number; number: number; letter?: string }[],
+): { frac: number; label: string }[] {
+  if (outline.length < 2) return [];
+  const frac = lapFractions(outline);
+  return corners
+    .map((c) => {
+      let best = 0;
+      let bestD = Infinity;
+      outline.forEach((p, i) => {
+        const d = (p.x - c.x) ** 2 + (p.y - c.y) ** 2;
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      return { frac: frac[best], label: `${c.number}${c.letter ?? ""}` };
+    })
+    .sort((a, b) => a.frac - b.frac);
 }
