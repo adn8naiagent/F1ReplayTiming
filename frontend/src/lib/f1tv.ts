@@ -1,8 +1,8 @@
 import { apiUrl } from "./api";
 import { getToken } from "./auth";
 
-// F1 TV account sign-in for downloading session data (self-hosted only; the
-// backend blocks these in public mode).
+// F1 TV account sign-in (for downloading session data and live timing) and
+// video lookups (self-hosted only; the backend blocks these in public mode).
 
 export interface F1TVStatus {
   signed_in: boolean;
@@ -17,25 +17,67 @@ export interface F1TVStatus {
   secret_key_set: boolean;
 }
 
-async function call(method: string, path: string, body?: unknown): Promise<F1TVStatus> {
+export interface F1TVChannel {
+  channel_id: string | null;
+  title: string | null;
+  type: string | null;
+  driver_number: number | string | null;
+  driver_name: string | null;
+  team: string | null;
+  color: string | null;
+}
+
+export interface F1TVContent {
+  content_id: string;
+  title: string | null;
+  content_subtype: string | null;
+  duration: number | null;
+  channels: F1TVChannel[];
+  emf_attributes: Record<string, string | number>;
+}
+
+export interface F1TVPlayback {
+  playback_id: string;
+  manifest_url: string;
+  license_url: string | null;
+  stream_type: string | null;
+  drm_type: string | null;
+  entitlement_token_used: boolean;
+  raw: unknown;
+}
+
+/** An error from our backend or from F1 TV, with F1's response kept for the debug panel. */
+export class F1TVRequestError extends Error {
+  constructor(message: string, public status: number, public body: unknown) {
+    super(message);
+  }
+}
+
+export function authHeaders(): Record<string, string> {
   const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(apiUrl(`/api/f1tv${path}`), {
     method,
-    headers: {
-      ...(body ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: body ? JSON.stringify(body) : undefined,
+    headers: { ...authHeaders(), ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
-  return data as F1TVStatus;
+  const data = await res.json().catch(() => null);
+  if (!res.ok) {
+    throw new F1TVRequestError(data?.detail || `Request failed (${res.status})`, res.status, data);
+  }
+  return data as T;
 }
 
 export const f1tv = {
-  status: () => call("GET", "/status"),
+  status: () => request<F1TVStatus>("GET", "/status"),
   signIn: (email: string, password: string, remember: boolean) =>
-    call("POST", "/sign-in", { email, password, remember }),
-  signInToken: (token: string) => call("POST", "/sign-in", { token }),
-  signOut: () => call("DELETE", "/sign-in"),
+    request<F1TVStatus>("POST", "/sign-in", { email, password, remember }),
+  signInToken: (token: string) => request<F1TVStatus>("POST", "/sign-in", { token }),
+  signOut: () => request<F1TVStatus>("DELETE", "/sign-in"),
+  content: (q: string) => request<F1TVContent>("GET", `/content?q=${encodeURIComponent(q)}`),
+  play: (content: string, channelId: string | null) =>
+    request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId }),
 };

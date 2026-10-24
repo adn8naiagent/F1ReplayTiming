@@ -25,6 +25,7 @@ from services.f1_data import (
     _get_race_results_sync,
     _get_driver_positions_by_time_sync,
     _get_driver_telemetry_sync,
+    _get_team_radio_sync,
 )
 
 logger = logging.getLogger(__name__)
@@ -189,6 +190,22 @@ def _process_session_sync(
         del frames
     except Exception as e:
         logger.warning(f"[{prefix}] No replay data: {e}")
+
+    status("Captioning team radio...")
+
+    # Team radio, timed against the replay frames
+    try:
+        clips = _get_team_radio_sync(
+            year, round_num, session_type,
+            on_progress=lambda i, n: status(f"Captioning team radio ({i}/{n})..."),
+        )
+        if clips is not None:
+            storage.put_json(f"{base}/team_radio.json", {"clips": clips})
+            logger.info(f"[{prefix}] Saved {len(clips)} team radio clips")
+    except f1_account.F1AccountError:
+        raise
+    except Exception as e:
+        logger.warning(f"[{prefix}] No team radio: {e}")
 
     status("Processing telemetry...")
 

@@ -86,7 +86,7 @@ export default function SessionBanner({
   const isRace = sessionType === "R" || sessionType === "S";
   const isQualifying = sessionType === "Q" || sessionType === "SQ";
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Other" | "F1 TV" | "Report a bug">("Leaderboard");
+  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Team Radio" | "Other" | "F1 TV" | "Report a bug">("Leaderboard");
   const appConfig = useAppConfig();
   const settingsRef = useRef<HTMLDivElement>(null);
 
@@ -232,7 +232,7 @@ export default function SessionBanner({
                   {/* Tab sidebar */}
                   <div className="flex flex-col border-r border-f1-border py-2 w-36 flex-shrink-0">
                     {([
-                      "Leaderboard", "Weather", "Track Map", "Race Control", "Other",
+                      "Leaderboard", "Weather", "Track Map", "Race Control", "Team Radio", "Other",
                       ...(appConfig?.f1tv ? (["F1 TV"] as const) : []),
                       ...(onReportProblem ? (["Report a bug"] as const) : []),
                     ] as const).map((tab) => (
@@ -337,6 +337,34 @@ export default function SessionBanner({
                         <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${settings.rcSound ? "translate-x-[18px]" : "translate-x-0.5"}`} />
                       </div>
                     </button>
+                  </>)}
+
+                  {settingsTab === "Team Radio" && (<>
+                    <button
+                      onClick={() => onSettingChange?.("showTeamRadio", !settings.showTeamRadio)}
+                      className="w-full flex items-center justify-between px-2 sm:px-6 py-1.5 hover:bg-white/5 transition-colors"
+                    >
+                      <span className="text-xs font-bold text-f1-muted uppercase tracking-wider">Show Team Radio</span>
+                      <div className={`relative w-9 h-5 rounded-full transition-colors ${settings.showTeamRadio ? "bg-f1-red" : "bg-f1-border"}`}>
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${settings.showTeamRadio ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => onSettingChange?.("teamRadioMuted", !settings.teamRadioMuted)}
+                      disabled={!settings.showTeamRadio}
+                      className={`w-full flex items-center justify-between pl-4 sm:pl-10 pr-2 sm:pr-6 py-1 hover:bg-white/5 transition-colors ${!settings.showTeamRadio ? "opacity-40 pointer-events-none" : ""}`}
+                    >
+                      <span className="text-sm text-white">Mute audio</span>
+                      <div className={`relative w-9 h-5 rounded-full transition-colors ${settings.teamRadioMuted ? "bg-f1-red" : "bg-f1-border"}`}>
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${settings.teamRadioMuted ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+                      </div>
+                    </button>
+                    <p className="px-2 sm:px-6 pt-3 text-xs text-f1-muted leading-relaxed">
+                      The radio messages F1 picks for the broadcast, shown over the track map with a caption. In replays, audio plays at 1x speed only.
+                    </p>
+                    <p className="px-2 sm:px-6 pt-2 text-xs text-f1-muted leading-relaxed">
+                      Captions are made locally using Whisper. Accuracy varies depending on quality and clarity.
+                    </p>
                   </>)}
 
                   {settingsTab === "Other" && (<>

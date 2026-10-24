@@ -14,7 +14,7 @@ https://github.com/user-attachments/assets/5c62dcf8-3156-4079-96d1-bd24ce64ebda
 > **What you need to do after updating:**
 > 1. Update dependencies: `pip install -r requirements.txt`, or rebuild the Docker image.
 > 2. Set `F1TV_SECRET_KEY` in `.env`. Generate one with `openssl rand -hex 32`.
-> 3. Sign in: click **F1 TV** on the home page and sign in with your F1 account. **Or** set `F1_USERNAME` and `F1_PASSWORD` in `.env` instead, which is best on hosts that wipe files on redeploy (Railway, Render, Fly.io).
+> 3. Sign in: click **F1 TV** on the home page and sign in with your F1 account. **Or** set `F1_USERNAME` and `F1_PASSWORD` in `.env` instead.
 >
 > Full details in [F1 TV account](#f1-tv-account).
 
@@ -25,6 +25,7 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 - **Live timing** (Beta) - connect to live F1 sessions during race weekends with real-time data from the F1 SignalR stream, including a broadcast delay slider and automatic detection of post-session replays
 - **Track map** with real-time car positions from GPS telemetry, updating every 0.5 seconds with smooth interpolation, marshal sector flags, and toggleable corner numbers
 - **Driver leaderboard** showing position, gap to leader, interval, last lap time, sector indicators (qualifying/practice), tyre compound and age, tyre history, pit stop count and live pit timer, grid position changes, fastest lap indicator, investigation/penalty status, and sub-1-second interval highlighting
+- **Team radio** - the radio messages F1 picks for the world feed pop up over the track map with the driver, a caption and the audio, in replays and live timing (requires an F1 TV sign-in). Captions are made locally on your server with [Whisper](https://github.com/SYSTRAN/faster-whisper). Accuracy varies depending on quality and clarity
 - **Race control messages** - steward decisions, investigations, penalties, track limits, and flag changes displayed in a draggable overlay on the track map with optional sound notifications
 - **Pit position prediction** estimates where a driver would rejoin if they pitted now, with predicted gap ahead and behind, using precomputed pit loss times per circuit with Safety Car and Virtual Safety Car adjustments
 - **Telemetry** for unlimited drivers showing speed, throttle, brake, gear, and DRS (2025 and earlier) plotted against track distance, with a moveable side panel for 3+ driver comparisons
@@ -108,7 +109,9 @@ All configuration is managed through the `.env` file. No need to edit `docker-co
 | `RETENTION_SWEEP_ENABLED` | `true` | Set to `false` to stop this instance running the daily retention sweep, e.g. when several instances share one bucket |
 | `REPLAY_PLAYER` | `static` | `static` plays replays in the browser from small compressed files. `websocket` uses the previous player, which streams frames from the server |
 | `F1TV_SECRET_KEY` | | **Required.** Encrypts the saved F1 TV sign-in. Generate with `openssl rand -hex 32`, set once and don't change it (see [F1 TV account](#f1-tv-account)) |
-| `F1_USERNAME` / `F1_PASSWORD` | | Sign in to F1 TV here instead of in the app. Use this on hosts that wipe files on redeploy (Railway, Render, Fly.io) |
+| `F1_USERNAME` / `F1_PASSWORD` | | Sign in to F1 TV here instead of in the app |
+| `TEAM_RADIO_CAPTIONS` | `true` | Set to `false` to skip captioning team radio (clips still play) |
+| `TEAM_RADIO_MODEL` | `small.en` | Whisper model for team radio captions. Downloads on first use (`small.en` is about 480 MB) |
 
 ### F1 TV account
 
@@ -128,7 +131,7 @@ Since 15 October 2026, F1 only serves past-session timing data to signed-in F1 T
 
 **Docker:** set `F1TV_SECRET_KEY`. Without it, the generated key file lives inside the container. A rebuild loses it, and the saved password can no longer be read, so you'd sign in again.
 
-**Hosts that wipe files on redeploy** (Railway, Render, Fly.io without a volume): set `F1_USERNAME` and `F1_PASSWORD` in the platform's variables. Anything saved from the app would be lost on each deploy. Variables are set once and carry over to every deploy.
+**Cloud hosts:** F1 blocks downloads from cloud providers even when you're signed in. See [Cloud hosting](#cloud-hosting).
 
 **Other ways to sign in:**
 - `F1_USERNAME` and `F1_PASSWORD` environment variables, which take priority over a saved sign-in.
@@ -227,13 +230,22 @@ volumes:
   f1cache:
 ```
 
-### Cloud hosting (Railway, Vercel, Render, Fly.io, etc.)
+### Cloud hosting
 
 Deploy as a single service. Most platforms will detect the `Dockerfile` at the project root automatically.
 
-Set your environment variables in the platform's dashboard. R2 credentials are recommended since most cloud platforms have ephemeral filesystems, so locally computed session data would be lost on redeploy.
+> [!WARNING]
+> **F1 blocks requests from cloud providers.** Since the F1 TV paywall (15 October 2026), F1's servers refuse requests from cloud providers with HTTP 403, before checking any sign-in. On a cloud host, these don't work:
+> - downloading new sessions: opening an unprocessed session, reprocessing, and `precompute.py`
+> - race-weekend background downloads (`AUTO_PRECOMPUTE`)
+> - team radio and captions for new sessions, which are downloaded with them
+> - live timing, which uses the same F1 servers (expected, not yet confirmed)
+>
+> Replays of sessions already in storage, and their team radio, keep working.
 
-For the same reason, sign in to F1 TV with variables rather than in the app: set `F1_USERNAME` and `F1_PASSWORD` in the dashboard. A sign-in saved from the app would be lost on each redeploy. See [F1 TV account](#f1-tv-account).
+**Recommended setup:** run a self-hosted copy at home (Docker) that downloads sessions into your R2 bucket, and point the cloud copy at the same bucket to serve them. On the cloud copy, set `AUTO_PRECOMPUTE=off` and `RETENTION_SWEEP_ENABLED=false`, so only the home copy downloads and manages storage.
+
+Set your environment variables in the platform's dashboard. R2 credentials are needed since most cloud platforms have ephemeral filesystems.
 
 ### Session data
 
