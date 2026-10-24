@@ -452,7 +452,7 @@ class LiveSignalRClient:
             if target == "feed":
                 # Only log non-TimingData feed topics in detail to reduce noise
                 topic_preview = str(arguments[0])[:80] if arguments else "EMPTY"
-                if topic_preview != "TimingData":
+                if topic_preview not in ("TimingData", "Position.z", "CarData.z"):
                     logger.info(
                         "Feed msg: %d args, types=%s, topics=%r",
                         len(arguments),

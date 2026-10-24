@@ -725,6 +725,10 @@ class LiveStateManager:
                 if channel not in channels:
                     continue
                 value = _sanitize_value(channels[channel])
+                # Throttle and brake above 100 are "no data" (104 while the
+                # car is in the garage), not a reading
+                if name in ("throttle", "brake") and isinstance(value, (int, float)) and value > 100:
+                    value = 0
                 if name == "brake":
                     drv.brake = bool(value)
                 elif name in ("gear", "drs"):
@@ -1104,6 +1108,11 @@ class LiveStateManager:
             d = drv.to_dict()
             if show_mini:
                 d["mini_sectors"] = self._mini_states(drv)
+            # Cars parked in their pit box snap onto the main straight and pile
+            # up there, so hide them from the track map (the frontend skips
+            # x=0, y=0). Speed comes with telemetry, so this needs F1 TV.
+            if drv.in_pit and drv.speed is not None and drv.speed < 1:
+                d["x"] = d["y"] = 0.0
             # Sanitize all values
             for key in list(d.keys()):
                 d[key] = _sanitize_value(d[key])
