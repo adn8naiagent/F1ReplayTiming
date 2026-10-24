@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import AuthGate from "@/components/AuthGate";
+import { PaywallOverlay } from "@/components/PaywallNotice";
 
 export const metadata: Metadata = {
   title: "F1 Replay Timing",
@@ -24,7 +25,10 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="bg-f1-dark text-f1-text antialiased">
-        <AuthGate>{children}</AuthGate>
+        <AuthGate>
+          {children}
+          <PaywallOverlay />
+        </AuthGate>
       </body>
     </html>
   );
