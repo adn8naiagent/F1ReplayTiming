@@ -149,6 +149,10 @@ _configured = False
 _config_lock = threading.Lock()
 _timeouts = 0
 _timeouts_lock = threading.Lock()
+# Most recent error response from F1's timing server: (status, url)
+_last_refusal: tuple[int, str] | None = None
+
+LIVETIMING_HOST = "livetiming.formula1.com"
 
 
 def _authenticate() -> SubscriptionToken:
@@ -178,16 +182,44 @@ def configure() -> None:
             global _timeouts
             if kwargs.get("timeout") is None:
                 kwargs["timeout"] = REQUEST_TIMEOUT
+            global _last_refusal
             try:
-                return original_send(self, request, **kwargs)
+                resp = original_send(self, request, **kwargs)
             except requests.Timeout:
                 with _timeouts_lock:
                     _timeouts += 1
                 logger.warning(f"Request to F1 timed out: {request.url}")
                 raise
+            # FastF1 quietly falls back to its mirror when F1 refuses a
+            # request, so record and log why F1 said no.
+            if resp.status_code >= 400 and LIVETIMING_HOST in (request.url or ""):
+                _last_refusal = (resp.status_code, request.url)
+                body = (resp.text or "")[:200].replace("\n", " ")
+                logger.warning(f"F1 refused {request.url}: HTTP {resp.status_code} {body}")
+            return resp
 
         f1req._SessionWithRateLimiting.send = send_with_timeout
         _configured = True
+
+
+def clear_refusal() -> None:
+    global _last_refusal
+    _last_refusal = None
+
+
+def refusal_message() -> str | None:
+    """A user-facing reason if F1's server refused requests since the last
+    clear_refusal(), else None."""
+    if _last_refusal is None:
+        return None
+    status = _last_refusal[0]
+    if status == 401:
+        return ("F1 rejected the F1 TV sign-in (HTTP 401). Check your F1 TV subscription is active "
+                "(Access or higher), then sign in again.")
+    if status == 403:
+        return ("F1 refused the download (HTTP 403). F1 may be blocking this server's network, "
+                "for example a cloud host. Try processing from another network.")
+    return f"F1's server returned an error (HTTP {status}). Try again later."
 
 
 def timeout_count() -> int:

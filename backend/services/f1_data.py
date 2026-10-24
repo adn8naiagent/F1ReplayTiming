@@ -244,6 +244,7 @@ def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.S
 
         def load() -> tuple[fastf1.core.Session, bool]:
             before = f1_account.timeout_count()
+            f1_account.clear_refusal()
             s = fastf1.get_session(year, round_num, session_type)
             s.load(telemetry=True, laps=True, weather=True, messages=True)
             return s, f1_account.timeout_count() > before
@@ -256,6 +257,17 @@ def _load_session(year: int, round_num: int, session_type: str) -> fastf1.core.S
             session, stalled = load()
             if stalled:
                 raise f1_account.F1AccountError(f1_account.SERVER_STALLED)
+
+        # FastF1 logs failed parts and carries on, so an empty load means F1
+        # gave us nothing. Say why, rather than failing later with "not loaded".
+        try:
+            has_laps = len(session.laps) > 0
+        except Exception:
+            has_laps = False
+        if not has_laps:
+            reason = f1_account.refusal_message()
+            if reason:
+                raise f1_account.F1AccountError(reason)
 
         # Only cache if we actually got meaningful data
         if len(session.laps) > 0:
