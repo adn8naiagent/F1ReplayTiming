@@ -5,6 +5,7 @@ import { ReplayDriver } from "@/hooks/useReplaySocket";
 import { ReplaySettings } from "@/hooks/useSettings";
 import { TYRE_COLORS, TYRE_SHORT, TEAM_ABBR } from "@/lib/constants";
 import { lapColorClass, SectorMarkers } from "@/lib/lapTiming";
+import { MiniSectorMarkers } from "@/lib/miniSectors";
 
 export interface LapEntry {
   driver: string;
@@ -12,6 +13,16 @@ export interface LapEntry {
   lap_time: string | null;
   time: number | null; // session-elapsed seconds when lap was completed
   compound: string | null;
+  tyre_life?: number | null;
+  sector1?: string | null;
+  sector2?: string | null;
+  sector3?: string | null;
+  /** Lap time deleted by the stewards (sessions processed after Phase 6) */
+  deleted?: boolean;
+  deleted_reason?: string;
+  /** When S1 and S2 ended, in replay seconds */
+  s1_end?: number | null;
+  s2_end?: number | null;
   pit_in: boolean;
   pit_out: boolean;
 }
@@ -29,6 +40,8 @@ interface Props {
   lapData?: Map<string, Map<number, { time: string; completedAt: number | null }>>;
   currentLap?: number;
   mobileTeamAbbrHidden?: boolean;
+  /** Mini-sector statuses per driver; replaces the three sector squares */
+  miniSectors?: { counts: number[]; states: Map<string, number[] | null> } | null;
 }
 
 function formatGap(gap: string | null): string {
@@ -87,7 +100,7 @@ function computeIntervals(sorted: ReplayDriver[]): Map<string, string> {
   return intervals;
 }
 
-export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick, settings, currentTime, isRace, isQualifying, compact, onScaleChange, lapData, currentLap, mobileTeamAbbrHidden }: Props) {
+export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick, settings, currentTime, isRace, isQualifying, compact, onScaleChange, lapData, currentLap, mobileTeamAbbrHidden, miniSectors }: Props) {
   const [showInterval, setShowInterval] = useState(true);
   const [scale, setScale] = useState(1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -332,7 +345,11 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
 
               {/* Live sector indicators - fixed width (qualifying and practice) */}
               {!isRace && settings.showSectors && (
-                <SectorMarkers sectors={drv.sectors} className="w-7 flex-shrink-0 mx-1" />
+                miniSectors ? (
+                  <MiniSectorMarkers states={miniSectors.states.get(drv.abbr) ?? null} counts={miniSectors.counts} className="flex-shrink-0 mx-1" />
+                ) : (
+                  <SectorMarkers sectors={drv.sectors} className="w-7 flex-shrink-0 mx-1" />
+                )
               )}
 
               {/* Pit stops / chequered flag - 20px (race only) */}
