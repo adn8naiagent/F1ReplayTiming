@@ -12,6 +12,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Out-lap indicator** — in practice and qualifying, the leaderboard shows OUT in place of the sector markers (or mini-sectors) while a driver is on an out-lap, from pit exit until the lap is completed. Works in live timing and in replays. Replays of sessions processed before this version need a full reprocess to show it; `--lap-extras-only` doesn't add it. ([@kungfoochef](https://github.com/kungfoochef))
 
+- **Team radio captions: separate live model, better prompt** — `TEAM_RADIO_LIVE_MODEL` sets a different Whisper model for live timing, so replays can use a larger, more accurate model (e.g. `large-v3-turbo`) while live captions stay fast enough for the broadcast delay. The caption prompt is shorter and follows the season (DRS up to 2025, boost and overtake mode from 2026), captions that are Whisper reading the prompt back on near-silent clips are dropped, and "tires" is spelled "tyres". ([@kungfoochef](https://github.com/kungfoochef))
+
 ### Fixes
 
 - **Live timing stuck on "Waiting for session" when F1 refused the connection** — if F1 refuses the server's live timing connection (for example HTTP 403 from a blocked network such as a cloud host or VPN), the live page now says so instead of waiting, and keeps retrying. If it happens mid-session, a banner shows over the track map.
@@ -51,8 +53,6 @@ Mini-sectors, deleted laps and sector end times need sessions reprocessed. Witho
 ### Improvements
 
 - **Team radio** — the radio messages F1 picks for the world feed pop up over the track map with the driver, a caption and the audio, in replays and live timing. Needs an F1 TV sign-in. Captions are made locally on your server by [Whisper](https://github.com/SYSTRAN/faster-whisper) (`small.en`, about 480 MB, downloaded on first use). Accuracy varies depending on quality and clarity. Set `TEAM_RADIO_CAPTIONS=false` to turn them off. Turn team radio or its audio off in Settings. Sessions downloaded before this update get team radio when reprocessed.
-
-- **Team radio captions: separate live model, better prompt** — `TEAM_RADIO_LIVE_MODEL` sets a different Whisper model for live timing, so replays can use a larger, more accurate model (e.g. `large-v3-turbo`) while live captions stay fast enough for the broadcast delay. The caption prompt is shorter and follows the season (DRS up to 2025, boost and overtake mode from 2026), captions that are Whisper reading the prompt back on near-silent clips are dropped, and "tires" is spelled "tyres".
 
 - **Live track positions** — when signed in to F1 TV, live timing receives car positions, so the live track map shows every car on track. F1 sends positions about once a second; the map plays them about 1.5 seconds behind so cars move smoothly instead of jumping.
 
