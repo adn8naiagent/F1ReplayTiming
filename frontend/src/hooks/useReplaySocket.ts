@@ -40,6 +40,8 @@ export interface ReplayDriver {
   pit_prediction_margin: number | null;
   pit_prediction_free_air: number | null;
   sectors: { num: number; color: "purple" | "green" | "yellow" }[] | null;
+  /** Live only: the most recent lap, coloured by F1's flags */
+  last_lap?: { time: string; personal: boolean; overall: boolean } | null;
   /** Live only: mini-sector statuses in lap order (qualifying and practice) */
   mini_sectors?: number[];
 }

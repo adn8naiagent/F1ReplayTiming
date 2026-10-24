@@ -98,6 +98,7 @@ class _DriverState:
         "pit_prediction_margin",
         "pit_prediction_free_air",
         "best_lap_time",
+        "last_lap",
         "pit_start",
         "x",
         "y",
@@ -147,6 +148,8 @@ class _DriverState:
         self.pit_prediction_margin: float | None = None
         self.pit_prediction_free_air: float | None = None
         self.best_lap_time: str | None = None
+        # Most recent lap: {"time", "personal", "overall"} from F1's flags
+        self.last_lap: dict[str, Any] | None = None
         self.pit_start: bool = False
         self.x: float = 0.0
         self.y: float = 0.0
@@ -192,6 +195,7 @@ class _DriverState:
             "grid_position": self.grid_position,
             "sectors": self.sectors,
             "best_lap_time": self.best_lap_time,
+            "last_lap": self.last_lap,
             "pit_prediction": self.pit_prediction,
             "pit_prediction_margin": self.pit_prediction_margin,
             "pit_prediction_free_air": self.pit_prediction_free_air,
@@ -289,6 +293,9 @@ class LiveStateManager:
 
         # Race control messages (most recent first, capped at 50)
         self._rc_messages: list[dict[str, Any]] = []
+
+        # Marshal sector flags in force: sector number -> {"sector", "flag", "driver"}
+        self._sector_flags: dict[int, dict[str, Any]] = {}
 
         # Overall sector bests (sector index 0-2 -> best time)
         self._overall_sector_bests: dict[int, float] = {}
@@ -413,6 +420,19 @@ class LiveStateManager:
                     blt_val = str(blt) if blt else ""
                 if blt_val:
                     drv.best_lap_time = blt_val
+
+            # LastLapTime, with F1's colour flags (partial updates send only
+            # what changed, e.g. just PersonalFastest)
+            if isinstance(updates.get("LastLapTime"), dict):
+                llt = updates["LastLapTime"]
+                last = dict(drv.last_lap or {"time": None, "personal": False, "overall": False})
+                if "Value" in llt:
+                    last["time"] = llt["Value"] or None
+                if "PersonalFastest" in llt:
+                    last["personal"] = bool(llt["PersonalFastest"])
+                if "OverallFastest" in llt:
+                    last["overall"] = bool(llt["OverallFastest"])
+                drv.last_lap = last if last["time"] else None
 
             # Out-lap: set on pit exit, cleared once the lap is completed.
             # A lap completed in the pit lane (crossing the line on the way
@@ -917,6 +937,22 @@ class LiveStateManager:
                 if len(self._rc_messages) > 50:
                     self._rc_messages = self._rc_messages[-50:]
 
+            # Marshal sector flags, as replays show them (f1_data)
+            if msg_data.get("Scope") == "Sector" and msg_data.get("Flag") and msg_data.get("Sector") is not None:
+                try:
+                    sector_num = int(msg_data["Sector"])
+                except (TypeError, ValueError):
+                    sector_num = None
+                if sector_num is not None:
+                    flag = str(msg_data["Flag"])
+                    if flag in ("CLEAR", "GREEN"):
+                        self._sector_flags.pop(sector_num, None)
+                    else:
+                        drv_abbr = ""
+                        if racing_number and str(racing_number) in self._drivers:
+                            drv_abbr = self._drivers[str(racing_number)].abbr
+                        self._sector_flags[sector_num] = {"sector": sector_num, "flag": flag, "driver": drv_abbr}
+
             if not racing_number:
                 # Try to extract car number from message
                 car_match = re.search(r"CAR\s+(\d+)", message)
@@ -1212,6 +1248,7 @@ class LiveStateManager:
             "drivers": drivers_list,
             "rc_messages": list(reversed(self._rc_messages)),
             "team_radio": self._radio_frame(),
+            "sector_flags": list(self._sector_flags.values()) or None,
         }
         if show_mini:
             frame["mini_sector_counts"] = list(self._mini_counts)

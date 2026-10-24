@@ -43,13 +43,14 @@ const AVAILABILITY: [string, string, string, string][] = [
   ["Team radio with captions", "RL", "RL", "RL"],
   ["Pit position prediction", "RL", "-", "-"],
   ["Sectors and mini-sectors", "-", "RL", "RL"],
-  ["Last lap time", "R", "R", "R"],
-  ["Sectors on the track map", "-", "R", "R"],
+  ["Out-lap indicator", "-", "RL", "RL"],
+  ["Last lap time", "RL", "RL", "RL"],
+  ["Sectors on the track map", "-", "RL", "RL"],
   ["Lap Analysis", "R", "R", "R"],
   ["Track dominance", "-", "R", "R"],
   ["Lap notifications", "-", "R", "-"],
   ["Telemetry", "RL", "RL", "RL"],
-  ["Track elevation, marshal sector flags", "R", "R", "R"],
+  ["Track elevation, marshal sector flags", "RL", "RL", "RL"],
   ["Picture-in-picture", "RL", "RL", "RL"],
   ["Playback controls, broadcast sync", "R", "R", "R"],
   ["Broadcast delay", "L", "L", "L"],
@@ -240,7 +241,7 @@ export default function FeaturesPage() {
               <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
                 <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Last lap</span>
                 <span className="text-xs tabular-nums text-f1-muted flex-shrink-0">1:32.456</span>
-                <span className="w-full sm:w-auto text-sm text-f1-text">The driver&apos;s most recently completed lap time. Replays only.</span>
+                <span className="w-full sm:w-auto text-sm text-f1-text">The driver&apos;s most recently completed lap time. Purple for the session&apos;s fastest, green for a personal best.</span>
               </div>
 
               {/* Grid delta */}
@@ -517,7 +518,7 @@ export default function FeaturesPage() {
             <p className="text-f1-text leading-relaxed">
               On desktop, switch between <span className="font-bold text-white">Sectors</span> and{" "}
               <span className="font-bold text-white">Mini-sectors</span> beside the button to colour the track
-              mini-sector by mini-sector instead. Replays only.
+              mini-sector by mini-sector instead. The three sectors work in replays and live timing; mini-sectors on the map are replays only.
             </p>
           </section>
           </>

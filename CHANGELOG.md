@@ -16,6 +16,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **AI team radio captions and choosing caption models in the app** — with `OPENROUTER_API_KEY` set, turn on **Improve captions with AI** in Settings > Team Radio: each clip's audio and Whisper's caption go to an AI model (default `google/gemini-3.5-flash-lite`, a few cents a race weekend) with the session's drivers and F1 terms, which listens and fixes misheard words, such as "our course" → "our cause". If a request fails, Whisper's caption is kept. The same tab sets the Whisper models for replays and live timing, with each model's size and speed. Settings in `.env` (`TEAM_RADIO_MODEL`, `TEAM_RADIO_LIVE_MODEL`, `TEAM_RADIO_AI`, `TEAM_RADIO_AI_MODEL`) win and show as locked. Choices are saved on each server, so servers sharing storage can use different models.
 
+- **More of the replay track map and leaderboard in live timing** — live timing now shows the last lap time (purple for the session's fastest, green for a personal best, as F1 colours them), yellow and red flags at their marshal sector on the track map, and track elevation. In qualifying and practice, **Show Sectors** colours the track map by a selected driver's sectors, as in replays.
+
 ### Fixes
 
 - **Live timing stuck on "Waiting for session" when F1 refused the connection** — if F1 refuses the server's live timing connection (for example HTTP 403 from a blocked network such as a cloud host or VPN), the live page now says so instead of waiting, and keeps retrying. If it happens mid-session, a banner shows over the track map.

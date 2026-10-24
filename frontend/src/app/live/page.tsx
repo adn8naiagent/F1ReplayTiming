@@ -9,6 +9,7 @@ import { apiFetch } from "@/lib/api";
 import { useAppConfig } from "@/lib/config";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
+import type { SectorOverlay } from "@/lib/trackRenderer";
 import TeamRadio from "@/components/TeamRadio";
 import TelemetryChart from "@/components/TelemetryChart";
 import Leaderboard from "@/components/Leaderboard";
@@ -22,6 +23,8 @@ interface TrackData {
   circuit_name: string;
   sector_boundaries?: { s1_end: number; s2_end: number; total: number } | null;
   corners?: { x: number; y: number; number: number; letter: string; angle: number }[] | null;
+  marshal_sectors?: { x: number; y: number; number: number }[] | null;
+  elevation?: { range_m: number } | null;
 }
 
 interface SessionData {
@@ -85,6 +88,9 @@ function LiveTiming() {
   const devMode = searchParams.get("dev") === "1";
 
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
+  // Track map coloured by a selected driver's sectors (qualifying and practice)
+  const [showSectorOverlay, setShowSectorOverlay] = useState(false);
+  const [sectorFocusDriver, setSectorFocusDriver] = useState<string | null>(null);
   const [showTelemetry, setShowTelemetry] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
@@ -267,6 +273,25 @@ function LiveTiming() {
     color: d.color,
     position: d.position,
   }));
+  // Sector overlay, as in replays: the focused driver's live sector colours
+  const hasSectors = !isRace;
+  const SECTOR_HEX: Record<string, string> = { purple: "#A855F7", green: "#22C55E", yellow: "#EAB308" };
+  const DEFAULT_SECTOR = "#3A3A4A";
+  const sectorOverlay: SectorOverlay | null = (() => {
+    if (!hasSectors || !showSectorOverlay || !trackData?.sector_boundaries) return null;
+    if (!sectorFocusDriver || !selectedDrivers.includes(sectorFocusDriver)) return null;
+    const sectors = drivers.find((d) => d.abbr === sectorFocusDriver)?.sectors;
+    const hex = (n: number) => SECTOR_HEX[sectors?.find((s) => s.num === n)?.color ?? ""] ?? DEFAULT_SECTOR;
+    return { boundaries: trackData.sector_boundaries, colors: { s1: hex(1), s2: hex(2), s3: hex(3) } };
+  })();
+  const trackExtras = {
+    sectorOverlay,
+    marshalSectors: trackData?.marshal_sectors,
+    sectorFlags: live.frame?.sector_flags,
+    showElevation: settings.showElevation,
+    elevationRangeM: trackData?.elevation?.range_m ?? null,
+  };
+
   // Live telemetry and positions arrive with an F1 TV sign-in
   const hasTelemetry = drivers.some((d) => d.speed != null);
 
@@ -516,8 +541,8 @@ function LiveTiming() {
               <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
                 <div className="bg-f1-card/90 border border-f1-border rounded-lg px-4 py-2.5 backdrop-blur-sm text-center max-w-sm">
                   <p className="text-f1-muted text-xs leading-relaxed">
-                    Driver track positions and telemetry are not available during live sessions.
-                    These will be available in replay once the session is processed.
+                    Car positions and telemetry in live timing need an F1 TV sign-in on this server.
+                    They&apos;ll be in the replay once the session is processed.
                   </p>
                 </div>
               </div>
@@ -563,10 +588,52 @@ function LiveTiming() {
                   playbackSpeed={1}
                   showDriverNames={settings.showDriverNames}
                   corners={settings.showCorners ? trackData?.corners : null}
+                  {...trackExtras}
                 />
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <p className="text-f1-muted text-sm">Track data not available</p>
+                </div>
+              )}
+
+              {/* Sector overlay controls - qualifying and practice */}
+              {hasSectors && trackData?.sector_boundaries && (
+                <div className={`absolute bottom-2 z-20 flex items-center gap-1 ${isMobile ? "left-2 right-2" : "right-3"}`}>
+                  {showSectorOverlay && selectedDrivers.length === 0 && (
+                    <span className="text-[10px] text-f1-muted mr-1">Select a driver to view sectors</span>
+                  )}
+                  {showSectorOverlay && selectedDrivers.length > 0 && (
+                    <div className="flex items-center gap-1 overflow-x-auto">
+                      {selectedDrivers.map((abbr) => {
+                        const drv = drivers.find((d) => d.abbr === abbr);
+                        const isActive = sectorFocusDriver === abbr;
+                        return (
+                          <button
+                            key={abbr}
+                            onClick={() => setSectorFocusDriver(isActive ? null : abbr)}
+                            className={`flex-shrink-0 px-1.5 py-1 border rounded text-[10px] font-bold transition-colors ${
+                              isActive
+                                ? "bg-purple-500/20 border-purple-500/50 text-purple-300"
+                                : "bg-f1-card/90 border-f1-border text-f1-muted hover:text-white backdrop-blur-sm"
+                            }`}
+                          >
+                            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1" style={{ backgroundColor: drv?.color }} />
+                            {abbr}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setShowSectorOverlay(!showSectorOverlay)}
+                    className={`flex-shrink-0 ${isMobile ? "ml-auto" : ""} px-2 py-1 border rounded text-[10px] font-bold transition-colors ${
+                      showSectorOverlay
+                        ? "bg-purple-500/20 border-purple-500/50 text-purple-300 hover:text-purple-200"
+                        : "bg-f1-card/90 border-f1-border text-f1-muted hover:text-white backdrop-blur-sm"
+                    }`}
+                  >
+                    {isMobile ? "Sectors" : `${showSectorOverlay ? "Hide" : "Show"} Sectors`}
+                  </button>
                 </div>
               )}
 
@@ -944,6 +1011,7 @@ function LiveTiming() {
                     highlightedDrivers={selectedDrivers}
                     showDriverNames={settings.showDriverNames}
                     corners={settings.showCorners ? trackData?.corners : null}
+                    {...trackExtras}
                   />
                 </div>
               )}

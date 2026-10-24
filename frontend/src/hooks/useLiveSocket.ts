@@ -128,6 +128,7 @@ export function useLiveSocket(
             quali_phase: msg.quali_phase,
             team_radio: msg.team_radio,
             mini_sector_counts: msg.mini_sector_counts,
+            sector_flags: msg.sector_flags,
           };
           const rcMessages: RCMessage[] = msg.rc_messages || [];
 
