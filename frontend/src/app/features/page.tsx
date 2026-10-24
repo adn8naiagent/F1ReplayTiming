@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/SiteFooter";
 import LeaderboardGuide from "@/components/LeaderboardGuide";
+import LapAnalysisGuide from "@/components/LapAnalysisGuide";
 
 // Which sessions a feature works in, shown under each section's heading.
 function SessionChips({ practice, qualifying, race }: { practice?: boolean; qualifying?: boolean; race?: boolean }) {
@@ -564,29 +565,8 @@ export default function FeaturesPage() {
                 <span className="w-full sm:w-auto text-sm text-f1-text">Full lap-by-lap breakdown showing lap time, tyre compound, and pit stop indicators for each selected driver.</span>
               </div>
             </div>
-            <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mt-5 mb-2">Qualifying and practice</p>
-            <p className="text-f1-text leading-relaxed mb-3">
-              Two tabs. Everything counts only what has happened by the current replay time, so bests
-              and colours change as the session plays.
-            </p>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Sectors</span>
-                <span className="flex items-center gap-1.5 flex-shrink-0 text-[10px] tabular-nums">
-                  <span className="text-purple-400">28.412</span>
-                  <span className="text-green-400">35.106</span>
-                  <span className="text-white">27.950</span>
-                </span>
-                <span className="w-full sm:w-auto text-sm text-f1-text">The session&apos;s best sectors and theoretical best lap, each driver&apos;s ideal lap (best three sectors added up), and one driver&apos;s laps with sector times &mdash; purple for the session best, green for a personal best. Qualifying can be filtered by Q1, Q2 and Q3; practice adds a chart of flying laps. Out and in laps are marked, and laps deleted by the stewards are struck through, with the reason on hover.</span>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Compare</span>
-                <span className="flex items-center gap-1.5 flex-shrink-0 text-[10px] tabular-nums">
-                  <span className="text-green-400">-0.148</span>
-                </span>
-                <span className="w-full sm:w-auto text-sm text-f1-text">Two drivers&apos; best laps side by side, sector by sector. On desktop, traces of both laps along the track &mdash; gap, speed, throttle, brake and gear, with corner numbers &mdash; and Track dominance, which colours the track map by who was faster through each part of the lap.</span>
-              </div>
-            </div>
+            <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mt-6 mb-3">Qualifying and practice</p>
+            <LapAnalysisGuide />
           </section>
 
           {/* Telemetry */}
