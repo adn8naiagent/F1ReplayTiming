@@ -12,6 +12,8 @@ export interface AppConfig {
   live: boolean;
   /** Public sites only: the last round served since F1 put timing data behind F1 TV. */
   public_archive: PublicArchive | null;
+  /** F1 TV sign-in for downloading session data (self-hosted only) */
+  f1tv: boolean;
 }
 
 export interface PublicArchive {
@@ -28,6 +30,7 @@ const FALLBACK: AppConfig = {
   photo_sync: true,
   live: true,
   public_archive: null,
+  f1tv: false,
 };
 
 export const REPO_URL = "https://github.com/adn8naiagent/F1ReplayTiming";

@@ -2,15 +2,19 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
-## 2.2.1 (unreleased)
+## 2.3.0 (unreleased)
+
+> **Action needed:** since 15 October 2026 F1 requires an F1 TV subscription (Access or higher) to download timing data. After updating, run `pip install -r requirements.txt` (or rebuild the Docker image), set `F1TV_SECRET_KEY` in `.env` (`openssl rand -hex 32`), then sign in from **F1 TV** on the home page — or set `F1_USERNAME` and `F1_PASSWORD` in `.env` instead of signing in through the app. Sessions you've already downloaded keep working without it. See the README's [F1 TV account](README.md#f1-tv-account) section.
 
 ### Improvements
 
-- **Leaderboard guide** — the top of the Features page now shows a sample leaderboard with each column numbered and explained, so it's clear what everything means at a glance.
+- **F1 TV sign-in** — since 15 October 2026 F1 requires an F1 TV subscription (Access or higher) to download timing data. Sign in from **F1 TV** on the home page or the F1 TV tab in a replay's Settings. With **Keep me signed in**, the password is stored encrypted and you stay signed in, including for race-weekend background downloads. **Alternatively**, set `F1_USERNAME` and `F1_PASSWORD` as environment variables instead of signing in through the app — the best option on hosts that wipe files on redeploy (Railway, Render, Fly.io). From the command line, `python precompute.py --sign-in` also works. Sessions already downloaded keep working. Requires FastF1 3.9 (`pip install -r requirements.txt`). See the README's F1 TV account section.
 
-- **Home page introduction** — a short summary of what the site does and its main features. Once hidden, an Overview button in the header brings it back.
+- **Download throttling** — downloads pause between sessions (60 seconds) in the background and in `precompute.py` (`--gap` to change), to stay within F1's limits. Downloads also time out and retry once instead of hanging if F1's servers stop responding.
 
-- **Session list loads instantly** — the home page reads a small per-season index of processed sessions and their sizes, instead of listing every stored file. With replay files that listing reached tens of thousands of files and could take 20 seconds on R2. The index is built automatically the first time a season is opened and kept up to date as sessions are processed or deleted.
+- **Features overview** — the Features page now opens with a sample leaderboard, each column numbered and explained.
+
+- **Session list loads instantly** — the home page reads a small per-season index of processed sessions and their sizes, instead of listing every stored file. The index is built automatically the first time a season is opened and kept up to date as sessions are processed or deleted.
 
 ### Fixes
 
