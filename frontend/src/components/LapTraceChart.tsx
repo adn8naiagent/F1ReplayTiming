@@ -72,21 +72,21 @@ export default function LapTraceChart({ comparison, nameA, nameB, colorA, colorB
     />
   );
   const label = (text: string) => <div className="px-1 text-[8px] font-bold text-f1-muted uppercase tracking-wider">{text}</div>;
-  const margin = { top: 2, right: 6, left: -18, bottom: 0 };
-  const lines = (key: "speed" | "throttle" | "gear", step = false) => (
-    <>
-      <Line type={step ? "stepAfter" : "linear"} dataKey={`${key}A`} stroke={colorA} strokeWidth={1.2} dot={false} isAnimationActive={false} />
-      <Line type={step ? "stepAfter" : "linear"} dataKey={`${key}B`} stroke={colorB} strokeWidth={1.2} dot={false} isAnimationActive={false} />
-    </>
-  );
+  const margin = { top: 4, right: 8, left: 0, bottom: 0 };
+  // An array, not a fragment: Recharts only finds direct children.
+  const lines = (key: "speed" | "throttle" | "gear", step = false) => [
+    <Line key={`${key}A`} type={step ? "stepAfter" : "linear"} dataKey={`${key}A`} stroke={colorA} strokeWidth={1.2} dot={false} isAnimationActive={false} />,
+    <Line key={`${key}B`} type={step ? "stepAfter" : "linear"} dataKey={`${key}B`} stroke={colorB} strokeWidth={1.2} dot={false} isAnimationActive={false} />,
+  ];
+  const Y_WIDTH = 38;
 
   return (
     <div className="space-y-1">
       {label("Gap (approx.)")}
-      <ResponsiveContainer width="100%" height={60}>
+      <ResponsiveContainer width="100%" height={70}>
         <LineChart data={data} syncId={SYNC} margin={margin}>
           {xAxis(false)}
-          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} tickFormatter={(v: number) => v.toFixed(2)} />
+          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={Y_WIDTH} tickFormatter={(v: number) => (v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2))} />
           <ReferenceLine y={0} stroke="#4B5563" />
           {tooltip}
           <Line type="linear" dataKey="delta" stroke="#E5E7EB" strokeWidth={1.2} dot={false} isAnimationActive={false} />
@@ -96,7 +96,7 @@ export default function LapTraceChart({ comparison, nameA, nameB, colorA, colorB
       <ResponsiveContainer width="100%" height={100}>
         <LineChart data={data} syncId={SYNC} margin={margin}>
           {xAxis(false)}
-          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} domain={["dataMin - 10", "dataMax + 10"]} tickFormatter={(v: number) => `${Math.round(v)}`} />
+          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={Y_WIDTH} domain={["dataMin - 10", "dataMax + 10"]} tickFormatter={(v: number) => `${Math.round(v)}`} />
           {tooltip}
           {lines("speed")}
         </LineChart>
@@ -105,7 +105,7 @@ export default function LapTraceChart({ comparison, nameA, nameB, colorA, colorB
       <ResponsiveContainer width="100%" height={45}>
         <LineChart data={data} syncId={SYNC} margin={margin}>
           {xAxis(false)}
-          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} domain={[0, 100]} ticks={[0, 100]} />
+          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={Y_WIDTH} domain={[0, 100]} ticks={[0, 100]} />
           {tooltip}
           {lines("throttle")}
         </LineChart>
@@ -114,7 +114,7 @@ export default function LapTraceChart({ comparison, nameA, nameB, colorA, colorB
       <ResponsiveContainer width="100%" height={30}>
         <LineChart data={data} syncId={SYNC} margin={margin}>
           {xAxis(false)}
-          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} domain={[0, 2.2]} ticks={[]} />
+          <YAxis tickLine={false} axisLine={false} width={Y_WIDTH} domain={[0, 2.2]} tick={false} />
           {tooltip}
           {/* B drawn above A so both are visible when they brake together */}
           <Line type="stepAfter" dataKey="brakeA" stroke={colorA} strokeWidth={1.2} dot={false} isAnimationActive={false} />
@@ -125,7 +125,7 @@ export default function LapTraceChart({ comparison, nameA, nameB, colorA, colorB
       <ResponsiveContainer width="100%" height={55}>
         <LineChart data={data} syncId={SYNC} margin={{ ...margin, bottom: 2 }}>
           {xAxis(true)}
-          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={40} domain={[1, 8]} ticks={[1, 4, 8]} />
+          <YAxis tick={AXIS} tickLine={false} axisLine={false} width={Y_WIDTH} domain={[1, 8]} ticks={[1, 4, 8]} />
           {tooltip}
           {lines("gear", true)}
         </LineChart>
