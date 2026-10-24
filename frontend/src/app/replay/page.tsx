@@ -17,6 +17,12 @@ import SyncPhoto from "@/components/SyncPhoto";
 import PiPWindow from "@/components/PiPWindow";
 import LapAnalysisPanel from "@/components/LapAnalysisPanel";
 import LapNotifications from "@/components/LapNotifications";
+import TeamRadio, { type RadioClip } from "@/components/TeamRadio";
+
+// F1 TV video isn't finished: the Broadcast button stays hidden until it is.
+const BROADCAST_ENABLED = false;
+import BroadcastView from "@/components/BroadcastView";
+import { f1tv } from "@/lib/f1tv";
 import type { SectorOverlay } from "@/lib/trackRenderer";
 import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
 
@@ -84,6 +90,8 @@ export default function ReplayPage() {
   const [sectorFocusDriver, setSectorFocusDriver] = useState<string | null>(null);
   const [rcPanelOpen, setRcPanelOpen] = useState(false);
   const [rcPinned, setRcPinned] = useState(false);
+  const [broadcastOn, setBroadcastOn] = useState(false);
+  const [f1tvSignedIn, setF1tvSignedIn] = useState(false);
 
   // Persist panel layout per session type
   const layoutCategory = sessionType === "R" || sessionType === "S" ? "race"
@@ -202,6 +210,10 @@ export default function ReplayPage() {
     `/api/sessions/${year}/${round}/laps?type=${sessionType}`,
   );
 
+  const { data: radioResponse } = useApi<{ clips: RadioClip[] }>(
+    `/api/sessions/${year}/${round}/team-radio?type=${sessionType}`,
+  );
+
   // Build lookup: driver -> lap_number -> lap_time
   const lapData = useMemo(() => {
     if (!lapsResponse?.laps) return undefined;
@@ -239,6 +251,11 @@ export default function ReplayPage() {
     }
   }, [playerMode, staticReplay.fatal, staticReplay.error]);
   const replay = playerMode === "static" ? staticReplay : socketReplay;
+
+  useEffect(() => {
+    if (!appConfig?.f1tv) return;
+    f1tv.status().then((s) => setF1tvSignedIn(s.signed_in)).catch(() => {});
+  }, [appConfig?.f1tv]);
 
   const reportProblem = useCallback(() => {
     const url = reportProblemUrl({
@@ -422,6 +439,30 @@ export default function ReplayPage() {
   const mobileTeamAbbrHidden = isMobile && settings.showTeamAbbr && leaderboardWidthFull > (typeof window !== "undefined" ? window.innerWidth : 400);
   const leaderboardWidth = mobileTeamAbbrHidden ? leaderboardWidthFull - 28 : leaderboardWidthFull;
 
+
+  const mainTrackCanvas = (
+    <TrackCanvas
+      trackPoints={trackPoints}
+      rotation={rotation}
+      trackStatus={trackStatus}
+      drivers={drivers.filter((d) => !d.retired && !d.no_timing && !d.finished && (d.x !== 0 || d.y !== 0) && d.x > -0.5 && d.x < 1.5 && d.y > -0.5 && d.y < 1.5).map((d) => ({
+        abbr: d.abbr,
+        x: d.x,
+        y: d.y,
+        color: d.color,
+        position: d.position,
+      }))}
+      highlightedDrivers={selectedDrivers}
+      playbackSpeed={replay.speed}
+      showDriverNames={settings.showDriverNames}
+      sectorOverlay={sectorOverlay}
+      corners={settings.showCorners ? trackData?.corners : null}
+      marshalSectors={trackData?.marshal_sectors}
+      sectorFlags={replay.frame?.sector_flags}
+      showElevation={settings.showElevation}
+      elevationRangeM={trackData?.elevation?.range_m ?? null}
+    />
+  );
   return (
     <div className="h-dvh flex flex-col bg-f1-dark overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Connection lost — the socket retries on its own in the background */}
@@ -552,8 +593,32 @@ export default function ReplayPage() {
                 drivers={drivers}
               />
 
+              <TeamRadio
+                enabled={settings.showTeamRadio}
+                audio={!settings.teamRadioMuted}
+                clips={radioResponse?.clips}
+                mode="replay"
+                currentTime={replay.frame?.timestamp || 0}
+                playing={replay.playing}
+                speed={replay.speed}
+                drivers={drivers}
+              />
+
               {/* Race Control toggle - desktop only, mobile has its own section */}
-              <div className="absolute top-3 right-3 z-10 hidden sm:block">
+              <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-1.5">
+                {BROADCAST_ENABLED && f1tvSignedIn && (
+                  <button
+                    onClick={() => setBroadcastOn(!broadcastOn)}
+                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
+                      broadcastOn
+                        ? "bg-f1-red text-white"
+                        : "bg-f1-card/90 border border-f1-border text-f1-muted hover:text-white backdrop-blur-sm"
+                    }`}
+                    title="Show the F1 TV broadcast"
+                  >
+                    Broadcast
+                  </button>
+                )}
                 <button
                   onClick={() => {
                     if (rcPinned) {
@@ -655,27 +720,18 @@ export default function ReplayPage() {
                 </div>
               )}
 
-              <TrackCanvas
-                trackPoints={trackPoints}
-                rotation={rotation}
-                trackStatus={trackStatus}
-                drivers={drivers.filter((d) => !d.retired && !d.no_timing && !d.finished && (d.x !== 0 || d.y !== 0) && d.x > -0.5 && d.x < 1.5 && d.y > -0.5 && d.y < 1.5).map((d) => ({
-                  abbr: d.abbr,
-                  x: d.x,
-                  y: d.y,
-                  color: d.color,
-                  position: d.position,
-                }))}
-                highlightedDrivers={selectedDrivers}
-                playbackSpeed={replay.speed}
-                showDriverNames={settings.showDriverNames}
-                sectorOverlay={sectorOverlay}
-                corners={settings.showCorners ? trackData?.corners : null}
-                marshalSectors={trackData?.marshal_sectors}
-                sectorFlags={replay.frame?.sector_flags}
-                showElevation={settings.showElevation}
-                elevationRangeM={trackData?.elevation?.range_m ?? null}
-              />
+              {broadcastOn ? (
+                <BroadcastView
+                  sessionKey={`${year}_${round}_${sessionType}`}
+                  timestamp={replay.frame?.timestamp}
+                  playing={replay.playing}
+                  speed={replay.speed}
+                  selectedDriverNumbers={selectedDrivers
+                    .map((abbr) => sessionData?.drivers.find((d) => d.abbreviation === abbr)?.driver_number)
+                    .filter((n): n is string => !!n)}
+                  trackOverlay={mainTrackCanvas}
+                />
+              ) : mainTrackCanvas}
 
               {/* Telemetry now in bottom drawer */}
 

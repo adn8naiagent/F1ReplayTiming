@@ -342,6 +342,17 @@ def _extract_token(value: str) -> str:
     return token
 
 
+def get_token() -> str | None:
+    """A valid subscription token for live timing and video, renewing from
+    stored credentials if it has expired. None if not signed in."""
+    configure()
+    try:
+        return f1account.token_manager.get().value
+    except F1AuthError as e:
+        logger.info(f"No F1 TV token available: {e}")
+        return None
+
+
 def require_ready() -> None:
     """Raise F1AccountError if a download couldn't authenticate."""
     if not ready():
