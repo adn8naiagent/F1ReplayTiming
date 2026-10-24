@@ -12,6 +12,10 @@ export interface LapEntry {
   lap_time: string | null;
   time: number | null; // session-elapsed seconds when lap was completed
   compound: string | null;
+  tyre_life?: number | null;
+  sector1?: string | null;
+  sector2?: string | null;
+  sector3?: string | null;
   pit_in: boolean;
   pit_out: boolean;
 }

@@ -16,6 +16,7 @@ import TelemetryChart from "@/components/TelemetryChart";
 import SyncPhoto from "@/components/SyncPhoto";
 import PiPWindow from "@/components/PiPWindow";
 import LapAnalysisPanel from "@/components/LapAnalysisPanel";
+import SessionLapAnalysis from "@/components/SessionLapAnalysis";
 import LapNotifications from "@/components/LapNotifications";
 import TeamRadio, { type RadioClip } from "@/components/TeamRadio";
 
@@ -324,7 +325,7 @@ export default function ReplayPage() {
       setRcPinned(true);
       setRcPanelOpen(false);
       setForceBottomTelemetry(true);
-      if (isRace) setLapAnalysisOpen(true);
+      setLapAnalysisOpen(true);
     } else {
       setForceBottomTelemetry(false);
     }
@@ -848,7 +849,7 @@ export default function ReplayPage() {
               )}
 
               {/* Lap Analysis floating button - desktop only, bottom-right */}
-              {!isMobile && isRace && lapsResponse?.laps && (
+              {!isMobile && lapsResponse?.laps && (
                 <button
                   onClick={() => setLapAnalysisOpen(!lapAnalysisOpen)}
                   className={`absolute bottom-2 right-3 z-20 flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
@@ -1002,9 +1003,22 @@ export default function ReplayPage() {
         {settings.showLeaderboard && (
           <div className={`${lapAnalysisOpen ? "flex-shrink" : "flex-shrink-0"} flex ${isMobile ? "" : "border-l"} border-f1-border overflow-hidden`} style={{ width: isMobile ? "100%" : undefined }}>
             {/* Lap Analysis Panel - desktop only, left of leaderboard */}
-            {!isMobile && isRace && lapAnalysisOpen && lapsResponse?.laps && (
-              <div className="w-[280px] h-full border-r border-f1-border overflow-hidden flex-shrink-0">
-                <LapAnalysisPanel laps={lapsResponse.laps} drivers={drivers} currentLap={Math.max(0, (replay.frame?.lap || 0) - 1)} onClose={() => closePanel(() => setLapAnalysisOpen(false))} />
+            {!isMobile && lapAnalysisOpen && lapsResponse?.laps && (
+              <div className={`${isRace ? "w-[280px]" : "w-[380px]"} h-full border-r border-f1-border overflow-hidden flex-shrink-0`}>
+                {isRace ? (
+                  <LapAnalysisPanel laps={lapsResponse.laps} drivers={drivers} currentLap={Math.max(0, (replay.frame?.lap || 0) - 1)} onClose={() => closePanel(() => setLapAnalysisOpen(false))} />
+                ) : (
+                  <SessionLapAnalysis
+                    laps={lapsResponse.laps}
+                    drivers={drivers}
+                    currentTime={replay.frame?.timestamp || 0}
+                    currentLap={replay.frame?.lap || 0}
+                    lapData={lapData}
+                    qualiPhases={replay.qualiPhases}
+                    isQualifying={isQualifying}
+                    onClose={() => closePanel(() => setLapAnalysisOpen(false))}
+                  />
+                )}
               </div>
             )}
 
@@ -1042,7 +1056,7 @@ export default function ReplayPage() {
         )}
 
         {/* Lap Analysis section - mobile only, below leaderboard */}
-        {isMobile && isRace && lapsResponse?.laps && (
+        {isMobile && lapsResponse?.laps && (
           <div className="sm:hidden border-t border-f1-border" ref={(el) => {
             if (el && mobileLapAnalysisOpen) {
               setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "start" }), 100);
@@ -1059,7 +1073,19 @@ export default function ReplayPage() {
             </button>
             {mobileLapAnalysisOpen && (
               <div className="bg-f1-card max-h-[60vh] overflow-y-auto">
-                <LapAnalysisPanel laps={lapsResponse.laps} drivers={drivers} currentLap={Math.max(0, (replay.frame?.lap || 0) - 1)} />
+                {isRace ? (
+                  <LapAnalysisPanel laps={lapsResponse.laps} drivers={drivers} currentLap={Math.max(0, (replay.frame?.lap || 0) - 1)} />
+                ) : (
+                  <SessionLapAnalysis
+                    laps={lapsResponse.laps}
+                    drivers={drivers}
+                    currentTime={replay.frame?.timestamp || 0}
+                    currentLap={replay.frame?.lap || 0}
+                    lapData={lapData}
+                    qualiPhases={replay.qualiPhases}
+                    isQualifying={isQualifying}
+                  />
+                )}
               </div>
             )}
           </div>
