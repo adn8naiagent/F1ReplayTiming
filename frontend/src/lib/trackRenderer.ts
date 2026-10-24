@@ -68,6 +68,22 @@ export interface SectorOverlay {
   colors: { s1: string; s2: string; s3: string };
 }
 
+/** Track coloured in pieces, each a fraction of the lap (0–1 from the line,
+ *  by distance). Used for track dominance and mini-sectors. */
+export interface SegmentOverlay {
+  segments: { from: number; to: number; color: string }[];
+}
+
+/** Each outline point's position along the lap, 0–1 by distance. */
+function lapFractions(points: { x: number; y: number }[]): number[] {
+  const cum = [0];
+  for (let i = 1; i < points.length; i++) {
+    cum.push(cum[i - 1] + Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y));
+  }
+  const total = cum[cum.length - 1] || 1;
+  return cum.map((c) => c / total);
+}
+
 // Sector overlay colour used when a sector has no posted time; matches the
 // DEFAULT_SECTOR the replay page passes. Skipped when layering over elevation.
 const DEFAULT_SECTOR_HEX = "#3A3A4A";
@@ -92,6 +108,7 @@ export function drawTrack(
   marshalSectors?: MarshalSector[] | null,
   sectorFlags?: SectorFlag[] | null,
   showElevation: boolean = false,
+  segmentOverlay?: SegmentOverlay | null,
 ) {
   if (points.length === 0) return;
 
@@ -146,8 +163,40 @@ export function drawTrack(
     ];
   }
 
-  // Draw track outline. Priority: elevation > sector overlay > plain.
-  if (elevationActive) {
+  // Draw track outline. Priority: segments > elevation > sector overlay > plain.
+  if (segmentOverlay && segmentOverlay.segments.length > 0) {
+    const frac = lapFractions(points);
+    ctx.lineWidth = 12;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.strokeStyle = DEFAULT_SECTOR_HEX;
+    rotated.forEach((p, i) => {
+      const [px, py] = toScreen(p);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+    ctx.stroke();
+    // Butt caps between pieces, so neighbouring colours don't overlap
+    ctx.lineCap = "butt";
+    for (const seg of segmentOverlay.segments) {
+      ctx.beginPath();
+      ctx.strokeStyle = seg.color;
+      let started = false;
+      for (let i = 0; i < rotated.length; i++) {
+        // Include the point either side so pieces join without gaps
+        const inside = frac[i] >= seg.from && frac[i] <= seg.to;
+        const edge = (i + 1 < rotated.length && frac[i + 1] > seg.from && frac[i] < seg.from)
+          || (i > 0 && frac[i - 1] < seg.to && frac[i] > seg.to);
+        if (!inside && !edge) continue;
+        const [px, py] = toScreen(rotated[i]);
+        if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+    ctx.lineCap = "round";
+  } else if (elevationActive) {
     // Colour each segment by its height on the fixed scale. Bucketing keeps
     // this to a handful of stroke calls per frame instead of one per point.
     const STOPS = 24;

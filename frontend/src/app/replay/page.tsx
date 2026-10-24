@@ -18,6 +18,7 @@ import PiPWindow from "@/components/PiPWindow";
 import LapAnalysisPanel from "@/components/LapAnalysisPanel";
 import SessionLapAnalysis from "@/components/SessionLapAnalysis";
 import type { LapData } from "@/lib/lapTiming";
+import type { DominanceOverlay } from "@/lib/lapCompare";
 import LapNotifications from "@/components/LapNotifications";
 import TeamRadio, { type RadioClip } from "@/components/TeamRadio";
 
@@ -78,6 +79,7 @@ export default function ReplayPage() {
   const [mobileTelemetryOpen, setMobileTelemetryOpen] = useState(false);
   const [mobileRcOpen, setMobileRcOpen] = useState(true);
   const [lapAnalysisOpen, setLapAnalysisOpen] = useState(false);
+  const [dominance, setDominance] = useState<DominanceOverlay | null>(null);
   const [mobileLapAnalysisOpen, setMobileLapAnalysisOpen] = useState(false);
   // Force telemetry to bottom when lap analysis panel is open to avoid squashing the track map
   // effectiveTelemetryPosition is computed later after settings is available
@@ -462,6 +464,7 @@ export default function ReplayPage() {
       playbackSpeed={replay.speed}
       showDriverNames={settings.showDriverNames}
       sectorOverlay={sectorOverlay}
+      segmentOverlay={dominance}
       corners={settings.showCorners ? trackData?.corners : null}
       marshalSectors={trackData?.marshal_sectors}
       sectorFlags={replay.frame?.sector_flags}
@@ -610,6 +613,20 @@ export default function ReplayPage() {
                 speed={replay.speed}
                 drivers={drivers}
               />
+
+              {/* Track dominance legend (from Lap Analysis → Compare) */}
+              {dominance && !broadcastOn && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded bg-f1-card/90 border border-f1-border backdrop-blur-sm text-[10px]">
+                  <span className="font-bold text-f1-muted uppercase tracking-wider">Track dominance</span>
+                  {dominance.legend.map((l) => (
+                    <span key={l.abbr} className="flex items-center gap-1 font-bold text-white">
+                      <span className="w-3 h-1.5 rounded-sm" style={{ backgroundColor: l.color }} />
+                      {l.abbr}
+                      <span className="font-normal text-f1-muted">{l.count}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Race Control toggle - desktop only, mobile has its own section */}
               <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-1.5">
@@ -1022,6 +1039,10 @@ export default function ReplayPage() {
                     lapData={lapData}
                     qualiPhases={replay.qualiPhases}
                     isQualifying={isQualifying}
+                    year={year}
+                    round={round}
+                    sessionType={sessionType}
+                    onDominanceChange={setDominance}
                     onClose={() => closePanel(() => setLapAnalysisOpen(false))}
                   />
                 )}
@@ -1090,6 +1111,9 @@ export default function ReplayPage() {
                     lapData={lapData}
                     qualiPhases={replay.qualiPhases}
                     isQualifying={isQualifying}
+                    year={year}
+                    round={round}
+                    sessionType={sessionType}
                   />
                 )}
               </div>

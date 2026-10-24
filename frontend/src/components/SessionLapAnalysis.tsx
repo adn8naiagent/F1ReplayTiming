@@ -12,6 +12,8 @@ import {
 import { ReplayDriver, QualiPhaseInfo } from "@/hooks/useReplaySocket";
 import { LapEntry } from "@/components/Leaderboard";
 import DriverDropdown from "@/components/DriverDropdown";
+import LapTraceChart from "@/components/LapTraceChart";
+import { fetchLapTelemetry, compareLaps, dominanceOverlay, LapComparison, DominanceOverlay } from "@/lib/lapCompare";
 import { TYRE_COLORS, TYRE_SHORT } from "@/lib/constants";
 import { lapColorClass, LapData } from "@/lib/lapTiming";
 import {
@@ -40,6 +42,11 @@ interface Props {
   lapData: LapData | undefined;
   qualiPhases: QualiPhaseInfo[];
   isQualifying: boolean;
+  year: number;
+  round: number;
+  sessionType: string;
+  /** Shows track dominance on the main track map (desktop) */
+  onDominanceChange?: (overlay: DominanceOverlay | null) => void;
   onClose?: () => void;
 }
 
@@ -63,8 +70,12 @@ function deltaClass(delta: number): string {
 type Tab = "sectors" | "compare";
 
 export default function SessionLapAnalysis({
-  laps, drivers, currentTime, currentLap, lapData, qualiPhases, isQualifying, onClose,
+  laps, drivers, currentTime, currentLap, lapData, qualiPhases, isQualifying,
+  year, round, sessionType, onDominanceChange, onClose,
 }: Props) {
+  // The desktop panel has a Hide button; the mobile section doesn't. Lap
+  // traces and track dominance are desktop only.
+  const desktop = !!onClose;
   const [tab, setTab] = useState<Tab>(() => {
     try { return localStorage.getItem("f1replay_lap_tab") === "compare" ? "compare" : "sectors"; } catch { return "sectors"; }
   });
@@ -186,6 +197,42 @@ export default function SessionLapAnalysis({
 
   // The comparison always uses each driver's best lap so far.
   const bestLap = (abbr: string): ParsedLap | undefined => lapOf(abbr, bests.personalLap.get(abbr)?.lapNumber);
+
+  // Lap traces for the two best laps (desktop, Compare tab).
+  const comparing = desktop && tab === "compare" && active.length === 2;
+  const bestA = comparing ? bests.personalLap.get(active[0]) : undefined;
+  const bestB = comparing ? bests.personalLap.get(active[1]) : undefined;
+  const traceKey = bestA && bestB ? `${active[0]}:${bestA.lapNumber}|${active[1]}:${bestB.lapNumber}` : null;
+  const [traces, setTraces] = useState<{ key: string; comparison: LapComparison | null } | null>(null);
+  const [dominanceOn, setDominanceOn] = useState(false);
+
+  useEffect(() => {
+    if (!traceKey || !bestA || !bestB) { setTraces(null); return; }
+    let cancelled = false;
+    setTraces((prev) => (prev?.key === traceKey ? prev : null));
+    Promise.all([
+      fetchLapTelemetry(year, round, sessionType, active[0], bestA.lapNumber),
+      fetchLapTelemetry(year, round, sessionType, active[1], bestB.lapNumber),
+    ])
+      .then(([a, b]) => { if (!cancelled) setTraces({ key: traceKey, comparison: compareLaps(a, b, bestA.secs, bestB.secs) }); })
+      .catch(() => { if (!cancelled) setTraces({ key: traceKey, comparison: null }); });
+    return () => { cancelled = true; };
+  }, [traceKey, year, round, sessionType]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const comparison = traces?.key === traceKey ? traces?.comparison ?? null : null;
+  const colorA = active[0] ? getDriverColor(active[0]) : "";
+  const colorB = active[1] ? getDriverColor(active[1]) : "";
+
+  // Track dominance on the main map, while it's switched on here.
+  useEffect(() => {
+    if (!onDominanceChange) return;
+    onDominanceChange(
+      dominanceOn && comparing && comparison
+        ? dominanceOverlay(comparison, active[0], active[1], colorA, colorB)
+        : null,
+    );
+  }, [dominanceOn, comparing, comparison, colorA, colorB]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => onDominanceChange?.(null), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const toggleLap = (abbr: string, lapNumber: number) =>
     setSelectedLap((prev) => {
@@ -420,6 +467,30 @@ export default function SessionLapAnalysis({
                     colorB={getDriverColor(active[1])}
                   />
                 </div>
+                {desktop && (
+                  <div className="mt-2 border-t border-f1-border pt-2 px-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-[9px] font-bold text-f1-muted uppercase tracking-wider">Best laps compared</span>
+                      <button
+                        onClick={() => setDominanceOn(!dominanceOn)}
+                        disabled={!comparison}
+                        className={`px-2 py-0.5 rounded text-[9px] font-bold transition-colors disabled:opacity-40 ${
+                          dominanceOn ? "bg-f1-red text-white" : "bg-f1-dark border border-f1-border text-f1-muted hover:text-white"
+                        }`}
+                        title="Colour the track map by who was faster in each part of the lap"
+                      >
+                        Track dominance
+                      </button>
+                    </div>
+                    {!traceKey ? null : traces?.key !== traceKey ? (
+                      <p className="py-3 text-center text-[10px] text-f1-muted">Loading telemetry…</p>
+                    ) : comparison ? (
+                      <LapTraceChart comparison={comparison} nameA={active[0]} nameB={active[1]} colorA={colorA} colorB={colorB} />
+                    ) : (
+                      <p className="py-3 text-center text-[10px] text-f1-muted">Telemetry not available for these laps</p>
+                    )}
+                  </div>
+                )}
                 <div className="mt-2 border-t border-f1-border pt-2 px-3 text-[9px] font-bold text-f1-muted uppercase tracking-wider">All laps</div>
                 {rangeButtons}
                 {lapList}

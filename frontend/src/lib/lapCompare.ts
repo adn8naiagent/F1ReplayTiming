@@ -2,6 +2,7 @@
 // along the lap between two laps, and track dominance.
 
 import { apiFetch } from "./api";
+import type { SegmentOverlay } from "./trackRenderer";
 
 export interface LapTelemetry {
   driver: string;
@@ -92,42 +93,73 @@ export interface LapComparison {
   chunksWonB: number;
 }
 
-const GRID_M = 10;
+const GRID_POINTS = 500;
 export const DOMINANCE_CHUNKS = 25;
 
-/** Both laps on a common distance grid, with the running gap and dominance. */
+/** Each sample's position as a fraction of the lap's measured length. */
+function fractions(tel: LapTelemetry): number[] {
+  const total = tel.distance[tel.distance.length - 1] || 1;
+  return tel.distance.map((d) => d / total);
+}
+
+/**
+ * Both laps on a common grid, with the running gap and dominance. Laps are
+ * matched by fraction of the lap rather than metres: the measured lap length
+ * differs by a few tens of metres between cars, which would otherwise build
+ * into a gap that doesn't match the lap times.
+ */
 export function compareLaps(
   a: LapTelemetry, b: LapTelemetry, lapSecsA: number | null, lapSecsB: number | null,
 ): LapComparison {
   const tA = elapsedTimes(a, lapSecsA);
   const tB = elapsedTimes(b, lapSecsB);
-  const length = Math.min(a.distance[a.distance.length - 1], b.distance[b.distance.length - 1]);
+  const fA = fractions(a);
+  const fB = fractions(b);
+  const length = a.distance[a.distance.length - 1]; // for the distance axis
   const points: TracePoint[] = [];
-  for (let d = 0; d <= length; d += GRID_M) {
+  for (let i = 0; i <= GRID_POINTS; i++) {
+    const f = i / GRID_POINTS;
     points.push({
-      d,
-      speedA: interp(a.distance, a.speed, d),
-      speedB: interp(b.distance, b.speed, d),
-      throttleA: interp(a.distance, a.throttle, d),
-      throttleB: interp(b.distance, b.throttle, d),
-      brakeA: interp(a.distance, a.brake, d) > 50 ? 1 : 0,
-      brakeB: interp(b.distance, b.brake, d) > 50 ? 1 : 0,
-      gearA: Math.round(interp(a.distance, a.gear, d)),
-      gearB: Math.round(interp(b.distance, b.gear, d)),
-      delta: interp(a.distance, tA, d) - interp(b.distance, tB, d),
+      d: f * length,
+      speedA: interp(fA, a.speed, f),
+      speedB: interp(fB, b.speed, f),
+      throttleA: interp(fA, a.throttle, f),
+      throttleB: interp(fB, b.throttle, f),
+      brakeA: interp(fA, a.brake, f) > 50 ? 1 : 0,
+      brakeB: interp(fB, b.brake, f) > 50 ? 1 : 0,
+      gearA: Math.round(interp(fA, a.gear, f)),
+      gearB: Math.round(interp(fB, b.gear, f)),
+      delta: interp(fA, tA, f) - interp(fB, tB, f),
     });
   }
 
   const chunks: LapComparison["chunks"] = [];
   let wonA = 0;
   for (let i = 0; i < DOMINANCE_CHUNKS; i++) {
-    const d0 = (length * i) / DOMINANCE_CHUNKS;
-    const d1 = (length * (i + 1)) / DOMINANCE_CHUNKS;
-    const timeA = interp(a.distance, tA, d1) - interp(a.distance, tA, d0);
-    const timeB = interp(b.distance, tB, d1) - interp(b.distance, tB, d0);
+    const f0 = i / DOMINANCE_CHUNKS;
+    const f1 = (i + 1) / DOMINANCE_CHUNKS;
+    const timeA = interp(fA, tA, f1) - interp(fA, tA, f0);
+    const timeB = interp(fB, tB, f1) - interp(fB, tB, f0);
     const faster = timeA <= timeB ? "A" : "B";
     if (faster === "A") wonA++;
-    chunks.push({ from: i / DOMINANCE_CHUNKS, to: (i + 1) / DOMINANCE_CHUNKS, faster });
+    chunks.push({ from: f0, to: f1, faster });
   }
   return { points, chunks, chunksWonA: wonA, chunksWonB: DOMINANCE_CHUNKS - wonA };
+}
+
+/** Track dominance for the track map, with a legend of chunks won. */
+export interface DominanceOverlay extends SegmentOverlay {
+  legend: { abbr: string; color: string; count: number }[];
+}
+
+export function dominanceOverlay(
+  c: LapComparison, abbrA: string, abbrB: string, colorA: string, colorB: string,
+): DominanceOverlay {
+  return {
+    segments: c.chunks.map((ch) => ({ from: ch.from, to: ch.to, color: ch.faster === "A" ? colorA : colorB })),
+    legend: [
+      { abbr: abbrA, color: colorA, count: c.chunksWonA },
+      { abbr: abbrB, color: colorB, count: c.chunksWonB },
+    ],
+  };
 }
