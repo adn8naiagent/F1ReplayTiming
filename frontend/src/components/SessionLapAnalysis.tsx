@@ -50,13 +50,24 @@ interface Props {
   onClose?: () => void;
 }
 
-const SECOND_DRIVER_COLOR = "#06B6D4"; // cyan, when both drivers share a team colour
+const SECOND_DRIVER_COLOR = "#06B6D4"; // cyan, when both drivers' team colours are too alike
 const SECTORS = ["S1", "S2", "S3"] as const;
 
 interface ChartPoint {
   x: number; // minutes into the session
   y: number;
   lap: ParsedLap;
+}
+
+/** Rough distance between two #RRGGBB colours (0–441). */
+function colorDistance(a: string, b: string): number {
+  const rgb = (h: string) => {
+    const n = parseInt(h.replace("#", "").slice(0, 6), 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const [r1, g1, b1] = rgb(a);
+  const [r2, g2, b2] = rgb(b);
+  return Math.hypot(r1 - r2, g1 - g2, b1 - b2);
 }
 
 function fmt(secs: number | null): string {
@@ -102,7 +113,8 @@ export default function SessionLapAnalysis({
     const color = drivers.find((d) => d.abbr === abbr)?.color || "#888";
     if (active.length === 2 && abbr === active[1]) {
       const first = drivers.find((d) => d.abbr === active[0])?.color || "#888";
-      if (first.toLowerCase() === color.toLowerCase()) return SECOND_DRIVER_COLOR;
+      // Teammates, or colours too close to tell apart (e.g. red and orange)
+      if (colorDistance(first, color) < 150) return SECOND_DRIVER_COLOR;
     }
     return color;
   }
@@ -465,6 +477,7 @@ export default function SessionLapAnalysis({
                     b={bestLap(active[1])}
                     colorA={getDriverColor(active[0])}
                     colorB={getDriverColor(active[1])}
+                    onShowLaps={(abbr) => { setDriver(abbr); switchTab("sectors"); }}
                   />
                 </div>
                 {desktop && (
@@ -491,9 +504,6 @@ export default function SessionLapAnalysis({
                     )}
                   </div>
                 )}
-                <div className="mt-2 border-t border-f1-border pt-2 px-3 text-[9px] font-bold text-f1-muted uppercase tracking-wider">All laps</div>
-                {rangeButtons}
-                {lapList}
               </>
             )}
           </>
@@ -590,11 +600,13 @@ function LapCard({ lap, bests }: { lap: ParsedLap; bests: SessionBests }) {
 }
 
 /** Two drivers' best laps so far, side by side. */
-function ComparisonCard({ a, b, colorA, colorB }: {
+function ComparisonCard({ a, b, colorA, colorB, onShowLaps }: {
   a: ParsedLap | undefined;
   b: ParsedLap | undefined;
   colorA: string;
   colorB: string;
+  /** Open a driver's full lap list in the Sectors tab */
+  onShowLaps: (abbr: string) => void;
 }) {
   if (!a || !b) {
     return <p className="px-3 pb-2 text-[10px] text-f1-muted">Both drivers need a completed lap to compare.</p>;
@@ -608,14 +620,17 @@ function ComparisonCard({ a, b, colorA, colorB }: {
     <div className="mx-3 mb-2 rounded border border-f1-border bg-f1-dark px-2 py-1.5">
       <div className="grid grid-cols-[28px_1fr_1fr_56px] gap-x-2 text-[10px] tabular-nums">
         <span />
-        <span className="flex items-center gap-1 text-[9px] font-bold text-white">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorA }} />{a.driver}
-          <span className="font-normal text-f1-muted">{lapLabel(a)}</span>
-        </span>
-        <span className="flex items-center gap-1 text-[9px] font-bold text-white">
-          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorB }} />{b.driver}
-          <span className="font-normal text-f1-muted">{lapLabel(b)}</span>
-        </span>
+        {([[a, colorA], [b, colorB]] as const).map(([lap, color]) => (
+          <button
+            key={lap.driver}
+            onClick={() => onShowLaps(lap.driver)}
+            className="flex items-center gap-1 text-[9px] font-bold text-white hover:underline underline-offset-2 text-left"
+            title={`See all of ${lap.driver}'s laps`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />{lap.driver}
+            <span className="font-normal text-f1-muted">{lapLabel(lap)}</span>
+          </button>
+        ))}
         <span className="text-[9px] text-f1-muted text-right">DELTA</span>
         {rows.map((r) => {
           const d = r.va !== null && r.vb !== null ? r.va - r.vb : null;
