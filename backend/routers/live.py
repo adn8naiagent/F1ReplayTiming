@@ -33,6 +33,7 @@ class LiveSession:
         self._mode = "none"  # "replayer" or "signalr"
         self._msg_logged = False
         self._radio_tasks: set[asyncio.Task] = set()
+        self._year: int | None = None  # picks the team radio caption vocabulary
 
     async def start(
         self,
@@ -49,6 +50,7 @@ class LiveSession:
         """
         if self._started:
             return
+        self._year = year or None
 
         from services.live_state import LiveStateManager
         from services.storage import get_json
@@ -109,7 +111,7 @@ class LiveSession:
         # the first clip.
         from services import f1_account, team_radio
         if f1_account.ready():
-            asyncio.create_task(asyncio.to_thread(team_radio.warm_up))
+            asyncio.create_task(asyncio.to_thread(team_radio.warm_up, True))
 
     async def _run_replayer(self):
         """Run the test replayer, feeding messages into the state manager."""
@@ -119,6 +121,10 @@ class LiveSession:
             pass
         except Exception as e:
             logger.error(f"Replayer error: {e}")
+
+    def feed_error(self) -> str | None:
+        """Why the connection to F1 is failing, if it is."""
+        return self._signalr_client.last_error if self._signalr_client else None
 
     async def _run_signalr(self):
         """Run the real SignalR client, feeding messages into the state manager."""
@@ -153,7 +159,10 @@ class LiveSession:
         if team_radio.captions_enabled():
             audio = await asyncio.to_thread(team_radio.fetch_audio, clip["url"])
             if audio:
-                transcript = await asyncio.to_thread(team_radio.transcribe, audio, clip.get("first_name"))
+                context = self._state_manager.radio_context(clip["racing_number"]) if self._state_manager else {}
+                transcript = await asyncio.to_thread(
+                    team_radio.caption, audio, clip.get("first_name"), self._year, context, True,
+                )
         if self._state_manager is not None:
             self._state_manager.set_radio_caption(clip["id"], transcript)
 
@@ -367,8 +376,15 @@ async def live_websocket(
 
         command_task = asyncio.create_task(handle_commands())
 
+        sent_error: str | None = None
         try:
             while True:
+                # Tell the page when F1 refuses the connection, and when it recovers
+                error = session.feed_error()
+                if error != sent_error:
+                    await websocket.send_json({"type": "feed_error", "message": error})
+                    sent_error = error
+
                 frame = session.get_frame()
                 if frame:
                     await websocket.send_json({"type": "frame", **frame})

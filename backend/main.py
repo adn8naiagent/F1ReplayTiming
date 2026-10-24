@@ -84,6 +84,7 @@ PUBLIC_MODE_BLOCKED = [
     ("POST", re.compile(_SESSION + r"/sync-photo$")),
     (None, re.compile(r"/api/storage(/.*)?$")),
     (None, re.compile(r"/api/f1tv(/.*)?$")),
+    (None, re.compile(r"/api/captions(/.*)?$")),
 ]
 
 

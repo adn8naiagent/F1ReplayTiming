@@ -5,6 +5,7 @@ import { ReplaySettings, DEFAULTS as DEFAULT_SETTINGS } from "@/hooks/useSetting
 import { WeatherData } from "@/hooks/useReplaySocket";
 import { useAppConfig } from "@/lib/config";
 import F1TVAccount from "./F1TVAccount";
+import CaptionSettings from "./CaptionSettings";
 
 interface Props {
   eventName: string;
@@ -365,8 +366,11 @@ export default function SessionBanner({
                       The radio messages F1 picks for the broadcast, shown over the track map with a caption. In replays, audio plays at 1x speed only.
                     </p>
                     <p className="px-2 sm:px-6 pt-2 text-xs text-f1-muted leading-relaxed">
-                      Captions are made locally using Whisper. Accuracy varies depending on quality and clarity.
+                      {appConfig?.f1tv
+                        ? "Captions are made locally using Whisper, and can be improved by an AI model (below). Accuracy varies depending on quality and clarity."
+                        : "Captions are made locally using Whisper. Accuracy varies depending on quality and clarity."}
                     </p>
+                    {appConfig?.f1tv && <CaptionSettings />}
                   </>)}
 
                   {settingsTab === "Other" && (<>

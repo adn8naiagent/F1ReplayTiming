@@ -86,6 +86,7 @@ class _DriverState:
         "tyre_history",
         "pit_stops",
         "in_pit",
+        "out_lap",
         "has_fastest_lap",
         "flag",
         "retired",
@@ -109,9 +110,11 @@ class _DriverState:
         "rpm",
         "drs",
         "first_name",
+        "last_name",
         "_sector_best_personal",
         "_sector_best_overall",
         "_stint_count",
+        "_laps_completed",
         "_last_stint_idx",
         "_s3_complete_time",
         "_sector_times",
@@ -132,6 +135,7 @@ class _DriverState:
         self._last_stint_idx: int = -1
         self.pit_stops: int = 0
         self.in_pit: bool = False
+        self.out_lap: bool = False  # from pit exit until the lap is completed
         self.has_fastest_lap: bool = False
         self.flag: str | None = None  # "investigation" | "penalty" | None
         self.retired: bool = False
@@ -156,6 +160,7 @@ class _DriverState:
         self.rpm: float | None = None
         self.drs: int | None = None
         self.first_name: str | None = None  # for team radio captions
+        self.last_name: str | None = None
         # Internal tracking for sector colours
         self._sector_best_personal: dict[int, float] = {}  # sector_num -> best time
         self._sector_best_overall: dict[int, bool] = {}  # sector_num -> ever overall fastest
@@ -163,6 +168,7 @@ class _DriverState:
         self._sector_times: dict[int, float] = {}  # sector_num -> time in seconds (for colour recomputation)
         self._mini: dict[tuple[int, int], int] = {}  # (sector, segment) -> mini-sector status
         self._stint_count: int = 0
+        self._laps_completed: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -177,6 +183,7 @@ class _DriverState:
             "tyre_history": list(self.tyre_history[-2:]) if self.tyre_history else [],
             "pit_stops": self.pit_stops,
             "in_pit": self.in_pit,
+            "out_lap": self.out_lap,
             "has_fastest_lap": self.has_fastest_lap,
             "flag": self.flag,
             "retired": self.retired,
@@ -292,6 +299,7 @@ class LiveStateManager:
         # Team radio (F1 TV sign-in only). Clips go out in frames once
         # captioned; "state" is "new", "captioning", "ready" or "skipped".
         self._session_path: str | None = None  # e.g. "2026/..._Grand_Prix/..._Race/"
+        self._session_label: str | None = None  # e.g. "United States Grand Prix, Qualifying"
         self._radio: dict[str, dict[str, Any]] = {}  # clip path -> clip
 
     # ------------------------------------------------------------------
@@ -359,6 +367,8 @@ class LiveStateManager:
                 drv.team = info["TeamName"]
             if "FirstName" in info:
                 drv.first_name = info["FirstName"]
+            if "LastName" in info:
+                drv.last_name = str(info["LastName"]).title()
             if "TeamColour" in info:
                 colour = info["TeamColour"]
                 if not colour.startswith("#"):
@@ -404,8 +414,30 @@ class LiveStateManager:
                 if blt_val:
                     drv.best_lap_time = blt_val
 
+            # Out-lap: set on pit exit, cleared once the lap is completed.
+            # A lap completed in the pit lane (crossing the line on the way
+            # out) doesn't count, so check laps before applying pit updates.
+            if "NumberOfLaps" in updates:
+                try:
+                    laps_done = int(updates["NumberOfLaps"])
+                    if (drv._laps_completed is not None
+                            and laps_done > drv._laps_completed
+                            and not drv.in_pit):
+                        drv.out_lap = False
+                    drv._laps_completed = laps_done
+                except (ValueError, TypeError):
+                    pass
+
             if "InPit" in updates:
-                drv.in_pit = bool(updates["InPit"])
+                in_pit = bool(updates["InPit"])
+                if drv.in_pit and not in_pit:
+                    drv.out_lap = True
+                elif in_pit:
+                    drv.out_lap = False
+                drv.in_pit = in_pit
+
+            if updates.get("PitOut"):
+                drv.out_lap = True
 
             if "Retired" in updates:
                 if updates["Retired"]:
@@ -725,6 +757,10 @@ class LiveStateManager:
                 if channel not in channels:
                     continue
                 value = _sanitize_value(channels[channel])
+                # Throttle and brake above 100 are "no data" (104 while the
+                # car is in the garage), not a reading
+                if name in ("throttle", "brake") and isinstance(value, (int, float)) and value > 100:
+                    value = 0
                 if name == "brake":
                     drv.brake = bool(value)
                 elif name in ("gear", "drs"):
@@ -909,6 +945,26 @@ class LiveStateManager:
         path = data.get("Path")
         if isinstance(path, str) and path:
             self._session_path = path
+        meeting = (data.get("Meeting") or {}).get("Name") if isinstance(data.get("Meeting"), dict) else None
+        name = data.get("Name")
+        if meeting or name:
+            self._session_label = ", ".join(str(x) for x in (meeting, name) if x)
+
+    def radio_context(self, racing_number: str) -> dict[str, Any]:
+        """Who's speaking, the other drivers and the session, for the AI
+        caption step (services/caption_ai)."""
+        from services.team_radio import _driver_label
+
+        def label(d: _DriverState) -> str:
+            name = " ".join(x for x in (d.first_name, d.last_name) if x)
+            return _driver_label({"name": name, "abbr": d.abbr, "team": d.team})
+
+        speaker = self._drivers.get(racing_number)
+        return {
+            "speaker": label(speaker) if speaker and speaker.abbr else None,
+            "drivers": [label(d) for d in self._drivers.values() if d.abbr],
+            "session": self._session_label,
+        }
 
     def _handle_team_radio(self, data: dict, _ts: float) -> None:
         from services import team_radio
@@ -1028,6 +1084,9 @@ class LiveStateManager:
             # session, which we must not treat as "session ended".
             if new_status == "Started":
                 self._session_was_started = True
+                # Pit exits before the start (e.g. laps to the grid) aren't out-laps
+                for drv in self._drivers.values():
+                    drv.out_lap = False
             self._session_status = new_status
 
     # --- SessionData --------------------------------------------------
@@ -1104,6 +1163,11 @@ class LiveStateManager:
             d = drv.to_dict()
             if show_mini:
                 d["mini_sectors"] = self._mini_states(drv)
+            # Cars parked in their pit box snap onto the main straight and pile
+            # up there, so hide them from the track map (the frontend skips
+            # x=0, y=0). Speed comes with telemetry, so this needs F1 TV.
+            if drv.in_pit and drv.speed is not None and drv.speed < 1:
+                d["x"] = d["y"] = 0.0
             # Sanitize all values
             for key in list(d.keys()):
                 d[key] = _sanitize_value(d[key])

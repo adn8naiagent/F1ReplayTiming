@@ -10,6 +10,7 @@ import { useAppConfig } from "@/lib/config";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
 import TeamRadio from "@/components/TeamRadio";
+import TelemetryChart from "@/components/TelemetryChart";
 import Leaderboard from "@/components/Leaderboard";
 import { miniMarkersWidth } from "@/lib/miniSectors";
 import PiPWindow from "@/components/PiPWindow";
@@ -84,6 +85,7 @@ function LiveTiming() {
   const devMode = searchParams.get("dev") === "1";
 
   const [selectedDrivers, setSelectedDrivers] = useState<string[]>([]);
+  const [showTelemetry, setShowTelemetry] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [mobileTrackOpen, setMobileTrackOpen] = useState(true);
@@ -258,9 +260,20 @@ function LiveTiming() {
   const drivers = isQualifying ? driversRaw.filter((d) => !d.retired) : driversRaw;
   const trackStatus = live.frame?.status || "green";
   const weather = live.frame?.weather;
+  const trackDrivers = drivers.filter((d) => !d.retired && !d.no_timing && (d.x !== 0 || d.y !== 0)).map((d) => ({
+    abbr: d.abbr,
+    x: d.x,
+    y: d.y,
+    color: d.color,
+    position: d.position,
+  }));
+  // Live telemetry and positions arrive with an F1 TV sign-in
+  const hasTelemetry = drivers.some((d) => d.speed != null);
 
   // Session hasn't started yet (connected but no driver data)
-  const waitingForSession = live.ready && drivers.length === 0;
+  const waitingForSession = live.ready && drivers.length === 0 && !live.feedError;
+  // The server can't get data from F1 (refused or unreachable); it keeps retrying
+  const feedRefused = live.ready && !!live.feedError;
 
   // Mini-sectors (qualifying and practice, desktop), straight from the feed
   const miniCounts = live.frame?.mini_sector_counts;
@@ -344,6 +357,24 @@ function LiveTiming() {
                     </p>
                   </div>
                 </div>
+              )}
+
+              {/* F1 refusing the connection: replaces "waiting" before any data,
+                  a banner once data has arrived */}
+              {feedRefused && (
+                drivers.length === 0 ? (
+                  <div className="absolute inset-0 z-30 flex items-center justify-center p-4">
+                    <div className="bg-f1-card/95 border border-f1-border rounded-lg px-8 py-6 backdrop-blur-sm text-center max-w-md">
+                      <p className="text-white text-lg font-bold mb-2">Can&apos;t get live timing from F1</p>
+                      <p className="text-f1-muted text-sm mb-3">{live.feedError}</p>
+                      <p className="text-f1-muted text-xs">Retrying automatically.</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="absolute top-12 left-1/2 -translate-x-1/2 z-30 max-w-md w-[calc(100%-1.5rem)] bg-f1-card/95 border border-red-500/40 rounded-lg px-3 py-2 backdrop-blur-sm text-center">
+                    <p className="text-xs text-white"><span className="font-bold">Live timing interrupted.</span> {live.feedError} Retrying.</p>
+                  </div>
+                )
               )}
 
               {/* Flag badge */}
@@ -481,7 +512,7 @@ function LiveTiming() {
               />
 
               {/* Live positions unavailable overlay (positions arrive with an F1 TV sign-in) */}
-              {!drivers.some((d) => d.x !== 0 || d.y !== 0) && (
+              {!hasTelemetry && !drivers.some((d) => d.x !== 0 || d.y !== 0) && (
               <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
                 <div className="bg-f1-card/90 border border-f1-border rounded-lg px-4 py-2.5 backdrop-blur-sm text-center max-w-sm">
                   <p className="text-f1-muted text-xs leading-relaxed">
@@ -492,18 +523,42 @@ function LiveTiming() {
               </div>
               )}
 
+              {/* Telemetry overlay - desktop only, bottom-left (telemetry arrives with an F1 TV sign-in) */}
+              {hasTelemetry && !isMobile && showTelemetry && (
+                <div className="absolute bottom-2 left-3 z-10 flex flex-col gap-1">
+                  <button
+                    onClick={() => setShowTelemetry(false)}
+                    className="self-start px-2 py-0.5 bg-f1-card/90 border border-f1-border rounded text-[9px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm mb-0.5"
+                  >
+                    Hide Telemetry
+                  </button>
+                  {selectedDrivers.length > 0 ? (
+                    selectedDrivers.map((abbr) => {
+                      const drv = drivers.find((d) => d.abbr === abbr) || null;
+                      return <TelemetryChart key={abbr} visible driver={drv} year={year} isQualifying={isQualifying} useImperial={settings.useImperial} />;
+                    })
+                  ) : (
+                    <TelemetryChart visible driver={null} year={year} useImperial={settings.useImperial} />
+                  )}
+                </div>
+              )}
+
+              {/* Telemetry toggle - desktop only, bottom-left */}
+              {hasTelemetry && !isMobile && !showTelemetry && (
+                <button
+                  onClick={() => setShowTelemetry(true)}
+                  className="absolute bottom-2 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
+                >
+                  Show Telemetry
+                </button>
+              )}
+
               {trackPoints.length > 0 ? (
                 <TrackCanvas
                   trackPoints={trackPoints}
                   rotation={rotation}
                   trackStatus={trackStatus}
-                  drivers={drivers.filter((d) => !d.retired && !d.no_timing && (d.x !== 0 || d.y !== 0)).map((d) => ({
-                    abbr: d.abbr,
-                    x: d.x,
-                    y: d.y,
-                    color: d.color,
-                    position: d.position,
-                  }))}
+                  drivers={trackDrivers}
                   highlightedDrivers={selectedDrivers}
                   playbackSpeed={1}
                   showDriverNames={settings.showDriverNames}
@@ -885,7 +940,7 @@ function LiveTiming() {
                     trackPoints={trackPoints}
                     rotation={rotation}
                     trackStatus={trackStatus}
-                    drivers={[]}
+                    drivers={trackDrivers}
                     highlightedDrivers={selectedDrivers}
                     showDriverNames={settings.showDriverNames}
                     corners={settings.showCorners ? trackData?.corners : null}

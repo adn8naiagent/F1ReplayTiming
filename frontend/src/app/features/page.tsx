@@ -48,7 +48,7 @@ const AVAILABILITY: [string, string, string, string][] = [
   ["Lap Analysis", "R", "R", "R"],
   ["Track dominance", "-", "R", "R"],
   ["Lap notifications", "-", "R", "-"],
-  ["Telemetry", "R", "R", "R"],
+  ["Telemetry", "RL", "RL", "RL"],
   ["Track elevation, marshal sector flags", "R", "R", "R"],
   ["Picture-in-picture", "RL", "RL", "RL"],
   ["Playback controls, broadcast sync", "R", "R", "R"],
@@ -348,7 +348,11 @@ export default function FeaturesPage() {
               <a href="#sectors-map" className="text-f1-red hover:underline font-semibold">Sectors on the Track Map</a>.
             </p>
             <p className="text-f1-text leading-relaxed">
-              Replays of sessions processed before mini-sectors were added show the three sectors until they&apos;re reprocessed.
+              While a driver is on an out-lap, from pit exit until the lap is completed, the row shows{" "}
+            <span className="font-bold text-white">OUT</span> instead.
+          </p>
+          <p className="text-f1-text leading-relaxed">
+            Replays of sessions processed before mini-sectors were added show the three sectors until they&apos;re reprocessed.
             </p>
           </section>
 
@@ -589,7 +593,8 @@ export default function FeaturesPage() {
             <h2 className="text-lg font-bold text-white mb-1">Telemetry</h2>
             <SessionChips practice qualifying race />
             <p className="text-f1-text leading-relaxed mb-3">
-              Click any driver to open a detailed telemetry view showing real-time data for their current lap:
+              Click any driver to open a detailed telemetry view showing real-time data for their current lap.
+            In live timing, telemetry needs an F1 TV sign-in. Desktop only in live timing.
             </p>
             <div className="space-y-3">
               <div className="flex gap-3">
@@ -673,7 +678,9 @@ export default function FeaturesPage() {
             </p>
             <p className="text-f1-text leading-relaxed">
               Captions are made locally using Whisper. Accuracy varies depending on quality and clarity.
-              Turn team radio or its audio off in Settings &gt; Team Radio.
+              Turn team radio or its audio off in Settings &gt; Team Radio. The same tab chooses the caption
+              models for replays and live timing and, with an OpenRouter key, can have an AI model listen to
+              each clip and correct its caption.
             </p>
           </section>
           </>
@@ -693,7 +700,7 @@ export default function FeaturesPage() {
             </p>
             <p className="text-f1-text leading-relaxed mb-3">
               With an F1 TV sign-in, the track map shows every car and team radio plays as it&apos;s
-              broadcast. Lap Analysis, telemetry and the other replay-only features (see{" "}
+              broadcast, and selected drivers show telemetry. Lap Analysis and the other replay-only features (see{" "}
               <a href="#availability" className="text-f1-red hover:underline font-semibold">Feature Availability</a>)
               are available once the session is processed, usually 1&ndash;2 hours after the chequered flag.
             </p>
@@ -804,7 +811,7 @@ export default function FeaturesPage() {
               </table>
             </div>
             <p className="mt-3 text-xs text-f1-muted">
-              Live car positions and team radio need an F1 TV sign-in. Mini-sectors are desktop only.
+              Live car positions, telemetry and team radio need an F1 TV sign-in. Mini-sectors are desktop only.
             </p>
           </section>
           </>

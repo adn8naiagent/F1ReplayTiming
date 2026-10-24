@@ -5,7 +5,7 @@ import { ReplayDriver } from "@/hooks/useReplaySocket";
 import { ReplaySettings } from "@/hooks/useSettings";
 import { TYRE_COLORS, TYRE_SHORT, TEAM_ABBR } from "@/lib/constants";
 import { lapColorClass, SectorMarkers } from "@/lib/lapTiming";
-import { MiniSectorMarkers } from "@/lib/miniSectors";
+import { MiniSectorMarkers, miniMarkersWidth } from "@/lib/miniSectors";
 
 export interface LapEntry {
   driver: string;
@@ -343,9 +343,18 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
                 );
               })()}
 
-              {/* Live sector indicators - fixed width (qualifying and practice) */}
+              {/* Live sector indicators - fixed width (qualifying and practice); OUT on an out-lap */}
               {!isRace && settings.showSectors && (
-                miniSectors ? (
+                drv.out_lap && !drv.in_pit ? (
+                  // Same width as the markers it replaces, so columns don't shift
+                  <span
+                    className={`${miniSectors ? "" : "w-7 "}flex-shrink-0 mx-1 text-center text-[9px] font-extrabold text-white/80`}
+                    style={miniSectors ? { width: miniMarkersWidth(miniSectors.counts) } : undefined}
+                    title="Out lap"
+                  >
+                    OUT
+                  </span>
+                ) : miniSectors ? (
                   <MiniSectorMarkers states={miniSectors.states.get(drv.abbr) ?? null} counts={miniSectors.counts} className="flex-shrink-0 mx-1" />
                 ) : (
                   <SectorMarkers sectors={drv.sectors} className="w-7 flex-shrink-0 mx-1" />

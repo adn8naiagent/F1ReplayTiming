@@ -8,6 +8,22 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Mini-sectors in live timing** — in live qualifying and practice, the leaderboard's sector markers fill in mini-sector by mini-sector, as in replays. Desktop only; uses the same Mini-sectors setting. Nothing to reprocess: they come straight from F1's live timing.
 
+- **Live telemetry** — when signed in to F1 TV, selected drivers show speed, throttle, brake, gear and RPM in live timing, as in replays. Cars parked in their pit box are left off the live map instead of piling up on the start/finish straight. ([@kungfoochef](https://github.com/kungfoochef))
+
+- **Out-lap indicator** — in practice and qualifying, the leaderboard shows OUT in place of the sector markers (or mini-sectors) while a driver is on an out-lap, from pit exit until the lap is completed. Works in live timing and in replays. Replays of sessions processed before this version need a full reprocess to show it; `--lap-extras-only` doesn't add it. ([@kungfoochef](https://github.com/kungfoochef))
+
+- **Team radio captions: separate live model, better prompt** — `TEAM_RADIO_LIVE_MODEL` sets a different Whisper model for live timing, so replays can use a larger, more accurate model (e.g. `large-v3-turbo`) while live captions stay fast enough for the broadcast delay. The caption prompt is shorter and follows the season (DRS up to 2025, boost and overtake mode from 2026), captions that are Whisper reading the prompt back on near-silent clips are dropped, and "tires" is spelled "tyres". ([@kungfoochef](https://github.com/kungfoochef))
+
+- **AI team radio captions and choosing caption models in the app** — with `OPENROUTER_API_KEY` set, turn on **Improve captions with AI** in Settings > Team Radio: each clip's audio and Whisper's caption go to an AI model (default `google/gemini-3.5-flash-lite`, a few cents a race weekend) with the session's drivers and F1 terms, which listens and fixes misheard words, such as "our course" → "our cause". If a request fails, Whisper's caption is kept. The same tab sets the Whisper models for replays and live timing, with each model's size and speed. Settings in `.env` (`TEAM_RADIO_MODEL`, `TEAM_RADIO_LIVE_MODEL`, `TEAM_RADIO_AI`, `TEAM_RADIO_AI_MODEL`) win and show as locked. Choices are saved on each server, so servers sharing storage can use different models.
+
+### Fixes
+
+- **Live timing stuck on "Waiting for session" when F1 refused the connection** — if F1 refuses the server's live timing connection (for example HTTP 403 from a blocked network such as a cloud host or VPN), the live page now says so instead of waiting, and keeps retrying. If it happens mid-session, a banner shows over the track map.
+
+- **No cars in the live Picture-in-Picture map** — the pop-out track map in live timing now shows the cars. ([@kungfoochef](https://github.com/kungfoochef))
+
+- **Parked cars showing 104% throttle with the brake on** — F1 sends 104 when it has no reading; live telemetry now shows these as zero. ([@kungfoochef](https://github.com/kungfoochef))
+
 ## 2.4.0
 
 ### Improvements
