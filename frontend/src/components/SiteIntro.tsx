@@ -54,7 +54,7 @@ export default function SiteIntro({ onDismiss }: { onDismiss: () => void }) {
         <X className="w-4 h-4" />
       </button>
       <p className="text-white font-bold text-base sm:text-lg pr-8 leading-snug">
-        Replay any F1 session from 2024 onwards with live timing, car positions on track and telemetry.
+        Replay F1 sessions from 2024 onwards with live timing, car positions on track and telemetry.
       </p>
       <ul className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3">
         {HIGHLIGHTS.map((h) => (
