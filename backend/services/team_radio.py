@@ -118,29 +118,33 @@ def fetch_audio(url: str) -> bytes | None:
 def _prompt(first_name: str | None, year: int | None) -> str:
     """A short context sentence for Whisper. Naming only this clip's driver
     helps with their name without making Whisper hear other drivers' names
-    that weren't said. Kept short: Whisper inserts words from a long word
-    list where they weren't said, and reads the list back on near-silent
-    clips. British spelling steers it to "tyres"."""
+    that weren't said. Kept short and free of everyday radio words ("copy",
+    "box"): Whisper inserts prompt words where they weren't said, and reads
+    the start of the prompt back on near-silent clips."""
     who = f" with {first_name}" if first_name else ""
     # DRS was replaced by overtake mode and boost in 2026
     era = "boost, overtake mode" if year is None or year >= 2026 else "DRS"
-    return f"Formula 1 team radio{who}. Copy. Box, box. Tyres, safety car, {era}."
+    return f"Formula 1 team radio{who}. Tyres, safety car, {era}."
 
 
 _WORD_RE = re.compile(r"[a-z0-9']+")
+_TIRE_RE = re.compile(r"\b[Tt](?:ire|IRE)[sS]?\b")
 
 
 def _is_prompt_echo(text: str, prompt: str) -> bool:
     """True when the caption is the prompt read back rather than speech.
 
-    Real radio uses the prompt's words too ("Box, box, safety car"), so
-    matching words isn't enough. A read-back repeats the prompt in order:
-    look for runs of 4+ consecutive prompt words making up most of the text.
+    Real radio uses the prompt's words too ("Safety car, box"), so matching
+    words isn't enough. A read-back repeats the prompt in order: the whole
+    caption is a piece of the prompt, or runs of 4+ consecutive prompt words
+    make up most of it.
     """
     if "team radio" in text.lower():
         return True
     words = _WORD_RE.findall(text.lower())
     prompt_words = _WORD_RE.findall(prompt.lower())
+    if len(words) >= 2 and f" {' '.join(words)} " in f" {' '.join(prompt_words)} ":
+        return True
     covered = [False] * len(words)
     for i in range(len(words)):
         for j in range(len(prompt_words)):
@@ -176,6 +180,8 @@ def transcribe(
         return None
     if _is_prompt_echo(text, prompt):
         return None
+    # F1 spelling; the multilingual models write "tires" whatever the prompt says
+    text = _TIRE_RE.sub(lambda m: m.group(0).replace("ire", "yre").replace("IRE", "YRE"), text)
     return text or None
 
 
