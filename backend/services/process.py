@@ -26,6 +26,7 @@ from services.f1_data import (
     _get_driver_positions_by_time_sync,
     _get_driver_telemetry_sync,
     _get_team_radio_sync,
+    _get_minisectors_sync,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,6 +156,7 @@ def _process_session_sync(
     status("Processing track data...")
 
     # Track data
+    track = None
     try:
         track = _get_track_data_sync(year, round_num, session_type)
         storage.put_json(f"{base}/track.json", track)
@@ -187,6 +189,13 @@ def _process_session_sync(
         logger.info(f"[{prefix}] Uploaded {len(frames)} replay frames")
         status("Writing replay files...")
         replay_chunks.write_chunks(year, round_num, session_type, frames)
+        try:
+            ms = _get_minisectors_sync(year, round_num, session_type, frames, track)
+            if ms:
+                storage.put_json(f"{base}/minisectors.json", ms)
+                logger.info(f"[{prefix}] Saved mini-sectors {ms['counts']}")
+        except Exception as e:
+            logger.warning(f"[{prefix}] No mini-sectors: {e}")
         del frames
     except Exception as e:
         logger.warning(f"[{prefix}] No replay data: {e}")

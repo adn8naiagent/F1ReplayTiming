@@ -224,12 +224,13 @@ export default function FeaturesPage() {
             <h2 className="text-lg font-bold text-white">Lap Analysis</h2>
             <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-f1-red/20 text-f1-red leading-none">Beta</span>
           </div>
-          <p className="text-xs font-bold text-f1-red uppercase tracking-wider mb-3">Race replay only</p>
+          <p className="text-xs font-bold text-f1-red uppercase tracking-wider mb-3">All replays</p>
           <p className="text-f1-text leading-relaxed mb-3">
-            A dedicated panel for analysing driver pace across the race. On desktop, open it via the
+            A dedicated panel for analysing driver pace. On desktop, open it via the
             &quot;Laps&quot; button on the track map &mdash; the panel slides out to the left. On mobile,
             it appears as a collapsible section.
           </p>
+          <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mb-2">Races</p>
           <p className="text-f1-text leading-relaxed mb-3">
             Select up to two drivers using the dropdown menus at the top of the panel to compare their
             lap times side by side.
@@ -254,6 +255,45 @@ export default function FeaturesPage() {
               <span className="w-full sm:w-auto text-sm text-f1-text">Full lap-by-lap breakdown showing lap time, tyre compound, and pit stop indicators for each selected driver.</span>
             </div>
           </div>
+          <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mt-5 mb-2">Qualifying and practice</p>
+          <p className="text-f1-text leading-relaxed mb-3">
+            Two tabs. Everything counts only what has happened by the current replay time, so bests
+            and colours change as the session plays.
+          </p>
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+              <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Sectors</span>
+              <span className="flex items-center gap-1.5 flex-shrink-0 text-[10px] tabular-nums">
+                <span className="text-purple-400">28.412</span>
+                <span className="text-green-400">35.106</span>
+                <span className="text-white">27.950</span>
+              </span>
+              <span className="w-full sm:w-auto text-sm text-f1-text">The session&apos;s best sectors and theoretical best lap, each driver&apos;s ideal lap (best three sectors added up), and one driver&apos;s laps with sector times &mdash; purple for the session best, green for a personal best. Qualifying can be filtered by Q1, Q2 and Q3; practice adds a chart of flying laps. Out and in laps are marked, and laps deleted by the stewards are struck through, with the reason on hover.</span>
+            </div>
+            <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
+              <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Compare</span>
+              <span className="flex items-center gap-1.5 flex-shrink-0 text-[10px] tabular-nums">
+                <span className="text-green-400">-0.148</span>
+              </span>
+              <span className="w-full sm:w-auto text-sm text-f1-text">Two drivers&apos; best laps side by side, sector by sector. On desktop, traces of both laps along the track &mdash; gap, speed, throttle, brake and gear, with corner numbers &mdash; and Track dominance, which colours the track map by who was faster through each part of the lap.</span>
+            </div>
+          </div>
+        </section>
+
+        {/* Mini-sectors */}
+        <section className="bg-f1-card border border-f1-border rounded-xl p-6">
+          <h2 className="text-lg font-bold text-white mb-1">Mini-sectors</h2>
+          <p className="text-xs font-bold text-f1-red uppercase tracking-wider mb-3">Qualifying and practice, desktop</p>
+          <p className="text-f1-text leading-relaxed mb-3">
+            F1 times each sector in smaller pieces. With sectors shown, each driver&apos;s row on the
+            leaderboard fills in mini-sector by mini-sector as they go round &mdash; purple for the
+            session best, green for a personal best, yellow otherwise &mdash; and the focused driver&apos;s
+            colours are drawn on the track map. Switch between Sectors and Mini-sectors next to the
+            Show/Hide Sectors button on the track map.
+          </p>
+          <p className="text-f1-text leading-relaxed">
+            Sessions processed before mini-sectors were added show normal sectors until they&apos;re reprocessed.
+          </p>
         </section>
 
         {/* Starting Grid */}

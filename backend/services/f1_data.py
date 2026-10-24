@@ -64,6 +64,10 @@ def release_sessions(year: int, round_num: int) -> None:
 # while building frames: key -> Timestamp
 _replay_start_dates: dict[str, pd.Timestamp] = {}
 
+# Session time -> replay time offset per session, set while building
+# laps.json: key -> seconds
+_replay_offsets: dict[str, float] = {}
+
 # Cache for session availability checks: key -> bool
 _availability_cache: dict[str, bool] = {}
 
@@ -576,8 +580,27 @@ def _get_lap_data_sync(year: int, round_num: int, session_type: str = "R") -> li
             "tyre_life": int(lap["TyreLife"]) if pd.notna(lap.get("TyreLife")) else None,
             "pit_in": bool(lap.get("PitInTime") is not pd.NaT and pd.notna(lap.get("PitInTime"))),
             "pit_out": bool(lap.get("PitOutTime") is not pd.NaT and pd.notna(lap.get("PitOutTime"))),
+            **_lap_extras(lap, replay_offset_secs),
         })
+    _replay_offsets[_cache_key(year, round_num, session_type)] = replay_offset_secs
     return result
+
+
+def _lap_extras(lap, replay_offset_secs: float) -> dict:
+    """Deleted laps (stewards' decisions) and when S1 and S2 ended, in replay
+    seconds. Optional fields: sessions processed before them don't have them."""
+    def end(col: str):
+        v = lap.get(col)
+        return round(v.total_seconds() - replay_offset_secs, 3) if pd.notna(v) else None
+
+    extras: dict = {"s1_end": end("Sector1SessionTime"), "s2_end": end("Sector2SessionTime")}
+    deleted = lap.get("Deleted")
+    if deleted is not None and pd.notna(deleted) and bool(deleted):
+        extras["deleted"] = True
+        reason = lap.get("DeletedReason")
+        if isinstance(reason, str) and reason:
+            extras["deleted_reason"] = reason
+    return extras
 
 
 async def get_lap_data(year: int, round_num: int, session_type: str = "R") -> list[dict]:
@@ -1913,6 +1936,89 @@ def _get_team_radio_sync(year: int, round_num: int, session_type: str, on_progre
         return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress)
     finally:
         team_radio.release_model()
+
+
+def _get_minisectors_sync(year: int, round_num: int, session_type: str, frames: list[dict], track: dict | None) -> dict | None:
+    """Mini-sectors for qualifying and practice. Run after laps.json and the
+    replay frames, whose time offset and car positions it uses."""
+    from services import minisectors
+
+    offset = _replay_offsets.get(_cache_key(year, round_num, session_type))
+    if session_type not in minisectors.SESSION_TYPES or offset is None or not track:
+        return None
+    session = _load_session(year, round_num, session_type)
+    pages = f1api.fetch_page(session.api_path, "timing_data")
+    return minisectors.build(pages, offset, frames, track.get("track_points") or [], _number_to_abbr(session))
+
+
+def rebuild_lap_extras_sync(year: int, round_num: int, session_type: str, write: bool = True) -> dict | None:
+    """Add deleted laps, sector end times and mini-sectors to a session
+    that's already stored, without reprocessing it. Loads laps and messages
+    only (no telemetry); the time offset comes from the stored laps.json and
+    car positions from the stored replay files."""
+    from services import minisectors, replay_chunks, storage
+
+    base = f"sessions/{year}/{round_num}/{session_type}"
+    stored = storage.get_json(f"{base}/laps.json")
+    track = storage.get_json(f"{base}/track.json")
+    manifest = replay_chunks.get_manifest(year, round_num, session_type)
+    if not stored or not track or not manifest:
+        logger.info(f"[extras] {base}: not processed (needs laps, track and replay files)")
+        return None
+
+    f1_account.require_ready()
+    session = fastf1.get_session(year, round_num, session_type)
+    session.load(laps=True, telemetry=False, weather=False, messages=True)
+
+    # Session time -> replay time, from the stored lap end times
+    rows = {(str(r["Driver"]), int(r["LapNumber"])): r for _, r in session.laps.iterrows()}
+    diffs = [
+        rows[(e["driver"], e["lap_number"])]["Time"].total_seconds() - e["time"]
+        for e in stored
+        if e.get("time") is not None and (e["driver"], e["lap_number"]) in rows
+        and pd.notna(rows[(e["driver"], e["lap_number"])].get("Time"))
+    ]
+    if not diffs:
+        logger.warning(f"[extras] {base}: couldn't match stored laps to F1's")
+        return None
+    offset = float(np.median(diffs))
+
+    deleted = 0
+    for e in stored:
+        row = rows.get((e["driver"], e["lap_number"]))
+        e.pop("deleted", None)
+        e.pop("deleted_reason", None)
+        if row is not None:
+            e.update(_lap_extras(row, offset))
+            deleted += bool(e.get("deleted"))
+
+    ms = None
+    if session_type in minisectors.SESSION_TYPES:
+        frames: list[dict] = []
+        for chunk in manifest.get("chunks", []):
+            part = storage.get_json(replay_chunks.chunk_path(year, round_num, session_type, manifest["version"], chunk["index"]))
+            frames.extend(part or [])
+        pages = f1api.fetch_page(session.api_path, "timing_data")
+        ms = minisectors.build(pages, offset, frames, track.get("track_points") or [], _number_to_abbr(session))
+
+    if write:
+        storage.put_json(f"{base}/laps.json", stored)
+        if ms:
+            storage.put_json(f"{base}/minisectors.json", ms)
+    logger.info(
+        f"[extras] {base}: offset {offset:.3f}s, {deleted} deleted laps, "
+        f"mini-sectors {ms['counts'] if ms else 'none'}{'' if write else ' (not written)'}"
+    )
+    return {"laps": stored, "minisectors": ms, "offset": offset, "deleted": deleted}
+
+
+def _number_to_abbr(session) -> dict[str, str]:
+    out = {}
+    for _, row in session.results.iterrows():
+        number, abbr = str(row.get("DriverNumber", "")), str(row.get("Abbreviation", ""))
+        if number and number != "nan" and abbr and abbr != "nan":
+            out[number] = abbr
+    return out
 
 
 async def get_driver_positions_by_time(

@@ -2,7 +2,23 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
-## 2.3.1 (unreleased)
+## 2.4.0 (unreleased)
+
+### Improvements
+
+- **Lap Analysis for qualifying and practice** — the Laps panel now opens in every session. In qualifying and practice it has two tabs, both following the replay time:
+  - **Sectors** — the session's best sectors and theoretical best lap, each driver's ideal lap, and a driver's laps with sector times coloured purple (session best) or green (personal best). Filter qualifying by Q1, Q2 and Q3; practice adds a chart of flying laps. Out and in laps are marked.
+  - **Compare** — two drivers' best laps side by side, sector by sector. On desktop, traces along the lap (gap, speed, throttle, brake, gear, with corner numbers) and **Track dominance**, which colours the track map by who was faster through each part of the lap.
+
+- **Mini-sectors** — in qualifying and practice, the leaderboard's sector markers fill in mini-sector by mini-sector, coloured as F1 shows them, and the focused driver's mini-sectors are drawn on the track map. On by default; switch between Sectors and Mini-sectors next to the Show/Hide Sectors button on the track map. Desktop only.
+
+- **Deleted laps** — laps deleted by the stewards are struck through in Lap Analysis, with the reason on hover, and don't count towards bests.
+
+- **Sector times in lap pop-ups** — the pop-up when a driver completes a lap shows each sector's time. Turn it off under Lap notifications in Settings.
+
+Mini-sectors, deleted laps and sector end times need sessions reprocessed. Without that, sessions work as before, with normal sectors. Add just this data to processed sessions with `python precompute.py <years> --lap-extras-only` (downloads timing data but not telemetry, so it needs an F1 TV sign-in and the same network as other downloads).
+
+## 2.3.1
 
 > **Action needed:** since 15 October 2026 F1 requires an F1 TV subscription (Access or higher) to download timing data. After updating, run `pip install -r requirements.txt` (or rebuild the Docker image), set `F1TV_SECRET_KEY` in `.env` (`openssl rand -hex 32`), then sign in from **F1 TV** on the home page — or set `F1_USERNAME` and `F1_PASSWORD` in `.env` instead of signing in through the app. Sessions you've already downloaded keep working without it. See the README's [F1 TV account](README.md#f1-tv-account) section.
 
