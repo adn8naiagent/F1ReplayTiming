@@ -16,6 +16,7 @@ from app_config import is_public_mode
 from services import storage
 from services import replay_chunks
 from services import availability
+from services import f1_account
 from services.f1_data import (
     release_sessions,
     _get_session_info_sync,
@@ -135,12 +136,17 @@ def _process_session_sync(
         if on_status:
             on_status(msg)
 
+    # Stop before writing anything if F1 would refuse the download.
+    f1_account.require_ready()
+
     status("Loading session data from F1 API...")
 
     # Session info
     try:
         info = _get_session_info_sync(year, round_num, session_type)
         storage.put_json(f"{base}/info.json", info)
+    except f1_account.F1AccountError:
+        raise
     except Exception as e:
         logger.error(f"[{prefix}] Failed to get session info: {e}")
         return False
@@ -358,6 +364,9 @@ async def ensure_session_data_ws(
         try:
             success = process_task.result()
             return success
+        except f1_account.F1AccountError as e:
+            await send_status(str(e))
+            return False
         except Exception as e:
             logger.error(f"On-demand processing failed for {key}: {e}")
             return False
@@ -446,7 +455,10 @@ def start_prepare(year: int, round_num: int, session_type: str) -> dict:
         if is_public_mode():
             return {"state": "unavailable", "message": "This session isn't available yet."}
         set_message("Session data not found — processing on demand...")
-        ok = process_session_sync(year, round_num, session_type, False, set_message)
+        try:
+            ok = process_session_sync(year, round_num, session_type, False, set_message)
+        except f1_account.F1AccountError as e:
+            return {"state": "error", "message": str(e)}
         if ok and replay_chunks.get_manifest(year, round_num, session_type):
             return {"state": "done", "message": ""}
         return {"state": "error", "message": "Failed to load session data. The session may not be available yet."}

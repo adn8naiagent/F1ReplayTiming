@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from "react";
 import { ReplaySettings, DEFAULTS as DEFAULT_SETTINGS } from "@/hooks/useSettings";
 import { WeatherData } from "@/hooks/useReplaySocket";
+import { useAppConfig } from "@/lib/config";
+import F1TVAccount from "./F1TVAccount";
 
 interface Props {
   eventName: string;
@@ -84,7 +86,8 @@ export default function SessionBanner({
   const isRace = sessionType === "R" || sessionType === "S";
   const isQualifying = sessionType === "Q" || sessionType === "SQ";
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Other" | "Report a bug">("Leaderboard");
+  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Other" | "F1 TV" | "Report a bug">("Leaderboard");
+  const appConfig = useAppConfig();
   const settingsRef = useRef<HTMLDivElement>(null);
 
   // Close settings on outside click
@@ -230,6 +233,7 @@ export default function SessionBanner({
                   <div className="flex flex-col border-r border-f1-border py-2 w-36 flex-shrink-0">
                     {([
                       "Leaderboard", "Weather", "Track Map", "Race Control", "Other",
+                      ...(appConfig?.f1tv ? (["F1 TV"] as const) : []),
                       ...(onReportProblem ? (["Report a bug"] as const) : []),
                     ] as const).map((tab) => (
                       <button
@@ -353,6 +357,7 @@ export default function SessionBanner({
                     ))}
                   </>)}
 
+                  {settingsTab === "F1 TV" && appConfig?.f1tv && <F1TVAccount />}
                   {settingsTab === "Report a bug" && onReportProblem && (
                     <div className="px-2 sm:px-6 py-2 space-y-3">
                       <p className="text-sm text-f1-muted leading-relaxed">
