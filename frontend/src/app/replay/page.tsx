@@ -349,7 +349,7 @@ export default function ReplayPage() {
   // Mini-sectors (qualifying and practice, desktop, setting on). Hooks, so
   // they stay above the early returns below.
   const miniWanted = ["Q", "SQ", "FP1", "FP2", "FP3"].includes(sessionType)
-    && settings.showSectors && settings.showMiniSectors && !isMobile;
+    && settings.showMiniSectors && !isMobile && (settings.showSectors || showSectorOverlay);
   const { data: miniData } = useApi<MiniSectorData>(
     miniWanted ? `/api/sessions/${year}/${round}/minisectors?type=${sessionType}` : null,
   );
@@ -469,7 +469,7 @@ export default function ReplayPage() {
     if (settings.showLastLapTime) w += 60; // last lap time column
     if (settings.showGapToLeader) w += 56 + (!isRace ? 8 : 0); // extra margin between lap time and gap in practice/qualifying
     if (hasSectors && settings.showSectors) {
-      w += miniSectors ? miniMarkersWidth(miniSectors.counts) + 8 : 36; // sector indicators (+ 8 margin)
+      w += miniSectors && settings.showSectors ? miniMarkersWidth(miniSectors.counts) + 8 : 36; // sector indicators (+ 8 margin)
     }
     if (isRace && settings.showPitStops) w += 24;
     if (isRace && settings.showTyreHistory) w += 36;
@@ -822,6 +822,24 @@ export default function ReplayPage() {
                       );
                     })
                   )}
+                  {showSectorOverlay && (
+                    <div
+                      className="flex items-center rounded border border-f1-border bg-f1-card overflow-hidden"
+                      title={settings.showMiniSectors && !miniData ? "Mini-sectors aren't available for this session yet" : undefined}
+                    >
+                      {([false, true] as const).map((mini) => (
+                        <button
+                          key={String(mini)}
+                          onClick={() => updateSetting("showMiniSectors", mini)}
+                          className={`px-2 py-1 text-[10px] font-bold transition-colors ${
+                            settings.showMiniSectors === mini ? "bg-purple-500/20 text-purple-300" : "text-f1-muted hover:text-white"
+                          }`}
+                        >
+                          {mini ? "Mini-sectors" : "Sectors"}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <button
                     onClick={() => setShowSectorOverlay(!showSectorOverlay)}
                     className={`px-2 py-1 border rounded text-[10px] font-bold transition-colors ${
@@ -1115,7 +1133,7 @@ export default function ReplayPage() {
                   lapData={lapData}
                   currentLap={replay.frame?.lap || 0}
                   mobileTeamAbbrHidden={mobileTeamAbbrHidden}
-                  miniSectors={miniSectors}
+                  miniSectors={settings.showSectors ? miniSectors : null}
                 />
               )}
             </div>

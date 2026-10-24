@@ -64,7 +64,7 @@ export const DEFAULTS: ReplaySettings = {
   showPitFreeAir: true,
   showLastLapTime: true,
   showSectors: true,
-  showMiniSectors: false,
+  showMiniSectors: true,
   showLapNotifications: true,
   showLapNotificationSectors: true,
   showTeamRadio: true,
