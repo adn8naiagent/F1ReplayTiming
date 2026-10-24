@@ -8,7 +8,6 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  ReferenceLine,
 } from "recharts";
 import { ReplayDriver, QualiPhaseInfo } from "@/hooks/useReplaySocket";
 import { LapEntry } from "@/components/Leaderboard";
@@ -61,16 +60,19 @@ function deltaClass(delta: number): string {
   return delta < -0.0005 ? "text-green-400" : delta > 0.0005 ? "text-red-400" : "text-f1-muted";
 }
 
+type Tab = "sectors" | "compare";
+
 export default function SessionLapAnalysis({
   laps, drivers, currentTime, currentLap, lapData, qualiPhases, isQualifying, onClose,
 }: Props) {
-  const [selectedDrivers, setSelectedDrivers] = useState<[string | null, string | null]>([null, null]);
+  const [tab, setTab] = useState<Tab>(() => {
+    try { return localStorage.getItem("f1replay_lap_tab") === "compare" ? "compare" : "sectors"; } catch { return "sectors"; }
+  });
+  const [driver, setDriver] = useState<string | null>(null);
+  const [compare, setCompare] = useState<[string | null, string | null]>([null, null]);
   const [range, setRange] = useState<string>("All");
   const [listDriver, setListDriver] = useState<string | null>(null);
   const [selectedLap, setSelectedLap] = useState<Record<string, number>>({});
-  const [summaryOpen, setSummaryOpen] = useState<boolean>(() => {
-    try { return localStorage.getItem("f1replay_lap_summary") !== "closed"; } catch { return true; }
-  });
   const [lapOrder, setLapOrder] = useState<"asc" | "desc">(() => {
     try { return (localStorage.getItem("f1replay_lap_order") as "asc" | "desc") || "asc"; } catch { return "asc"; }
   });
@@ -81,7 +83,9 @@ export default function SessionLapAnalysis({
   );
   const driverLaps = useMemo(() => parseLaps(laps), [laps]);
   const bests = useMemo(() => computeSessionBests(driverLaps, currentTime), [driverLaps, currentTime]);
-  const active = selectedDrivers.filter((d): d is string => d !== null);
+  const active = tab === "sectors"
+    ? (driver ? [driver] : [])
+    : compare.filter((d): d is string => d !== null);
 
   function getDriverColor(abbr: string): string {
     const color = drivers.find((d) => d.abbr === abbr)?.color || "#888";
@@ -91,6 +95,11 @@ export default function SessionLapAnalysis({
     }
     return color;
   }
+
+  const switchTab = (next: Tab) => {
+    setTab(next);
+    try { localStorage.setItem("f1replay_lap_tab", next); } catch {}
+  };
 
   // The lap list shows one driver at a time; follow the selection.
   const shownDriver = listDriver && active.includes(listDriver) ? listDriver : active[0] ?? null;
@@ -102,14 +111,14 @@ export default function SessionLapAnalysis({
       let changed = false;
       for (const [abbr, lapNum] of Object.entries(prev)) {
         const lap = driverLaps.get(abbr)?.find((l) => l.lapNumber === lapNum);
-        if (!lap || !isComplete(lap, currentTime) || !active.includes(abbr)) {
+        if (!lap || !isComplete(lap, currentTime)) {
           delete next[abbr];
           changed = true;
         }
       }
       return changed ? next : prev;
     });
-  }, [currentTime, driverLaps, selectedDrivers]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentTime, driverLaps]);
 
   // Esc clears the lap selection.
   useEffect(() => {
@@ -144,48 +153,39 @@ export default function SessionLapAnalysis({
     return out;
   }, [active.join(","), driverLaps, currentTime, activeRange, qualiPhases]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Chart: push laps as lines (one line per run), out/in laps as hollow
-  // markers along the top so slow laps don't squash the scale.
+  // Practice chart: lap time through the session. Out and in laps, and slow
+  // laps (cool-downs, traffic: over 107% of the session's best), are left out;
+  // a gap in the running breaks the line.
   const chart = useMemo(() => {
     const runs: { abbr: string; points: ChartPoint[] }[] = [];
-    const slow: { abbr: string; points: ChartPoint[] }[] = [];
+    const cutoff = bests.lap ? bests.lap.secs * 1.07 : Infinity;
     let min = Infinity;
     let max = -Infinity;
     for (const abbr of active) {
       let run: ChartPoint[] = [];
-      const slowPts: ChartPoint[] = [];
       for (const lap of visibleLaps.get(abbr) || []) {
-        if (lap.lapSecs === null) continue;
-        const pt = { x: lap.completedAt! / 60, y: lap.lapSecs, lap };
-        if (lap.kind === "push") {
-          run.push(pt);
-          min = Math.min(min, lap.lapSecs);
-          max = Math.max(max, lap.lapSecs);
-        } else {
+        const flying = lap.kind === "push" && lap.lapSecs !== null && lap.lapSecs <= cutoff;
+        if (!flying) {
           if (run.length) runs.push({ abbr, points: run });
           run = [];
-          slowPts.push(pt);
+          continue;
         }
+        run.push({ x: lap.completedAt! / 60, y: lap.lapSecs!, lap });
+        min = Math.min(min, lap.lapSecs!);
+        max = Math.max(max, lap.lapSecs!);
       }
       if (run.length) runs.push({ abbr, points: run });
-      slow.push({ abbr, points: slowPts });
     }
-    if (min === Infinity) {
-      for (const s of slow) for (const p of s.points) { min = Math.min(min, p.y); max = Math.max(max, p.y); }
-    }
-    const pad = (max - min) * 0.1 || 1;
+    const pad = (max - min) * 0.1 || 0.5;
     const domain: [number, number] = min === Infinity ? [0, 1] : [Math.max(0, min - pad), max + pad];
-    // Out/in laps sit just under the top edge, keeping their real time for the tooltip.
-    for (const s of slow) for (const p of s.points) p.y = Math.min(p.y, domain[1] - pad * 0.3);
-    return { runs, slow, domain, empty: runs.length === 0 && slow.every((s) => s.points.length === 0) };
-  }, [visibleLaps, active.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+    return { runs, domain };
+  }, [visibleLaps, bests.lap, active.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const lapOf = (abbr: string, lapNumber: number | undefined) =>
     lapNumber === undefined ? undefined : driverLaps.get(abbr)?.find((l) => l.lapNumber === lapNumber);
 
-  // Laps for the cards: the selected lap, else the driver's best so far.
-  const cardLap = (abbr: string): ParsedLap | undefined =>
-    lapOf(abbr, selectedLap[abbr]) ?? lapOf(abbr, bests.personalLap.get(abbr)?.lapNumber);
+  // The comparison always uses each driver's best lap so far.
+  const bestLap = (abbr: string): ParsedLap | undefined => lapOf(abbr, bests.personalLap.get(abbr)?.lapNumber);
 
   const toggleLap = (abbr: string, lapNumber: number) =>
     setSelectedLap((prev) => {
@@ -194,6 +194,81 @@ export default function SessionLapAnalysis({
       else next[abbr] = lapNumber;
       return next;
     });
+
+  const lapList = (
+    <div className="px-3 pb-2">
+      {active.length === 2 && (
+        <div className="flex items-center gap-1 mb-1">
+          <span className="text-[9px] text-f1-muted mr-1">Laps:</span>
+          {active.map((abbr) => (
+            <button
+              key={abbr}
+              onClick={() => setListDriver(abbr)}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold transition-colors ${
+                shownDriver === abbr ? "bg-white/10 text-white" : "text-f1-muted hover:text-white"
+              }`}
+            >
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getDriverColor(abbr) }} />
+              {abbr}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex items-center gap-1 py-1 border-b border-f1-border text-[9px] font-bold text-f1-muted">
+        <button
+          onClick={() => {
+            const next = lapOrder === "asc" ? "desc" : "asc";
+            setLapOrder(next);
+            try { localStorage.setItem("f1replay_lap_order", next); } catch {}
+          }}
+          className="w-9 flex items-center gap-0.5 hover:text-white transition-colors"
+          title={lapOrder === "asc" ? "Show latest first" : "Show earliest first"}
+        >
+          LAP
+          <svg className={`w-2.5 h-2.5 transition-transform ${lapOrder === "desc" ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        </button>
+        <span className="w-[62px]">TIME</span>
+        {SECTORS.map((s) => <span key={s} className="flex-1 text-right">{s}</span>)}
+        <span className="w-5" />
+      </div>
+      {shownDriver && (() => {
+        const list = [...(visibleLaps.get(shownDriver) || [])];
+        if (lapOrder === "desc") list.reverse();
+        if (list.length === 0) return <p className="py-2 text-[10px] text-f1-muted">No completed laps yet</p>;
+        const best = bests.personalLap.get(shownDriver)?.lapNumber;
+        return list.map((lap) => (
+          <LapRow
+            key={lap.lapNumber}
+            lap={lap}
+            bests={bests}
+            selected={tab === "compare" ? lap.lapNumber === best : selectedLap[shownDriver] === lap.lapNumber}
+            onClick={tab === "compare" ? undefined : () => toggleLap(shownDriver, lap.lapNumber)}
+            lapClass={lap.lapTime && lap.kind !== "out"
+              ? lapColorClass(lap.lapTime, lap.driver, lapData, currentTime, currentLap, false, false)
+              : "text-f1-muted"}
+          />
+        ));
+      })()}
+    </div>
+  );
+
+  const rangeButtons = ranges.length > 1 && (
+    <div className="flex items-center gap-1 px-3 pt-2 pb-1">
+      {ranges.map((r) => (
+        <button
+          key={r}
+          onClick={() => setRange(r)}
+          className={`px-2 py-0.5 rounded text-[9px] font-bold transition-colors ${
+            activeRange === r ? "bg-f1-red text-white" : "bg-f1-dark border border-f1-border text-f1-muted hover:text-white"
+          }`}
+        >
+          {r === "Last 10" ? "Last 10 laps" : r}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <div className="h-full flex flex-col bg-f1-card overflow-hidden">
@@ -206,217 +281,150 @@ export default function SessionLapAnalysis({
         </div>
       )}
 
+      {/* Tabs */}
+      <div className="flex flex-shrink-0 border-b border-f1-border">
+        {(["sectors", "compare"] as const).map((t) => (
+          <button
+            key={t}
+            onClick={() => switchTab(t)}
+            className={`flex-1 py-2 text-[10px] font-bold uppercase tracking-wider transition-colors border-b-2 ${
+              tab === t ? "text-white border-f1-red" : "text-f1-muted border-transparent hover:text-white"
+            }`}
+          >
+            {t === "sectors" ? "Sectors" : "Compare"}
+          </button>
+        ))}
+      </div>
+
       <div className="flex-1 overflow-y-auto min-h-0">
-        <BestsSummary
-          bests={bests}
-          drivers={sortedDrivers}
-          open={summaryOpen}
-          onToggle={() => {
-            const next = !summaryOpen;
-            setSummaryOpen(next);
-            try { localStorage.setItem("f1replay_lap_summary", next ? "open" : "closed"); } catch {}
-          }}
-          onPickDriver={(abbr) => setSelectedDrivers((prev) => [abbr, prev[1] === abbr ? null : prev[1]])}
-        />
-
-        {/* Driver selectors */}
-        <div className="px-3 py-2 space-y-1.5 border-b border-f1-border">
-          <DriverDropdown
-            value={selectedDrivers[0]}
-            onChange={(abbr) => setSelectedDrivers((prev) => [abbr, prev[1]])}
-            drivers={sortedDrivers}
-            placeholder="Select driver..."
-            getColor={getDriverColor}
-          />
-          <DriverDropdown
-            value={selectedDrivers[1]}
-            onChange={(abbr) => setSelectedDrivers((prev) => [prev[0], abbr])}
-            drivers={sortedDrivers}
-            placeholder="Compare with..."
-            getColor={getDriverColor}
-          />
-        </div>
-
-        {active.length === 0 ? (
-          <div className="px-3 py-6 text-center text-xs text-f1-muted">Select a driver to view lap times</div>
+        {tab === "sectors" ? (
+          <>
+            <BestsSummary bests={bests} drivers={sortedDrivers} onPickDriver={setDriver} selected={driver} />
+            <div className="px-3 py-2 border-b border-f1-border">
+              <DriverDropdown
+                value={driver}
+                onChange={setDriver}
+                drivers={sortedDrivers}
+                placeholder="Select a driver to see their laps..."
+                getColor={getDriverColor}
+              />
+            </div>
+            {driver && (
+              <>
+                {rangeButtons}
+                {!isQualifying && (
+                  chart.runs.length === 0 ? (
+                    <div className="h-[40px] flex items-center justify-center text-[10px] text-f1-muted">No flying laps yet</div>
+                  ) : (
+                    <div className="px-2 pb-1">
+                      <ResponsiveContainer width="100%" height={150}>
+                        <ScatterChart margin={{ top: 5, right: 8, left: -10, bottom: 5 }}>
+                          <XAxis
+                            dataKey="x"
+                            type="number"
+                            domain={["dataMin", "dataMax"]}
+                            tick={{ fill: "#6B7280", fontSize: 8 }}
+                            tickLine={false}
+                            axisLine={{ stroke: "#374151" }}
+                            tickFormatter={(v: number) => `${Math.round(v)}m`}
+                          />
+                          <YAxis
+                            dataKey="y"
+                            type="number"
+                            domain={chart.domain}
+                            allowDataOverflow
+                            tick={{ fill: "#6B7280", fontSize: 9 }}
+                            tickLine={false}
+                            axisLine={{ stroke: "#374151" }}
+                            tickFormatter={(v: number) => formatLapSecs(v)}
+                          />
+                          <Tooltip
+                            cursor={false}
+                            content={({ active: on, payload }) => {
+                              const pt = on ? (payload?.[0]?.payload as ChartPoint | undefined) : undefined;
+                              if (!pt?.lap) return null;
+                              const lap = pt.lap;
+                              return (
+                                <div className="bg-[#1A1A26] border border-f1-border rounded-md px-2.5 py-1.5 text-[11px] shadow-xl">
+                                  <div className="font-bold text-white">Lap {lap.lapNumber} · {fmt(lap.lapSecs)}</div>
+                                  <div className="text-f1-muted tabular-nums">
+                                    {lap.sectors.map((s, i) => `${SECTORS[i]} ${s === null ? "—" : s.toFixed(3)}`).join("  ")}
+                                  </div>
+                                </div>
+                              );
+                            }}
+                          />
+                          {chart.runs.map((run, i) => (
+                            <Scatter
+                              key={`run-${i}`}
+                              data={run.points}
+                              line={{ stroke: getDriverColor(run.abbr), strokeWidth: 1.5 }}
+                              shape={(p: { cx?: number; cy?: number }) => <circle cx={p.cx} cy={p.cy} r={2.5} fill={getDriverColor(run.abbr)} />}
+                              isAnimationActive={false}
+                            />
+                          ))}
+                          {(() => {
+                            const lap = lapOf(driver, selectedLap[driver]);
+                            const pt = chart.runs.flatMap((r) => r.points).find((p) => p.lap === lap);
+                            return pt ? (
+                              <Scatter
+                                data={[pt]}
+                                shape={(p: { cx?: number; cy?: number }) => <circle cx={p.cx} cy={p.cy} r={5} fill="none" stroke="#FFFFFF" strokeWidth={1.5} />}
+                                isAnimationActive={false}
+                              />
+                            ) : null;
+                          })()}
+                        </ScatterChart>
+                      </ResponsiveContainer>
+                      <p className="px-1 text-[9px] text-f1-muted">Lap times through the session. Out, in and slow laps are left out.</p>
+                    </div>
+                  )
+                )}
+                {selectedLap[driver] !== undefined && lapOf(driver, selectedLap[driver]) ? (
+                  <LapCard lap={lapOf(driver, selectedLap[driver])!} bests={bests} />
+                ) : (
+                  <p className="px-3 pt-1 pb-2 text-[10px] text-f1-muted">Click a lap to see each sector against the session&apos;s best.</p>
+                )}
+                {lapList}
+              </>
+            )}
+          </>
         ) : (
           <>
-            {/* Range + chart */}
-            <div className="px-2 pt-2 pb-1">
-              <div className="flex items-center gap-1 mb-2">
-                {ranges.map((r) => (
-                  <button
-                    key={r}
-                    onClick={() => setRange(r)}
-                    className={`px-2 py-0.5 rounded text-[9px] font-bold transition-colors ${
-                      activeRange === r ? "bg-f1-red text-white" : "bg-f1-dark border border-f1-border text-f1-muted hover:text-white"
-                    }`}
-                  >
-                    {r === "Last 10" ? "Last 10 laps" : r}
-                  </button>
-                ))}
-              </div>
-              {chart.empty ? (
-                <div className="h-[60px] flex items-center justify-center text-[10px] text-f1-muted">No completed laps yet</div>
-              ) : (
-                <ResponsiveContainer width="100%" height={170}>
-                  <ScatterChart margin={{ top: 5, right: 8, left: -10, bottom: 5 }}>
-                    <XAxis
-                      dataKey="x"
-                      type="number"
-                      domain={["dataMin", "dataMax"]}
-                      tick={{ fill: "#6B7280", fontSize: 8 }}
-                      tickLine={false}
-                      axisLine={{ stroke: "#374151" }}
-                      tickFormatter={(v: number) => `${Math.round(v)}m`}
-                    />
-                    <YAxis
-                      dataKey="y"
-                      type="number"
-                      domain={chart.domain}
-                      allowDataOverflow
-                      tick={{ fill: "#6B7280", fontSize: 9 }}
-                      tickLine={false}
-                      axisLine={{ stroke: "#374151" }}
-                      tickFormatter={(v: number) => formatLapSecs(v)}
-                    />
-                    {isQualifying && activeRange === "All" && qualiPhases.slice(1)
-                      .filter((p) => p.timestamp <= currentTime)
-                      .map((p) => (
-                        <ReferenceLine key={p.phase} x={p.timestamp / 60} stroke="#4B5563" strokeDasharray="3 3"
-                          label={{ value: p.phase, fill: "#6B7280", fontSize: 8, position: "insideTopLeft" }} />
-                      ))}
-                    <Tooltip
-                      cursor={false}
-                      content={({ active: on, payload }) => {
-                        const pt = on ? (payload?.[0]?.payload as ChartPoint | undefined) : undefined;
-                        if (!pt?.lap) return null;
-                        const lap = pt.lap;
-                        return (
-                          <div className="bg-[#1A1A26] border border-f1-border rounded-md px-2.5 py-1.5 text-[11px] shadow-xl">
-                            <div className="flex items-center gap-1.5 font-bold text-white">
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getDriverColor(lap.driver) }} />
-                              {lap.driver} · Lap {lap.lapNumber}
-                              {lap.kind !== "push" && <span className="text-f1-muted font-normal">{lap.kind === "out" ? "Out lap" : "In lap"}</span>}
-                            </div>
-                            <div className="text-white tabular-nums">{fmt(lap.lapSecs)}</div>
-                            <div className="text-f1-muted tabular-nums">
-                              {lap.sectors.map((s, i) => `${SECTORS[i]} ${s === null ? "—" : s.toFixed(3)}`).join("  ")}
-                            </div>
-                          </div>
-                        );
-                      }}
-                    />
-                    {chart.runs.map((run, i) => (
-                      <Scatter
-                        key={`run-${run.abbr}-${i}`}
-                        data={run.points}
-                        fill={getDriverColor(run.abbr)}
-                        line={{ stroke: getDriverColor(run.abbr), strokeWidth: 1.5 }}
-                        shape={(p: { cx?: number; cy?: number }) => <circle cx={p.cx} cy={p.cy} r={2.5} fill={getDriverColor(run.abbr)} />}
-                        isAnimationActive={false}
-                      />
-                    ))}
-                    {chart.slow.map((s) => (
-                      <Scatter
-                        key={`slow-${s.abbr}`}
-                        data={s.points}
-                        shape={(p: { cx?: number; cy?: number }) => (
-                          <circle cx={p.cx} cy={p.cy} r={2.5} fill="none" stroke={getDriverColor(s.abbr)} strokeOpacity={0.6} />
-                        )}
-                        isAnimationActive={false}
-                      />
-                    ))}
-                    {active.map((abbr) => {
-                      const lap = lapOf(abbr, selectedLap[abbr]);
-                      const pt = [...chart.runs, ...chart.slow].flatMap((r) => r.points).find((p) => p.lap === lap);
-                      return pt ? (
-                        <Scatter
-                          key={`sel-${abbr}`}
-                          data={[pt]}
-                          shape={(p: { cx?: number; cy?: number }) => <circle cx={p.cx} cy={p.cy} r={5} fill="none" stroke="#FFFFFF" strokeWidth={1.5} />}
-                          isAnimationActive={false}
-                        />
-                      ) : null;
-                    })}
-                  </ScatterChart>
-                </ResponsiveContainer>
-              )}
-            </div>
-
-            {/* Lap card (one driver) or comparison (two) */}
-            {active.length === 1 ? (
-              selectedLap[active[0]] !== undefined && cardLap(active[0]) ? (
-                <LapCard lap={cardLap(active[0])!} bests={bests} />
-              ) : (
-                <p className="px-3 pb-2 text-[10px] text-f1-muted">Select a lap to compare its sectors with the session&apos;s best.</p>
-              )
-            ) : (
-              <ComparisonCard
-                a={cardLap(active[0])}
-                b={cardLap(active[1])}
-                colorA={getDriverColor(active[0])}
-                colorB={getDriverColor(active[1])}
-                pickedA={selectedLap[active[0]] !== undefined}
-                pickedB={selectedLap[active[1]] !== undefined}
+            <div className="px-3 py-2 space-y-1.5 border-b border-f1-border">
+              <DriverDropdown
+                value={compare[0]}
+                onChange={(abbr) => setCompare((prev) => [abbr, prev[1]])}
+                drivers={sortedDrivers}
+                placeholder="First driver..."
+                getColor={getDriverColor}
               />
-            )}
-
-            {/* Lap list */}
-            <div className="px-3 pb-2">
-              {active.length === 2 && (
-                <div className="flex gap-1 mb-1">
-                  {active.map((abbr) => (
-                    <button
-                      key={abbr}
-                      onClick={() => setListDriver(abbr)}
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-bold transition-colors ${
-                        shownDriver === abbr ? "bg-white/10 text-white" : "text-f1-muted hover:text-white"
-                      }`}
-                    >
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: getDriverColor(abbr) }} />
-                      {abbr}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="flex items-center gap-1 py-1 border-b border-f1-border text-[9px] font-bold text-f1-muted">
-                <button
-                  onClick={() => {
-                    const next = lapOrder === "asc" ? "desc" : "asc";
-                    setLapOrder(next);
-                    try { localStorage.setItem("f1replay_lap_order", next); } catch {}
-                  }}
-                  className="w-9 flex items-center gap-0.5 hover:text-white transition-colors"
-                  title={lapOrder === "asc" ? "Show latest first" : "Show earliest first"}
-                >
-                  LAP
-                  <svg className={`w-2.5 h-2.5 transition-transform ${lapOrder === "desc" ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-                <span className="w-[62px]">TIME</span>
-                {SECTORS.map((s) => <span key={s} className="flex-1 text-right">{s}</span>)}
-                <span className="w-5" />
-              </div>
-              {shownDriver && (() => {
-                const list = [...(visibleLaps.get(shownDriver) || [])];
-                if (lapOrder === "desc") list.reverse();
-                if (list.length === 0) return <p className="py-2 text-[10px] text-f1-muted">No completed laps yet</p>;
-                return list.map((lap) => (
-                  <LapRow
-                    key={lap.lapNumber}
-                    lap={lap}
-                    bests={bests}
-                    selected={selectedLap[shownDriver] === lap.lapNumber}
-                    onClick={() => toggleLap(shownDriver, lap.lapNumber)}
-                    lapClass={lap.lapTime && lap.kind !== "out"
-                      ? lapColorClass(lap.lapTime, lap.driver, lapData, currentTime, currentLap, false, false)
-                      : "text-f1-muted"}
-                  />
-                ));
-              })()}
+              <DriverDropdown
+                value={compare[1]}
+                onChange={(abbr) => setCompare((prev) => [prev[0], abbr])}
+                drivers={sortedDrivers}
+                placeholder="Compare with..."
+                getColor={getDriverColor}
+              />
             </div>
+            {active.length < 2 ? (
+              <div className="px-3 py-6 text-center text-xs text-f1-muted">Select two drivers to compare their laps</div>
+            ) : (
+              <>
+                <div className="pt-2">
+                  <div className="px-3 pb-1 text-[9px] font-bold text-f1-muted uppercase tracking-wider">Best laps</div>
+                  <ComparisonCard
+                    a={bestLap(active[0])}
+                    b={bestLap(active[1])}
+                    colorA={getDriverColor(active[0])}
+                    colorB={getDriverColor(active[1])}
+                  />
+                </div>
+                <div className="mt-2 border-t border-f1-border pt-2 px-3 text-[9px] font-bold text-f1-muted uppercase tracking-wider">All laps</div>
+                {rangeButtons}
+                {lapList}
+              </>
+            )}
           </>
         )}
       </div>
@@ -428,7 +436,8 @@ function LapRow({ lap, bests, selected, onClick, lapClass }: {
   lap: ParsedLap;
   bests: SessionBests;
   selected: boolean;
-  onClick: () => void;
+  /** Without it the row is display only */
+  onClick?: () => void;
   lapClass: string;
 }) {
   const muted = lap.kind !== "push";
@@ -437,9 +446,10 @@ function LapRow({ lap, bests, selected, onClick, lapClass }: {
   return (
     <button
       onClick={onClick}
+      disabled={!onClick}
       className={`w-full flex items-center gap-1 py-0.5 text-left rounded-sm transition-colors ${
-        selected ? "bg-white/15" : "hover:bg-white/5"
-      } ${muted ? "opacity-60" : ""}`}
+        selected ? "bg-white/15" : onClick ? "hover:bg-white/5" : ""
+      } ${muted ? "opacity-60" : ""} ${onClick ? "" : "cursor-default"}`}
     >
       <span className="w-9 text-[10px] font-bold text-f1-muted tabular-nums flex items-center gap-0.5">
         {lap.lapNumber}
@@ -508,14 +518,12 @@ function LapCard({ lap, bests }: { lap: ParsedLap; bests: SessionBests }) {
   );
 }
 
-/** Two laps side by side: each driver's selected lap, or best lap so far. */
-function ComparisonCard({ a, b, colorA, colorB, pickedA, pickedB }: {
+/** Two drivers' best laps so far, side by side. */
+function ComparisonCard({ a, b, colorA, colorB }: {
   a: ParsedLap | undefined;
   b: ParsedLap | undefined;
   colorA: string;
   colorB: string;
-  pickedA: boolean;
-  pickedB: boolean;
 }) {
   if (!a || !b) {
     return <p className="px-3 pb-2 text-[10px] text-f1-muted">Both drivers need a completed lap to compare.</p>;
@@ -524,34 +532,26 @@ function ComparisonCard({ a, b, colorA, colorB, pickedA, pickedB }: {
     ...SECTORS.map((label, i) => ({ label, va: a.sectors[i], vb: b.sectors[i] })),
     { label: "Lap", va: a.lapSecs, vb: b.lapSecs },
   ];
-  const sectorDeltas = SECTORS.map((_, i) =>
-    a.sectors[i] !== null && b.sectors[i] !== null ? a.sectors[i]! - b.sectors[i]! : null,
-  );
-  // Where the gap came from: the sector with the biggest difference.
-  let decisive: number | null = null;
-  sectorDeltas.forEach((d, i) => {
-    if (d !== null && (decisive === null || Math.abs(d) > Math.abs(sectorDeltas[decisive]!))) decisive = i;
-  });
-  const lapLabel = (lap: ParsedLap, picked: boolean) => `Lap ${lap.lapNumber}${picked ? "" : " (best)"}`;
+  const lapLabel = (lap: ParsedLap) => `best, lap ${lap.lapNumber}`;
   return (
     <div className="mx-3 mb-2 rounded border border-f1-border bg-f1-dark px-2 py-1.5">
       <div className="grid grid-cols-[28px_1fr_1fr_56px] gap-x-2 text-[10px] tabular-nums">
         <span />
         <span className="flex items-center gap-1 text-[9px] font-bold text-white">
           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorA }} />{a.driver}
-          <span className="font-normal text-f1-muted">{lapLabel(a, pickedA)}</span>
+          <span className="font-normal text-f1-muted">{lapLabel(a)}</span>
         </span>
         <span className="flex items-center gap-1 text-[9px] font-bold text-white">
           <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: colorB }} />{b.driver}
-          <span className="font-normal text-f1-muted">{lapLabel(b, pickedB)}</span>
+          <span className="font-normal text-f1-muted">{lapLabel(b)}</span>
         </span>
         <span className="text-[9px] text-f1-muted text-right">DELTA</span>
-        {rows.map((r, i) => {
+        {rows.map((r) => {
           const d = r.va !== null && r.vb !== null ? r.va - r.vb : null;
           const show = (v: number | null) => (r.label === "Lap" ? fmt(v) : v?.toFixed(3) ?? "—");
           return (
             <div key={r.label} className="contents">
-              <span className={`font-bold ${i === decisive ? "text-white" : "text-f1-muted"}`}>{r.label}</span>
+              <span className="font-bold text-f1-muted">{r.label}</span>
               <span className={d !== null && d < -0.0005 ? "text-white font-bold" : "text-white/70"}>{show(r.va)}</span>
               <span className={d !== null && d > 0.0005 ? "text-white font-bold" : "text-white/70"}>{show(r.vb)}</span>
               <span className={`text-right font-bold ${d !== null ? deltaClass(d) : "text-f1-muted"}`}>
@@ -561,23 +561,16 @@ function ComparisonCard({ a, b, colorA, colorB, pickedA, pickedB }: {
           );
         })}
       </div>
-      {decisive !== null && sectorDeltas[decisive] !== null && Math.abs(sectorDeltas[decisive]!) > 0.0005 && (
-        <p className="mt-1 text-[9px] text-f1-muted">
-          Biggest difference in {SECTORS[decisive]}: {sectorDeltas[decisive]! < 0 ? a.driver : b.driver} faster by{" "}
-          {Math.abs(sectorDeltas[decisive]!).toFixed(3)}s. Select laps in each driver&apos;s list to compare others.
-        </p>
-      )}
     </div>
   );
 }
 
 /** Best sectors, the theoretical best lap and each driver's ideal lap. */
-function BestsSummary({ bests, drivers, open, onToggle, onPickDriver }: {
+function BestsSummary({ bests, drivers, onPickDriver, selected }: {
   bests: SessionBests;
   drivers: ReplayDriver[];
-  open: boolean;
-  onToggle: () => void;
   onPickDriver: (abbr: string) => void;
+  selected: string | null;
 }) {
   const theoretical = theoreticalBest(bests);
   const ideals = drivers
@@ -592,14 +585,8 @@ function BestsSummary({ bests, drivers, open, onToggle, onPickDriver }: {
 
   return (
     <div className="border-b border-f1-border">
-      <button onClick={onToggle} className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-white/5 transition-colors">
-        <span className="text-[9px] font-bold text-f1-muted uppercase tracking-wider">Best sectors &amp; ideal laps</span>
-        <svg className={`w-3 h-3 text-f1-muted transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {open && (
-        <div className="px-3 pb-2">
+      <div className="px-3 pt-2 pb-1 text-[9px] font-bold text-f1-muted uppercase tracking-wider">Best sectors &amp; ideal laps</div>
+      <div className="px-3 pb-2">
           {bests.sectors.every((s) => s === null) ? (
             <p className="text-[10px] text-f1-muted py-1">No completed laps yet</p>
           ) : (
@@ -633,7 +620,7 @@ function BestsSummary({ bests, drivers, open, onToggle, onPickDriver }: {
                       <button
                         key={r.abbr}
                         onClick={() => onPickDriver(r.abbr)}
-                        className="w-full grid grid-cols-[1fr_60px_60px_44px] gap-x-1 py-0.5 text-left hover:bg-white/5 transition-colors"
+                        className={`w-full grid grid-cols-[1fr_60px_60px_44px] gap-x-1 py-0.5 text-left transition-colors ${r.abbr === selected ? "bg-white/10" : "hover:bg-white/5"}`}
                         title={`Show ${r.abbr}'s laps`}
                       >
                         <span className="flex items-center gap-1 font-bold text-white">
@@ -649,8 +636,7 @@ function BestsSummary({ bests, drivers, open, onToggle, onPickDriver }: {
               )}
             </>
           )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

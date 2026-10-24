@@ -17,6 +17,7 @@ import SyncPhoto from "@/components/SyncPhoto";
 import PiPWindow from "@/components/PiPWindow";
 import LapAnalysisPanel from "@/components/LapAnalysisPanel";
 import SessionLapAnalysis from "@/components/SessionLapAnalysis";
+import type { LapData } from "@/lib/lapTiming";
 import LapNotifications from "@/components/LapNotifications";
 import TeamRadio, { type RadioClip } from "@/components/TeamRadio";
 
@@ -218,7 +219,7 @@ export default function ReplayPage() {
   // Build lookup: driver -> lap_number -> lap_time
   const lapData = useMemo(() => {
     if (!lapsResponse?.laps) return undefined;
-    const map = new Map<string, Map<number, { time: string; completedAt: number | null }>>();
+    const map: LapData = new Map();
     for (const lap of lapsResponse.laps) {
       if (!lap.lap_time) continue;
       let driverMap = map.get(lap.driver);
@@ -226,7 +227,11 @@ export default function ReplayPage() {
         driverMap = new Map();
         map.set(lap.driver, driverMap);
       }
-      driverMap.set(lap.lap_number, { time: lap.lap_time, completedAt: lap.time ?? null });
+      driverMap.set(lap.lap_number, {
+        time: lap.lap_time,
+        completedAt: lap.time ?? null,
+        sectors: [lap.sector1 ?? null, lap.sector2 ?? null, lap.sector3 ?? null],
+      });
     }
     return map;
   }, [lapsResponse]);
@@ -586,6 +591,7 @@ export default function ReplayPage() {
               {/* Qualifying lap-completion bubbles */}
               <LapNotifications
                 enabled={settings.showLapNotifications}
+                showSectorTimes={settings.showLapNotificationSectors}
                 isQualifying={isQualifying}
                 isRace={isRace}
                 lapData={lapData}
