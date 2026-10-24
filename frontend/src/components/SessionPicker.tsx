@@ -29,8 +29,6 @@ interface SessionEntry {
   available: boolean;
   precomputed?: boolean;
   size_bytes?: number;
-  /** Public sites: after the archive cutoff, so it needs F1 TV. */
-  paywalled?: boolean;
 }
 
 interface LiveSessionInfo {
@@ -466,18 +464,11 @@ export default function SessionPicker() {
                     </span>
                   )}
                   <span
-                    title={
-                      session.available && session.paywalled
-                        ? "F1 now requires an F1 TV subscription for timing data. Self-host with your own account to watch this session."
-                        : session.available ? "Not available yet" : undefined
-                    }
+                    title={session.available ? "Not available yet" : undefined}
                     className="px-3 py-1.5 bg-f1-border/40 text-f1-muted opacity-60 text-xs font-bold rounded cursor-not-allowed"
                   >
                     {session.name}
                   </span>
-                  {session.available && session.paywalled && (
-                    <span className="mt-1 text-[9px] font-bold text-f1-muted uppercase tracking-wide">F1 TV required</span>
-                  )}
                 </div>
               );
             })}

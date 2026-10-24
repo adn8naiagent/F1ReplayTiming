@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Query, HTTPException, Response
-from app_config import is_after_public_cutoff, set_cache, validate_session, MIN_YEAR, MAX_YEAR
+from app_config import is_after_public_cutoff, public_archive_last, is_public_mode, set_cache, validate_session, MIN_YEAR, MAX_YEAR
 from services import schedule as schedule_store
 from services import availability
 from services.storage import get_json, aget_json
@@ -54,7 +54,13 @@ def _build_events(year: int, data: dict | None = None) -> dict:
         return None
 
     data = deepcopy(data)
-    events = data.get("events", [])
+    # Public sites don't list rounds after the archive cutoff at all: they're
+    # behind F1 TV, and the site can't offer them, even if the bucket has them.
+    events = [
+        e for e in data.get("events", [])
+        if e.get("round_number") is None or not is_after_public_cutoff(year, e["round_number"])
+    ]
+    data["events"] = events
     now = datetime.now(timezone.utc)
     last_past_idx = None
 
@@ -86,12 +92,7 @@ def _build_events(year: int, data: dict | None = None) -> dict:
                 session["available"] = False
 
             code = SESSION_NAME_TO_TYPE.get(session.get("name", ""))
-            if rnd is not None and is_after_public_cutoff(year, rnd):
-                # Behind F1 TV on this public site, even if the shared bucket has it.
-                session["precomputed"] = False
-                session["size_bytes"] = 0
-                session["paywalled"] = True
-            elif code and rnd is not None:
+            if code and rnd is not None:
                 size = stored.get(f"{rnd}/{code}")
                 session["precomputed"] = size is not None
                 session["size_bytes"] = size or 0
@@ -140,7 +141,9 @@ async def event_name(year: int, round_num: int) -> str | None:
 @router.get("/seasons")
 async def list_seasons():
     now = datetime.now(timezone.utc)
-    return {"seasons": [s for s in AVAILABLE_SEASONS if s <= now.year]}
+    last = public_archive_last() if is_public_mode() else None
+    max_year = min(now.year, last[0]) if last else now.year
+    return {"seasons": [s for s in AVAILABLE_SEASONS if s <= max_year]}
 
 
 @router.get("/seasons/{year}/events")
