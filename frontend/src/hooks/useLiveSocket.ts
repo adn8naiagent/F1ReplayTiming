@@ -15,6 +15,8 @@ interface LiveState {
   finished: boolean;
   sessionEnded: boolean;
   error: string | null;
+  /** Why the server can't get data from F1 (e.g. refused), while retrying */
+  feedError: string | null;
 }
 
 interface BufferedFrame {
@@ -45,6 +47,7 @@ export function useLiveSocket(
     finished: false,
     sessionEnded: false,
     error: null,
+    feedError: null,
   });
 
   // Delay processing: buffer frames and release them after |delayOffset| seconds.
@@ -124,6 +127,7 @@ export function useLiveSocket(
             weather: msg.weather,
             quali_phase: msg.quali_phase,
             team_radio: msg.team_radio,
+            mini_sector_counts: msg.mini_sector_counts,
           };
           const rcMessages: RCMessage[] = msg.rc_messages || [];
 
@@ -150,6 +154,9 @@ export function useLiveSocket(
           break;
         case "error":
           setState((s) => ({ ...s, error: msg.message, loading: false }));
+          break;
+        case "feed_error":
+          setState((s) => ({ ...s, feedError: msg.message ?? null }));
           break;
       }
     };

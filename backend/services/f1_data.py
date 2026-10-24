@@ -1001,10 +1001,13 @@ def _get_driver_positions_by_time_sync(
     # Also build pit lane intervals (session timedelta seconds) for in-pit detection
     driver_lap_lookup = {}
     driver_pit_intervals: dict[str, list[tuple[float, float]]] = {}
+    # Out-lap intervals: from pit exit to the end of that lap
+    driver_out_lap_intervals: dict[str, list[tuple[float, float]]] = {}
     for drv in drivers_list:
         drv_laps_df = laps.pick_drivers(drv).sort_values("LapNumber")
         lap_entries = []
         pit_intervals = []
+        out_lap_intervals = []
         pit_count = 0
         for _, lap_row in drv_laps_df.iterrows():
             lap_num = int(lap_row["LapNumber"])
@@ -1035,8 +1038,22 @@ def _get_driver_positions_by_time_sync(
                 pit_out_sec = lap_row["PitOutTime"].total_seconds()
                 if pit_intervals and pit_intervals[-1][1] != pit_out_sec:
                     pit_intervals[-1] = (pit_intervals[-1][0], pit_out_sec)
+
+            if is_pit_out:
+                out_start = lap_row["PitOutTime"].total_seconds()
+                lap_end = lap_row.get("Time")
+                if is_pit_in and lap_row["PitInTime"].total_seconds() > out_start:
+                    # Pitted again at the end of the out-lap (practice runs)
+                    out_end = lap_row["PitInTime"].total_seconds()
+                elif lap_end is not pd.NaT and pd.notna(lap_end):
+                    out_end = lap_end.total_seconds()
+                else:
+                    # Lap never completed (e.g. red flag): assume roughly one lap
+                    out_end = out_start + 120.0
+                out_lap_intervals.append((out_start, out_end))
         driver_lap_lookup[drv] = lap_entries
         driver_pit_intervals[drv] = pit_intervals
+        driver_out_lap_intervals[drv] = out_lap_intervals
 
     # Build finish time lookup: session time (seconds) when each finished driver completed their final lap
     finished_driver_times: dict[str, float] = {}
@@ -1496,6 +1513,10 @@ def _get_driver_positions_by_time_sync(
                     in_pit = True
                     pit_time = round(session_t - pit_in, 1)
                     break
+            out_lap = not in_pit and any(
+                start < session_t <= end
+                for start, end in driver_out_lap_intervals.get(drv, [])
+            )
 
             # Tyre/pit data filled in after current lap is determined (below)
 
@@ -1510,6 +1531,7 @@ def _get_driver_positions_by_time_sync(
                 "pit_start": show_pit_badge,
                 "in_pit": in_pit,
                 "pit_time": pit_time,
+                "out_lap": out_lap,
                 "finished": drv in finished_driver_times and session_t >= finished_driver_times[drv],
                 "compound": None,
                 "tyre_life": None,
@@ -1929,11 +1951,15 @@ def _get_team_radio_sync(year: int, round_num: int, session_type: str, on_progre
             drivers[number] = {
                 "abbr": str(row.get("Abbreviation", "")),
                 "first_name": str(row.get("FirstName", "")) or None,
+                # For the AI caption step
+                "name": str(row.get("FullName", "")) or None,
+                "team": str(row.get("TeamName", "")) or None,
             }
 
     path = session.api_path.removeprefix("/static/")
+    label = f"{year} {session.event.get('EventName', '')}, {session.name}".strip(", ")
     try:
-        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress)
+        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress, year, label)
     finally:
         team_radio.release_model()
 
