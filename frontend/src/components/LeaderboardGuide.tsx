@@ -140,16 +140,24 @@ export default function LeaderboardGuide() {
       </div>
 
       {/* Key */}
-      <ol className="mt-5 grid sm:grid-cols-2 gap-x-6 gap-y-2.5">
-        {COLUMNS.map((c, i) => (
-          <li key={c.name} className="flex items-start gap-2.5">
-            <span className="mt-0.5 flex-shrink-0"><Callout n={i + 1} /></span>
-            <span className="text-sm text-f1-text leading-snug">
-              <span className="font-bold text-white">{c.name}</span> — {c.description}
-            </span>
-          </li>
-        ))}
-      </ol>
+      {/* Numbered down the left column, then the right, with a divider between */}
+      <div className="mt-5 grid sm:grid-cols-2 gap-y-2.5 sm:divide-x sm:divide-f1-border">
+        {[COLUMNS.slice(0, Math.ceil(COLUMNS.length / 2)), COLUMNS.slice(Math.ceil(COLUMNS.length / 2))].map((half, h) => {
+          const first = h === 0 ? 0 : Math.ceil(COLUMNS.length / 2);
+          return (
+            <ol key={h} className={`space-y-2.5 ${h === 0 ? "sm:pr-6" : "sm:pl-6"}`}>
+              {half.map((c, i) => (
+                <li key={c.name} className="flex items-start gap-2.5">
+                  <span className="mt-0.5 flex-shrink-0"><Callout n={first + i + 1} /></span>
+                  <span className="text-sm text-f1-text leading-snug">
+                    <span className="font-bold text-white">{c.name}</span> — {c.description}
+                  </span>
+                </li>
+              ))}
+            </ol>
+          );
+        })}
+      </div>
       <p className="mt-4 text-xs text-f1-muted">
         Race replay shown. Qualifying and practice show best lap times and live sectors instead of the race-only
         columns. Every column can be turned on or off in Settings → Leaderboard.
