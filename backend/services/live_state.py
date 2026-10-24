@@ -115,6 +115,7 @@ class _DriverState:
         "_last_stint_idx",
         "_s3_complete_time",
         "_sector_times",
+        "_mini",
     )
 
     def __init__(self, racing_number: str) -> None:
@@ -160,6 +161,7 @@ class _DriverState:
         self._sector_best_overall: dict[int, bool] = {}  # sector_num -> ever overall fastest
         self._s3_complete_time: float | None = None  # timestamp when S3 completed (for 5s linger)
         self._sector_times: dict[int, float] = {}  # sector_num -> time in seconds (for colour recomputation)
+        self._mini: dict[tuple[int, int], int] = {}  # (sector, segment) -> mini-sector status
         self._stint_count: int = 0
 
     def to_dict(self) -> dict[str, Any]:
@@ -283,6 +285,9 @@ class LiveStateManager:
 
         # Overall sector bests (sector index 0-2 -> best time)
         self._overall_sector_bests: dict[int, float] = {}
+
+        # Mini-sectors per sector, from the highest segment index seen
+        self._mini_counts: list[int] = [0, 0, 0]
 
         # Team radio (F1 TV sign-in only). Clips go out in frames once
         # captioned; "state" is "new", "captioning", "ready" or "skipped".
@@ -417,6 +422,7 @@ class LiveStateManager:
                 if isinstance(sectors_raw, list):
                     sectors_raw = {str(i): v for i, v in enumerate(sectors_raw) if isinstance(v, dict)}
                 if isinstance(sectors_raw, dict):
+                    self._process_mini_sectors(drv, sectors_raw)
                     self._process_sectors(drv, sectors_raw)
 
             # Status / no_timing detection
@@ -507,6 +513,30 @@ class LiveStateManager:
                 drv._s3_complete_time = None
 
         drv.sectors = [existing[k] for k in sorted(existing)] if existing else None
+
+    def _process_mini_sectors(self, drv: _DriverState, sectors: dict) -> None:
+        """Mini-sector colours as F1 sends them (see services/minisectors.py
+        for the statuses). F1 clears them itself at the start of each lap."""
+        from services.minisectors import _items
+
+        for si, sector in sectors.items():
+            if not isinstance(sector, dict):
+                continue
+            for gi, seg in _items(sector.get("Segments")):
+                if not isinstance(seg, dict) or "Status" not in seg:
+                    continue
+                try:
+                    s, g, status = int(si), int(gi), int(seg["Status"])
+                except (ValueError, TypeError):
+                    continue
+                if not 0 <= s <= 2:
+                    continue
+                self._mini_counts[s] = max(self._mini_counts[s], g + 1)
+                drv._mini[(s, g)] = status
+
+    def _mini_states(self, drv: _DriverState) -> list[int]:
+        """A driver's mini-sector statuses, flat in lap order (0 = not yet)."""
+        return [drv._mini.get((s, g), 0) for s in range(3) for g in range(self._mini_counts[s])]
 
     def _recompute_sector_colours(self, sector_idx: int, exclude_rn: str) -> None:
         """When a new overall best is set in a sector, downgrade other drivers'
@@ -1057,6 +1087,8 @@ class LiveStateManager:
         now = time.monotonic()
 
         self._apply_smoothed_positions()
+        # Mini-sectors: qualifying and practice, like replays
+        show_mini = not self._is_race and sum(self._mini_counts) > 0
 
         drivers_list: list[dict[str, Any]] = []
         for drv in self._drivers.values():
@@ -1070,6 +1102,8 @@ class LiveStateManager:
                 drv._s3_complete_time = None
                 drv._sector_times.clear()
             d = drv.to_dict()
+            if show_mini:
+                d["mini_sectors"] = self._mini_states(drv)
             # Sanitize all values
             for key in list(d.keys()):
                 d[key] = _sanitize_value(d[key])
@@ -1115,6 +1149,8 @@ class LiveStateManager:
             "rc_messages": list(reversed(self._rc_messages)),
             "team_radio": self._radio_frame(),
         }
+        if show_mini:
+            frame["mini_sector_counts"] = list(self._mini_counts)
 
         # Add pit predictions for race sessions
         if self._is_race and self._pit_loss_green > 0:
