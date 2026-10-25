@@ -320,6 +320,9 @@ class LiveStateManager:
         # Each lap's telemetry, for Lap Analysis's Compare tab (not races)
         from services.live_traces import LapTraceRecorder
         self.traces = None if session_type in ("R", "S") else LapTraceRecorder()
+        # Each car's recent revs with their real times (number -> (utc, rpm)),
+        # for lining F1 TV's live broadcast up with the timing by engine sound
+        self.rpm: dict[str, deque[tuple[float, float]]] = {}
         # Live clock minus UTC, from car positions (which carry UTC). Maps
         # F1's UTC times (qualifying parts) and positions onto the clock.
         self._clock_offsets: deque[float] = deque(maxlen=60)
@@ -886,18 +889,25 @@ class LiveStateManager:
         entries = data.get("Entries")
         if not entries or not isinstance(entries, list):
             return
-        # Every sample goes to the lap traces
-        if self.traces is not None:
-            from services.team_radio import parse_utc
-            for entry in entries:
-                utc = parse_utc((entry or {}).get("Utc", ""))
-                if utc is None:
-                    continue
-                t = utc.replace(tzinfo=timezone.utc).timestamp()
-                for number, car in ((entry or {}).get("Cars") or {}).items():
-                    ch = (car or {}).get("Channels") or {}
+        # Every sample goes to the lap traces (not races) and the revs record
+        from services.team_radio import parse_utc
+        for entry in entries:
+            utc = parse_utc((entry or {}).get("Utc", ""))
+            if utc is None:
+                continue
+            t = utc.replace(tzinfo=timezone.utc).timestamp()
+            for number, car in ((entry or {}).get("Cars") or {}).items():
+                ch = (car or {}).get("Channels") or {}
+                if self.traces is not None:
                     self.traces.car_data(str(number), t, ch.get("2"), ch.get("4"), ch.get("5"),
                                          ch.get("3"), ch.get("0"), ch.get("45"))
+                try:
+                    rpm = float(ch.get("0"))
+                except (TypeError, ValueError):
+                    continue
+                buf = self.rpm.setdefault(str(number), deque(maxlen=2000))  # about 8 minutes
+                if not buf or t > buf[-1][0]:
+                    buf.append((t, rpm))
         cars = (entries[-1] or {}).get("Cars") or {}
         for number, car in cars.items():
             channels = (car or {}).get("Channels") or {}

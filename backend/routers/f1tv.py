@@ -42,6 +42,21 @@ async def sync(year: int, round: int, type: str):
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/live-sync")
+async def live_sync(year: int, round: int, type: str):
+    """How long after the moment on screen F1 TV stamps this session's live
+    video (seconds), matched from an onboard's engine sound against live
+    timing. 404 until it can be worked out (it needs a couple of minutes of
+    live driving)."""
+    from services import broadcast_sync
+
+    try:
+        return await broadcast_sync.live_stamp_delay(year, round, type)
+    except Exception as e:
+        logger.info("Live broadcast sync for %s %s %s: %s", year, round, type, e)
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.get("/replay-start")
 async def replay_start(year: int, round: int, type: str):
     """The real time (epoch seconds) at a replay's 0:00, to line Broadcast

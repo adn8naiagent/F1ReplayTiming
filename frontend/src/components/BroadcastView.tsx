@@ -216,6 +216,24 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   // moment: delay = now - what the video shows - how late the data arrives.
   // The fine-tune buttons add to it.
   const [liveDelay, setLiveDelay] = useState<number | null>(null);
+  // The gap between F1 TV's live stamps and the moment on screen, measured
+  // by engine sound once there's a couple of minutes of driving (retried
+  // every minute until then); the replay-measured gap until it is
+  const [liveSound, setLiveSound] = useState<{ stamp_delay: number; drivers: string[] } | null>(null);
+  useEffect(() => {
+    if (!live || main.state !== "ready" || liveSound) return;
+    const [year, round, type] = sessionKey.split("_");
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const attempt = () => {
+      f1tv.liveSync(Number(year), Number(round), type)
+        .then((r) => { if (!cancelled) setLiveSound(r); })
+        .catch(() => { if (!cancelled) timer = setTimeout(attempt, 60_000); });
+    };
+    attempt();
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [live, main.state, liveSound, sessionKey]);
+  const stampDelay = liveSound?.stamp_delay ?? STAMP_DELAY_S;
   const sentDelay = useRef<number | null>(null);
   useEffect(() => {
     if (!live || main.state !== "ready") return;
@@ -224,7 +242,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       // Until the data's real time is known, assume it arrives about 2s late
       const lag = live.arrivalLag() ?? 2;
       if (shown === null) return;
-      const delay = Math.max(0, Date.now() / 1000 - (shown - STAMP_DELAY_S) - lag + mainNudge);
+      const delay = Math.max(0, Date.now() / 1000 - (shown - stampDelay) - lag + mainNudge);
       setLiveDelay(delay);
       // Small changes would only make the timing stutter
       if (sentDelay.current === null || Math.abs(delay - sentDelay.current) >= 0.3) {
@@ -235,7 +253,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [live, main.state, main, mainNudge]);
+  }, [live, main.state, main, mainNudge, stampDelay]);
   useEffect(() => () => live?.onDelay(null), [live]);
   // F1 TV's live video starts paused until asked to play
   useEffect(() => {
@@ -246,11 +264,17 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const soundSynced = !!soundSync && link.includes(soundSync.content_id);
   const syncMethod: { label: string; hint: string; tone: "good" | "rough" | "busy" } | null = live
     ? liveDelay !== null
-      ? {
-          label: `Timing delayed ${liveDelay.toFixed(1)}s to match the broadcast`,
-          hint: "F1 TV's live video runs behind the timing, so the timing is held back to show the same moment. Fine-tune it with the buttons below.",
-          tone: "good",
-        }
+      ? liveSound
+        ? {
+            label: `Synced by engine sound (${liveSound.drivers.join(", ")}): timing delayed ${liveDelay.toFixed(1)}s`,
+            hint: "The timing is held back to show the same moment as F1 TV's live video, measured by matching onboard engine sound to the drivers' revs. Accurate to a fraction of a second.",
+            tone: "good",
+          }
+        : {
+            label: `Synced by video time stamp (approximate): timing delayed ${liveDelay.toFixed(1)}s`,
+            hint: "The timing is held back to show the same moment as F1 TV's live video, from the time stamps in the video. Matching the engine sound for a more exact sync once there's a couple of minutes of driving.",
+            tone: "rough",
+          }
       : main.state === "ready"
         ? { label: "Matching the timing to the live broadcast…", hint: "Waiting for the live timing and the video's clock.", tone: "busy" }
         : null
