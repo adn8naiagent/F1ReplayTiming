@@ -33,6 +33,7 @@ class LiveSession:
         self._mode = "none"  # "replayer" or "signalr"
         self._msg_logged = False
         self._radio_tasks: set[asyncio.Task] = set()
+        self._recorded_positions = False
         self._year: int | None = None  # picks the team radio caption vocabulary
 
     async def start(
@@ -93,6 +94,8 @@ class LiveSession:
         )
 
         if data_dir:
+            # Recordings made while signed in include car positions
+            self._recorded_positions = os.path.exists(os.path.join(data_dir, "Position.z.jsonStream"))
             from services.live_test_replayer import LiveTestReplayer
             self._replayer = LiveTestReplayer(data_dir, speed_multiplier=speed)
             self._replayer.load()
@@ -131,6 +134,13 @@ class LiveSession:
 
     def laps_message(self) -> dict | None:
         return self._state_manager.laps_message() if self._state_manager else None
+
+    def signed_in(self) -> bool:
+        """Whether this session gets car positions and telemetry (an F1 TV
+        sign-in, or a recording that has them)."""
+        if self._signalr_client is not None:
+            return self._signalr_client.signed_in
+        return self._recorded_positions
 
     def feed_error(self) -> str | None:
         """Why the connection to F1 is failing, if it is."""
@@ -407,7 +417,7 @@ async def live_websocket(
 
                 frame = session.get_frame()
                 if frame:
-                    await websocket.send_json({"type": "frame", **frame})
+                    await websocket.send_json({"type": "frame", **frame, "signed_in": session.signed_in()})
 
                     # Check if session has finished (only after it was actually started)
                     if (session._state_manager

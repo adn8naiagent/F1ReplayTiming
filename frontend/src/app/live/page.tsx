@@ -609,8 +609,9 @@ function LiveTiming() {
                 drivers={drivers}
               />
 
-              {/* Live positions unavailable overlay (positions arrive with an F1 TV sign-in) */}
-              {!hasTelemetry && !drivers.some((d) => d.x !== 0 || d.y !== 0) && (
+              {/* Live positions unavailable: only when the server's live
+                  connection isn't signed in to F1 TV */}
+              {live.frame?.signed_in === false && !hasTelemetry && !drivers.some((d) => d.x !== 0 || d.y !== 0) && (
               <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
                 <div className="bg-f1-card/90 border border-f1-border rounded-lg px-4 py-2.5 backdrop-blur-sm text-center max-w-sm">
                   <p className="text-f1-muted text-xs leading-relaxed">

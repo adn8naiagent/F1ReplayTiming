@@ -85,6 +85,8 @@ export interface ReplayFrame {
   team_radio?: RadioClip[];
   /** Live only: mini-sectors per sector, when the feed has them */
   mini_sector_counts?: number[];
+  /** Live only: whether the server's live connection gets car positions (F1 TV sign-in) */
+  signed_in?: boolean;
   /** Live only: where each mini-sector ends, 0–1 along the lap, once worked out */
   mini_sector_ends?: number[];
 }
