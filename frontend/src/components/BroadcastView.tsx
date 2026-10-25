@@ -750,12 +750,12 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
       <div className="relative w-full h-full bg-black rounded-lg overflow-hidden border border-white/10">
         <video ref={ref} className="w-full h-full object-contain" muted playsInline />
         {driver && (
-          <div className={`absolute top-1.5 right-9 flex items-center gap-1 transition-opacity ${
+          <div className={`absolute top-1.5 right-9 flex flex-col items-end gap-1 transition-opacity ${
             controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 [@media(hover:none)]:pointer-events-none"
           }`}>
             {([
-              ...(sectors ? ([["Sectors", showSectors, onToggleSectors, "this onboard's mini-sectors along the bottom"]] as const) : []),
               ["Telemetry", showTelemetry, onToggleTelemetry, "telemetry on this onboard"],
+              ...(sectors ? ([["Sectors", showSectors, onToggleSectors, "this onboard's mini-sectors along the bottom"]] as const) : []),
             ] as const).map(([label, on, toggle, what]) => (
               <button
                 key={label}

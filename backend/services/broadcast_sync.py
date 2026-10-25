@@ -35,9 +35,10 @@ _LOG_STEP = 0.005  # frequency resolution of the comparison, in log units
 _WINDOW_S = 120.0  # how much of a flying lap to compare
 _MIN_RPM = 9000
 # Laps repeat, so a lap later can match nearly as well. A match counts when
-# it clearly beats every other offset, and two drivers agree this closely.
+# it clearly beats every other offset, and two drivers agree this closely
+# (if they don't, more drivers are tried); the result is their middle value.
 _MARGIN = 5.0
-_AGREE_S = 0.5
+_AGREE_S = 0.3
 
 _running: dict[str, asyncio.Task] = {}
 _failed: dict[str, str] = {}  # not retried until the server restarts
