@@ -1,6 +1,8 @@
 // Shared lap-timing display logic used by both the leaderboard timing tower
 // and the qualifying lap-completion bubbles, so the two never diverge.
 
+import type { LapEntry } from "@/components/Leaderboard";
+
 export type SectorColor = "purple" | "green" | "yellow";
 export interface SectorInfo {
   num: number;
@@ -8,6 +10,25 @@ export interface SectorInfo {
 }
 
 export type LapData = Map<string, Map<number, { time: string; completedAt: number | null; sectors?: (string | null)[] }>>;
+
+/** driver -> lap number -> lap time, from the laps list (replays or live). */
+export function buildLapData(laps: LapEntry[]): LapData {
+  const map: LapData = new Map();
+  for (const lap of laps) {
+    if (!lap.lap_time) continue;
+    let driverMap = map.get(lap.driver);
+    if (!driverMap) {
+      driverMap = new Map();
+      map.set(lap.driver, driverMap);
+    }
+    driverMap.set(lap.lap_number, {
+      time: lap.lap_time,
+      completedAt: lap.time ?? null,
+      sectors: [lap.sector1 ?? null, lap.sector2 ?? null, lap.sector3 ?? null],
+    });
+  }
+  return map;
+}
 
 // Parse a lap time string ("1:34.567" or "94.567") into seconds.
 export function toSecs(t: string): number {

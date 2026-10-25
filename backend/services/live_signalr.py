@@ -85,6 +85,18 @@ _MSG_CLOSE = 7
 # ---------------------------------------------------------------------------
 
 
+
+def _describe_error(e: Exception) -> str:
+    """A user-facing reason the connection to F1 failed."""
+    if isinstance(e, urllib.error.HTTPError):
+        if e.code == 403:
+            return ("F1 is refusing live timing connections from this server (HTTP 403). "
+                    "F1 blocks some networks, such as cloud hosts and VPNs.")
+        if e.code == 401:
+            return "F1 rejected the connection (HTTP 401). Sign in to F1 TV again."
+        return f"F1's live timing server returned an error (HTTP {e.code})."
+    return "Can't reach F1's live timing server. Check this server's internet connection."
+
 class LiveSignalRClient:
     """Async client that connects to the F1 live timing SignalR stream.
 
@@ -108,6 +120,12 @@ class LiveSignalRClient:
         # Set when F1 rejects the token, so we fall back to the free feed
         # instead of retrying with it on every reconnect.
         self._auth_rejected = False
+        # Why the last connection attempt failed, for the live page; cleared
+        # once connected.
+        self.last_error: str | None = None
+        # Whether the current connection is signed in to F1 TV, so it gets
+        # car positions and telemetry
+        self.signed_in = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -144,7 +162,8 @@ class LiveSignalRClient:
                 if self._stop_event.is_set():
                     break
                 logger.info("Session ended, reconnecting in %.1fs", backoff)
-            except Exception:
+            except Exception as e:
+                self.last_error = _describe_error(e)
                 logger.exception(
                     "SignalR session error, reconnecting in %.1fs", backoff
                 )
@@ -293,6 +312,7 @@ class LiveSignalRClient:
                 None, self._negotiate, None
             )
         topics = _TOPICS + _AUTH_TOPICS if token else _TOPICS
+        self.signed_in = bool(token)
 
         ws_url = f"{_WS_URL}?id={connection_token}"
 
@@ -333,6 +353,7 @@ class LiveSignalRClient:
 
             self._connected = True
             logger.info("SignalR handshake complete")
+            self.last_error = None
 
             # --- Subscribe ---
             subscribe_msg = {
@@ -452,7 +473,7 @@ class LiveSignalRClient:
             if target == "feed":
                 # Only log non-TimingData feed topics in detail to reduce noise
                 topic_preview = str(arguments[0])[:80] if arguments else "EMPTY"
-                if topic_preview != "TimingData":
+                if topic_preview not in ("TimingData", "Position.z", "CarData.z"):
                     logger.info(
                         "Feed msg: %d args, types=%s, topics=%r",
                         len(arguments),

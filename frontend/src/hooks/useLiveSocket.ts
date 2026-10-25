@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { wsUrl } from "@/lib/api";
-import type { ReplayDriver, ReplayFrame, WeatherData, QualiPhase, RCMessage } from "./useReplaySocket";
+import type { ReplayDriver, ReplayFrame, WeatherData, QualiPhase, RCMessage, QualiPhaseInfo } from "./useReplaySocket";
+import type { LapEntry } from "@/components/Leaderboard";
 
 export { type ReplayDriver, type ReplayFrame, type WeatherData, type QualiPhase, type RCMessage };
 
@@ -15,6 +16,13 @@ interface LiveState {
   finished: boolean;
   sessionEnded: boolean;
   error: string | null;
+  /** Why the server can't get data from F1 (e.g. refused), while retrying */
+  feedError: string | null;
+  /** Laps completed so far, on the frames' clock (null until the first list) */
+  laps: LapEntry[] | null;
+  qualiPhases: QualiPhaseInfo[];
+  /** When the session started, on the frames' clock */
+  sessionStart: number | null;
 }
 
 interface BufferedFrame {
@@ -45,6 +53,10 @@ export function useLiveSocket(
     finished: false,
     sessionEnded: false,
     error: null,
+    feedError: null,
+    laps: null,
+    qualiPhases: [],
+    sessionStart: null,
   });
 
   // Delay processing: buffer frames and release them after |delayOffset| seconds.
@@ -124,6 +136,10 @@ export function useLiveSocket(
             weather: msg.weather,
             quali_phase: msg.quali_phase,
             team_radio: msg.team_radio,
+            mini_sector_counts: msg.mini_sector_counts,
+            mini_sector_ends: msg.mini_sector_ends,
+            signed_in: msg.signed_in,
+            sector_flags: msg.sector_flags,
           };
           const rcMessages: RCMessage[] = msg.rc_messages || [];
 
@@ -150,6 +166,19 @@ export function useLiveSocket(
           break;
         case "error":
           setState((s) => ({ ...s, error: msg.message, loading: false }));
+          break;
+        case "feed_error":
+          setState((s) => ({ ...s, feedError: msg.message ?? null }));
+          break;
+        // Not buffered for the broadcast delay: laps carry their completion
+        // time, and are only shown once the (delayed) frame reaches it
+        case "laps":
+          setState((s) => ({
+            ...s,
+            laps: msg.laps || [],
+            qualiPhases: msg.quali_phases || [],
+            sessionStart: msg.session_start ?? null,
+          }));
           break;
       }
     };

@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["live"])
@@ -33,6 +33,8 @@ class LiveSession:
         self._mode = "none"  # "replayer" or "signalr"
         self._msg_logged = False
         self._radio_tasks: set[asyncio.Task] = set()
+        self._recorded_positions = False
+        self._year: int | None = None  # picks the team radio caption vocabulary
 
     async def start(
         self,
@@ -49,6 +51,7 @@ class LiveSession:
         """
         if self._started:
             return
+        self._year = year or None
 
         from services.live_state import LiveStateManager
         from services.storage import get_json
@@ -91,6 +94,8 @@ class LiveSession:
         )
 
         if data_dir:
+            # Recordings made while signed in include car positions
+            self._recorded_positions = os.path.exists(os.path.join(data_dir, "Position.z.jsonStream"))
             from services.live_test_replayer import LiveTestReplayer
             self._replayer = LiveTestReplayer(data_dir, speed_multiplier=speed)
             self._replayer.load()
@@ -109,7 +114,7 @@ class LiveSession:
         # the first clip.
         from services import f1_account, team_radio
         if f1_account.ready():
-            asyncio.create_task(asyncio.to_thread(team_radio.warm_up))
+            asyncio.create_task(asyncio.to_thread(team_radio.warm_up, True))
 
     async def _run_replayer(self):
         """Run the test replayer, feeding messages into the state manager."""
@@ -119,6 +124,27 @@ class LiveSession:
             pass
         except Exception as e:
             logger.error(f"Replayer error: {e}")
+
+    def laps_key(self) -> tuple | None:
+        """Changes whenever the lap history does."""
+        sm = self._state_manager
+        if sm is None:
+            return None
+        return (sm.laps.version, len(sm._quali_parts), sm._session_start)
+
+    def laps_message(self) -> dict | None:
+        return self._state_manager.laps_message() if self._state_manager else None
+
+    def signed_in(self) -> bool:
+        """Whether this session gets car positions and telemetry (an F1 TV
+        sign-in, or a recording that has them)."""
+        if self._signalr_client is not None:
+            return self._signalr_client.signed_in
+        return self._recorded_positions
+
+    def feed_error(self) -> str | None:
+        """Why the connection to F1 is failing, if it is."""
+        return self._signalr_client.last_error if self._signalr_client else None
 
     async def _run_signalr(self):
         """Run the real SignalR client, feeding messages into the state manager."""
@@ -153,7 +179,10 @@ class LiveSession:
         if team_radio.captions_enabled():
             audio = await asyncio.to_thread(team_radio.fetch_audio, clip["url"])
             if audio:
-                transcript = await asyncio.to_thread(team_radio.transcribe, audio, clip.get("first_name"))
+                context = self._state_manager.radio_context(clip["racing_number"]) if self._state_manager else {}
+                transcript = await asyncio.to_thread(
+                    team_radio.caption, audio, clip.get("first_name"), self._year, context, True,
+                )
         if self._state_manager is not None:
             self._state_manager.set_radio_caption(clip["id"], transcript)
 
@@ -294,6 +323,17 @@ async def _get_or_create_session(
     return _live_sessions[key]
 
 
+@router.get("/api/live/{year}/{round_num}/telemetry")
+async def live_lap_telemetry(year: int, round_num: int, type: str = Query("Q"), driver: str = Query(...), lap: int = Query(...)):
+    """One lap's telemetry recorded during the live session, for Lap
+    Analysis's Compare tab. Auth is enforced by the /api middleware."""
+    session = _live_sessions.get(f"{year}_{round_num}_{type}")
+    trace = session._state_manager.lap_trace(driver, lap) if session and session._state_manager else None
+    if trace is None:
+        raise HTTPException(status_code=404, detail="Not recorded yet")
+    return trace
+
+
 @router.websocket("/ws/live/{year}/{round_num}")
 async def live_websocket(
     websocket: WebSocket,
@@ -367,11 +407,28 @@ async def live_websocket(
 
         command_task = asyncio.create_task(handle_commands())
 
+        sent_error: str | None = None
+        sent_laps_key = None
         try:
             while True:
+                # Lap history: the whole list when it changes (a lap completes
+                # every few seconds at most), for Lap Analysis
+                laps_key = session.laps_key()
+                if laps_key is not None and laps_key != sent_laps_key:
+                    message = session.laps_message()
+                    if message is not None:
+                        await websocket.send_json({"type": "laps", **message})
+                    sent_laps_key = laps_key
+
+                # Tell the page when F1 refuses the connection, and when it recovers
+                error = session.feed_error()
+                if error != sent_error:
+                    await websocket.send_json({"type": "feed_error", "message": error})
+                    sent_error = error
+
                 frame = session.get_frame()
                 if frame:
-                    await websocket.send_json({"type": "frame", **frame})
+                    await websocket.send_json({"type": "frame", **frame, "signed_in": session.signed_in()})
 
                     # Check if session has finished (only after it was actually started)
                     if (session._state_manager

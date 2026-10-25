@@ -17,6 +17,7 @@ export interface ReplayDriver {
   pit_stops: number;
   in_pit: boolean;
   pit_time: number | null;
+  out_lap?: boolean; // absent in sessions processed before it was added
   finished: boolean;
   tyre_history: string[];
   gap: string | null;
@@ -39,6 +40,10 @@ export interface ReplayDriver {
   pit_prediction_margin: number | null;
   pit_prediction_free_air: number | null;
   sectors: { num: number; color: "purple" | "green" | "yellow" }[] | null;
+  /** Live only: the most recent lap, coloured by F1's flags */
+  last_lap?: { time: string; personal: boolean; overall: boolean } | null;
+  /** Live only: mini-sector statuses in lap order (qualifying and practice) */
+  mini_sectors?: number[];
 }
 
 export interface WeatherData {
@@ -78,6 +83,12 @@ export interface ReplayFrame {
   sector_flags?: { sector: number; flag: string; driver: string }[];
   /** Live only: the latest captioned team radio clips */
   team_radio?: RadioClip[];
+  /** Live only: mini-sectors per sector, when the feed has them */
+  mini_sector_counts?: number[];
+  /** Live only: whether the server's live connection gets car positions (F1 TV sign-in) */
+  signed_in?: boolean;
+  /** Live only: where each mini-sector ends, 0–1 along the lap, once worked out */
+  mini_sector_ends?: number[];
 }
 
 export interface QualiPhaseInfo {
