@@ -240,11 +240,19 @@ async def play(content_id: str, channel_id: str | None = None) -> dict[str, Any]
     params = {"contentId": content_id}
     if channel_id:
         params["channelId"] = channel_id
-    body = await _get("CONTENT/PLAY", token, entitlement, params=params)
+    try:
+        body = await _get("CONTENT/PLAY", token, entitlement, params=params)
+    except F1TVError as e:
+        if e.status in (401, 403, 404):
+            logger.warning("F1 TV refused to play %s (channel %s): HTTP %s %s", content_id, channel_id, e.status, _redact(e.body))
+            raise F1TVError(_play_refusal(e.body, e.status), status=e.status, body=_redact(e.body)) from e
+        raise
     result = body.get("resultObj") or {}
     manifest = result.get("url")
     if not manifest:
-        raise F1TVError("F1 TV didn't return a stream URL", body=_redact(result))
+        logger.warning("F1 TV gave no stream for %s (channel %s): %s", content_id, channel_id,
+                       _redact({k: v for k, v in body.items() if k != "resultObj"}))
+        raise F1TVError(_play_refusal(body, None), status=403, body=_redact(body))
     license_url = result.get("laURL")
     pid = _register(manifest, license_url)
     return {
@@ -257,6 +265,34 @@ async def play(content_id: str, channel_id: str | None = None) -> dict[str, Any]
         "video_start_utc": await _video_start_utc(manifest),
         "raw": _redact(result),
     }
+
+
+def _play_refusal(body: Any, status: int | None) -> str:
+    """A plain message for F1 TV refusing to play a video, with F1 TV's own
+    reason when it gives one."""
+    reason, code = "", ""
+    if isinstance(body, dict):
+        reason = str(body.get("errorDescription") or body.get("message") or "").strip()
+        code = str(body.get("resultCode") or "").strip()
+        if reason.isdigit():  # "message" is sometimes just the HTTP status
+            reason = ""
+    said = f" F1 TV said: \"{reason}\"{f' ({code})' if code and code != 'OK' else ''}." if reason else ""
+    text = f"{reason} {code}".lower()
+    if status == 401:
+        return "F1 TV's sign-in has expired. Sign in to F1 TV again." + said
+    if any(w in text for w in ("geo", "country", "region", "location", "territor", "not available in")):
+        return ("F1 TV won't stream this video where your connection appears to be. F1 TV decides by "
+                "your internet address, so a VPN set to another country can cause this. Turn the VPN "
+                "off or set it to your own country, then retry." + said)
+    if any(w in text for w in ("entitle", "subscri", "upgrade", "tier", "package")):
+        return ("Your F1 TV plan doesn't include this video. Video needs F1 TV Pro or Premium." + said)
+    if any(w in text for w in ("concurren", "simultaneous", "device limit", "too many")):
+        return ("F1 TV is already playing too many videos on this account. Close F1 TV on other "
+                "devices, or show fewer onboards, then retry." + said)
+    return ("F1 TV wouldn't stream this video." + (said or " It gave no reason.") +
+            " The usual cause is where your connection appears to be: F1 TV only streams in some "
+            "countries, and a VPN can make you appear elsewhere. If you're on a VPN, turn it off or "
+            "set it to your own country, then retry.")
 
 
 def _redact(obj: Any) -> Any:

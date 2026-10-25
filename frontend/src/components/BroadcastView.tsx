@@ -320,10 +320,18 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       />
 
       {main.state !== "ready" && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <p className="text-xs text-f1-muted">
+        <div className={`absolute inset-y-0 left-0 flex flex-col items-center justify-center gap-3 px-6 ${sideColumn ? "w-[70%]" : "w-full"}`}>
+          <p className={`text-xs text-center max-w-md leading-relaxed ${contentError || main.state === "error" ? "text-white/80" : "text-f1-muted"}`}>
             {contentError || (main.state === "error" ? main.debug.error?.message : "Loading broadcast…")}
           </p>
+          {main.state === "error" && link && (
+            <button
+              onClick={() => void main.load(link, mainChannel, opts)}
+              className="px-3 py-1 rounded bg-f1-border text-white text-xs font-bold hover:bg-f1-red transition-colors"
+            >
+              Retry
+            </button>
+          )}
         </div>
       )}
 
@@ -587,9 +595,15 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
         </button>
         {showTelemetry && <OnboardTelemetry driver={driver} speed={replaySpeed} />}
         {stream.state === "error" && (
-          <p className="absolute inset-0 flex items-center justify-center text-[10px] text-f1-muted p-2 text-center">
-            {stream.debug.error?.message}
-          </p>
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
+            <p className="text-[10px] text-white/80 leading-snug">{stream.debug.error?.message}</p>
+            <button
+              onClick={() => void stream.load(link, channel, opts)}
+              className="px-2 py-0.5 rounded bg-f1-border text-white text-[10px] font-bold hover:bg-f1-red transition-colors"
+            >
+              Retry
+            </button>
+          </div>
         )}
       </div>
       </div>
