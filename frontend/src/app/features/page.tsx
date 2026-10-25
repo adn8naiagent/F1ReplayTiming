@@ -837,8 +837,9 @@ export default function FeaturesPage() {
             </ul>
             <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mb-2">Adjusting it</p>
             <p className="text-sm text-f1-text leading-relaxed">
-              Nudge the video with ±0.5s and ±5s; the adjustment shows as a chip, and its × goes back to the
-              automatic sync. For full control, press <span className="font-bold text-white">Sync manually</span>:
+              Use <span className="font-bold text-white">Fine-tune video sync</span> to nudge the video ±0.5s or ±5s;
+              the adjustment shows as a chip, and its × goes back to the automatic sync. For full control, press{" "}
+              <span className="font-bold text-white">Sync manually</span>, beside the sync status:
               the video gets its own play bar, you find the moment that matches the timing (lights out or a car
               crossing the line works well), and press <span className="font-bold text-white">Set sync here</span>.
               Pausing the replay first makes this easier. A manual sync is kept until you clear it.

@@ -67,14 +67,17 @@ function MultiView() {
           </div>
           <div className="relative flex items-center gap-1">
             <Callout n={2} className="-left-2.5 -top-1.5" />
+            <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/80 border border-f1-border">
+              <span className="w-1 h-1 rounded-full bg-green-400" />
+              <span className="text-[7px] text-white/80">Synced by engine sound (VER, STR)</span>
+            </span>
+            <span className={`${pill} bg-black/70 border-f1-border text-f1-muted`}>Sync manually</span>
+          </div>
+          <div className="flex items-center gap-1 px-1 py-0.5 rounded bg-black/60 border border-f1-border w-fit">
+            <span className="text-[6px] font-bold text-f1-muted uppercase tracking-wider">Fine-tune video sync</span>
             {["−5s", "−0.5s", "+0.5s", "+5s"].map((t) => (
               <span key={t} className={`${pill} bg-black/70 border-f1-border text-f1-muted`}>{t}</span>
             ))}
-            <span className={`${pill} bg-black/70 border-f1-border text-f1-muted`}>Sync manually</span>
-          </div>
-          <div className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/80 border border-f1-border w-fit">
-            <span className="w-1 h-1 rounded-full bg-green-400" />
-            <span className="text-[7px] text-white/80">Synced by engine sound (VER, STR)</span>
           </div>
           <div className="relative flex items-center gap-1">
             <Callout n={3} className="-left-2.5 -top-1.5" />
@@ -179,7 +182,7 @@ export function SyncDiagram() {
 
 const MULTI_KEY: { name: string; description: string }[] = [
   { name: "View", description: "Switch between Multi-view and Single view. Your choice is remembered." },
-  { name: "Sync", description: "Nudge the video ±0.5s or ±5s against the timing, or line it up yourself with Sync manually. The line underneath says how the session is synced." },
+  { name: "Sync", description: "How the session is synced, with Sync manually beside it to line it up yourself. Underneath, Fine-tune video sync nudges the video ±0.5s or ±5s against the timing." },
   { name: "Overlays", description: "Turn the track map, race control and team radio on or off. Radio audio is separate, as the broadcast often plays the same message. Your choices are remembered." },
   { name: "Onboards", description: "Pick up to two drivers' onboard cameras from the menu. Each has a Telemetry switch and × to close it." },
   { name: "Onboard telemetry", description: "Speed, gear, a throttle gauge and a brake light for that driver, from the timing." },
