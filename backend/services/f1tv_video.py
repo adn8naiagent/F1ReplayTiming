@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
 import time
 import urllib.parse
@@ -209,6 +210,30 @@ def _register(manifest_url: str, license_url: str | None) -> str:
     return pid
 
 
+async def _video_start_utc(manifest_url: str) -> float | None:
+    """The real time (epoch seconds) at the video's 0:00. F1 TV's replays
+    are cut from the live stream, whose media timeline is epoch time: the
+    manifest's presentationTimeOffset / timescale. Falls back to the URL's
+    start parameter."""
+    for _ in range(2):  # the CDN occasionally answers with something else
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                xml = (await client.get(manifest_url)).text
+        except Exception as e:
+            logger.warning("Couldn't read the F1 TV manifest's start time: %s", e)
+            continue
+        tag = re.search(r"<SegmentTemplate[^>]*>", xml)
+        if tag:
+            scale = re.search(r'timescale="(\d+)"', tag.group(0))
+            offset = re.search(r'presentationTimeOffset="(\d+)"', tag.group(0))
+            if scale and offset and int(scale.group(1)) > 0:
+                t = int(offset.group(1)) / int(scale.group(1))
+                if t > 1e9:  # an epoch time, not a programme-relative one
+                    return t
+    start = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(manifest_url).query)).get("start")
+    return float(start) if start and start.isdigit() else None
+
+
 async def play(content_id: str, channel_id: str | None = None) -> dict[str, Any]:
     token = _token()
     entitlement = await _entitlement_token(token)
@@ -229,6 +254,7 @@ async def play(content_id: str, channel_id: str | None = None) -> dict[str, Any]
         "stream_type": result.get("streamType"),
         "drm_type": result.get("drmType"),
         "entitlement_token_used": entitlement is not None,
+        "video_start_utc": await _video_start_utc(manifest),
         "raw": _redact(result),
     }
 

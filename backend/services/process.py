@@ -26,6 +26,7 @@ from services.f1_data import (
     _get_driver_positions_by_time_sync,
     _get_driver_telemetry_sync,
     _get_team_radio_sync,
+    replay_start_utc,
     _get_minisectors_sync,
 )
 
@@ -215,6 +216,12 @@ def _process_session_sync(
         raise
     except Exception as e:
         logger.warning(f"[{prefix}] No team radio: {e}")
+
+    # Replay 0:00 in real time, for syncing the F1 TV broadcast
+    start_utc = replay_start_utc(year, round_num, session_type)
+    if start_utc is not None:
+        info["replay_start_utc"] = start_utc
+        storage.put_json(f"{base}/info.json", info)
 
     status("Processing telemetry...")
 

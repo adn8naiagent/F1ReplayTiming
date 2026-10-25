@@ -60,13 +60,33 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   const main = useF1TVStream(mainRef);
   const onboard = useF1TVStream(onboardRef);
 
+  // Sync. The broadcast follows the replay: video time = replay time + offset.
+  // Both carry real (UTC) times, so the offset is worked out automatically;
+  // a manual Sync is the fallback for sessions without them. ±0.5s nudges
+  // are remembered per session. The onboard follows the broadcast (F1 TV's
+  // feeds share one clock), with its own nudge.
   const offsetKey = (channel: string | null) => `f1tv_offset_${sessionKey}_${content?.content_id}_${channel ?? "main"}`;
-  const [mainOffset, setMainOffset] = useState<number | null>(null);
-  const [onboardOffset, setOnboardOffset] = useState<number | null>(null);
+  const nudgeKey = (which: "main" | "onboard") => `f1tv_nudge_${sessionKey}_${which}`;
+  const [manualOffset, setManualOffset] = useState<number | null>(null);
+  const [mainNudge, setMainNudge] = useState<number>(() => readJson(nudgeKey("main"), 0));
+  const [onboardNudge, setOnboardNudge] = useState<number>(() => readJson(nudgeKey("onboard"), 0));
+  const [replayStart, setReplayStart] = useState<number | null>(null);
+  useEffect(() => {
+    const [year, round, type] = sessionKey.split("_");
+    f1tv.replayStart(Number(year), Number(round), type).then((r) => setReplayStart(r.replay_start_utc)).catch(() => setReplayStart(null));
+  }, [sessionKey]);
+  const videoStart = main.debug.playback?.video_start_utc ?? null;
+  const autoOffset = replayStart !== null && videoStart !== null ? replayStart - videoStart : null;
+  const mainOffset = autoOffset !== null ? autoOffset + mainNudge : manualOffset;
 
   const clock = useReplayClock(timestamp, playing, speed);
   const mainDrift = useVideoSync(mainRef, main.state === "ready", clock, playing, speed, mainOffset);
-  const onboardDrift = useVideoSync(onboardRef, onboard.state === "ready", clock, playing, speed, onboardOffset);
+  const broadcastClock = useCallback(() => mainRef.current?.currentTime ?? 0, []);
+  const broadcastPlaying = mainOffset !== null ? playing : !!mainRef.current && !mainRef.current.paused;
+  const onboardDrift = useVideoSync(
+    onboardRef, onboard.state === "ready" && main.state === "ready", broadcastClock,
+    broadcastPlaying, mainOffset !== null ? speed : 1, onboardNudge,
+  );
 
   useEffect(() => writeJson("f1tv_stream_opts", opts), [opts]);
 
@@ -115,7 +135,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   // (Re)load the main feed.
   useEffect(() => {
     if (!link || !content) return;
-    setMainOffset(readJson<number | null>(offsetKey(mainChannel), null));
+    setManualOffset(readJson<number | null>(offsetKey(mainChannel), null));
     void main.load(link, mainChannel, opts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link, content, mainChannel, opts]);
@@ -126,46 +146,45 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
       void onboard.unload();
       return;
     }
-    setOnboardOffset(readJson<number | null>(offsetKey(onboardChannel), null));
     void onboard.load(link, onboardChannel, opts);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link, content, onboardChannel, showOnboard, opts]);
 
-  const syncHere = useCallback(
-    (which: "main" | "onboard") => {
-      const video = (which === "main" ? mainRef : onboardRef).current;
-      if (!video) return;
-      const offset = video.currentTime - clock();
-      if (which === "main") {
-        setMainOffset(offset);
-        writeJson(offsetKey(mainChannel), offset);
-      } else {
-        setOnboardOffset(offset);
-        writeJson(offsetKey(onboardChannel), offset);
-      }
-    },
+  // Manual sync, only when the automatic offset isn't available
+  const syncHere = useCallback(() => {
+    const video = mainRef.current;
+    if (!video) return;
+    const offset = video.currentTime - clock();
+    setManualOffset(offset);
+    writeJson(offsetKey(mainChannel), offset);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [clock, mainChannel, onboardChannel, content],
-  );
+  }, [clock, mainChannel, content]);
 
   const nudge = (which: "main" | "onboard", by: number) => {
-    if (which === "main" && mainOffset !== null) {
-      setMainOffset(mainOffset + by);
-      writeJson(offsetKey(mainChannel), mainOffset + by);
-    }
-    if (which === "onboard" && onboardOffset !== null) {
-      setOnboardOffset(onboardOffset + by);
-      writeJson(offsetKey(onboardChannel), onboardOffset + by);
+    if (which === "onboard") {
+      const next = onboardNudge + by;
+      setOnboardNudge(next);
+      writeJson(nudgeKey("onboard"), next);
+    } else if (autoOffset !== null) {
+      const next = mainNudge + by;
+      setMainNudge(next);
+      writeJson(nudgeKey("main"), next);
+    } else if (manualOffset !== null) {
+      setManualOffset(manualOffset + by);
+      writeJson(offsetKey(mainChannel), manualOffset + by);
     }
   };
 
-  const unsync = (which: "main" | "onboard") => {
-    if (which === "main") {
-      setMainOffset(null);
-      writeJson(offsetKey(mainChannel), null);
+  const resetSync = (which: "main" | "onboard") => {
+    if (which === "onboard") {
+      setOnboardNudge(0);
+      writeJson(nudgeKey("onboard"), 0);
+    } else if (autoOffset !== null) {
+      setMainNudge(0);
+      writeJson(nudgeKey("main"), 0);
     } else {
-      setOnboardOffset(null);
-      writeJson(offsetKey(onboardChannel), null);
+      setManualOffset(null);
+      writeJson(offsetKey(mainChannel), null);
     }
   };
 
@@ -239,7 +258,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
       {showOverlays && (
         // Just the track lines over the video: the map's own background is
         // made transparent here
-        <div className="absolute top-12 right-3 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
+        <div className="absolute top-10 right-3 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
           {trackOverlay}
         </div>
       )}
@@ -247,7 +266,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
       {/* Kept mounted while hidden so the player stays attached. */}
       {showOnboard && onboardChannel && (
         <div className={`absolute bottom-3 right-3 w-[28%] max-w-[420px] aspect-video bg-black rounded-lg overflow-hidden border border-white/10 ${showOverlays ? "" : "hidden"}`}>
-          <video ref={onboardRef} className="w-full h-full object-contain" muted playsInline controls={onboardOffset === null && onboard.state === "ready"} />
+          <video ref={onboardRef} className="w-full h-full object-contain" muted playsInline />
           {onboard.state === "error" && (
             <p className="absolute inset-0 flex items-center justify-center text-[10px] text-f1-muted p-2 text-center">
               {onboard.debug.error?.message}
@@ -268,14 +287,14 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
             </select>
           )}
           {mainOffset === null ? (
-            <button onClick={() => syncHere("main")} className={`${btnClass} !text-white !bg-f1-red border-f1-red`} title="Line the video up with the timing, then press">
+            <button onClick={syncHere} className={`${btnClass} !text-white !bg-f1-red border-f1-red`} title="Line the video up with the timing, then press">
               Sync broadcast here
             </button>
           ) : (
             <>
-              <button onClick={() => nudge("main", -0.5)} className={btnClass}>−0.5s</button>
-              <button onClick={() => nudge("main", 0.5)} className={btnClass}>+0.5s</button>
-              <button onClick={() => unsync("main")} className={btnClass}>Re-sync</button>
+              <button onClick={() => nudge("main", -0.5)} className={btnClass} title="Video earlier against the timing">−0.5s</button>
+              <button onClick={() => nudge("main", 0.5)} className={btnClass} title="Video later against the timing">+0.5s</button>
+              <button onClick={() => resetSync("main")} className={btnClass}>{autoOffset !== null ? "Reset sync" : "Re-sync"}</button>
             </>
           )}
         </div>
@@ -288,17 +307,13 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
               </option>
             ))}
           </select>
-          {onboardChannel && (onboardOffset === null ? (
-            <button onClick={() => syncHere("onboard")} className={`${btnClass} !text-white !bg-f1-red border-f1-red`}>
-              Sync onboard here
-            </button>
-          ) : (
+          {onboardChannel && (
             <>
               <button onClick={() => nudge("onboard", -0.5)} className={btnClass}>−0.5s</button>
               <button onClick={() => nudge("onboard", 0.5)} className={btnClass}>+0.5s</button>
-              <button onClick={() => unsync("onboard")} className={btnClass}>Re-sync</button>
+              {onboardNudge !== 0 && <button onClick={() => resetSync("onboard")} className={btnClass}>Reset</button>}
             </>
-          ))}
+          )}
           {onboardChannel && (
             <button onClick={() => setShowOnboard((v) => !v)} className={btnClass}>{showOnboard ? "Hide" : "Show"} onboard</button>
           )}
@@ -322,9 +337,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
             Change link
           </button>
         </div>
-        {(mainOffset === null || (onboardChannel && onboardOffset === null)) && (
+        {mainOffset === null && (
           <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
-            Until synced, use the video controls to find the moment that matches the timing (lights out works well), then press Sync.
+            This session can&apos;t be synced automatically (reprocess it to fix that). Use the video controls to find the moment that matches the timing (lights out works well), then press Sync.
           </p>
         )}
       </div>

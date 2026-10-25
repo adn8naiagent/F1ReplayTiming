@@ -109,6 +109,8 @@ export function drawTrack(
   sectorFlags?: SectorFlag[] | null,
   showElevation: boolean = false,
   segmentOverlay?: SegmentOverlay | null,
+  /** Track line width in pixels (thinner for small maps) */
+  trackWidth: number = 12,
 ) {
   if (points.length === 0) return;
 
@@ -166,7 +168,7 @@ export function drawTrack(
   // Draw track outline. Priority: segments > elevation > sector overlay > plain.
   if (segmentOverlay && segmentOverlay.segments.length > 0) {
     const frac = lapFractions(points);
-    ctx.lineWidth = 12;
+    ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
@@ -211,7 +213,7 @@ export function drawTrack(
       buckets[level].moveTo(x1, y1);
       buckets[level].lineTo(x2, y2);
     }
-    ctx.lineWidth = 12;
+    ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     for (let level = 0; level < STOPS; level++) {
@@ -252,7 +254,7 @@ export function drawTrack(
     // Draw base track first (so gaps between segments aren't visible)
     ctx.beginPath();
     ctx.strokeStyle = "#3A3A4A";
-    ctx.lineWidth = 12;
+    ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     const [bx, by] = toScreen(rotated[0]);
@@ -268,7 +270,7 @@ export function drawTrack(
     for (const seg of segments) {
       ctx.beginPath();
       ctx.strokeStyle = seg.color;
-      ctx.lineWidth = 12;
+      ctx.lineWidth = trackWidth;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       const [sx2, sy2] = toScreen(rotated[seg.start]);
@@ -283,7 +285,7 @@ export function drawTrack(
     ctx.beginPath();
     const effectiveStatus = (sectorFlags && sectorFlags.length > 0 && (trackStatus === "yellow")) ? "green" : trackStatus;
     ctx.strokeStyle = TRACK_STATUS_COLORS[effectiveStatus] || "#3A3A4A";
-    ctx.lineWidth = 12;
+    ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 

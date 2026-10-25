@@ -18,6 +18,8 @@ interface Props {
   marshalSectors?: MarshalSector[] | null;
   sectorFlags?: SectorFlag[] | null;
   showElevation?: boolean;
+  /** Track line width in pixels; thinner for small overlays */
+  trackWidth?: number;
   elevationRangeM?: number | null;
 }
 
@@ -39,7 +41,7 @@ function getCanvasWindow(canvas: HTMLCanvasElement | null): Window {
 }
 
 
-export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers, playbackSpeed = 1, showDriverNames = true, sectorOverlay = null, segmentOverlay = null, corners = null, marshalSectors = null, sectorFlags = null, showElevation = false, elevationRangeM = null }: Props) {
+export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers, playbackSpeed = 1, showDriverNames = true, sectorOverlay = null, segmentOverlay = null, corners = null, marshalSectors = null, sectorFlags = null, showElevation = false, elevationRangeM = null, trackWidth = 12 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -62,6 +64,8 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
   marshalSectorsRef.current = marshalSectors;
   const sectorFlagsRef = useRef(sectorFlags);
   sectorFlagsRef.current = sectorFlags;
+  const trackWidthRef = useRef(trackWidth);
+  trackWidthRef.current = trackWidth;
   const showElevationRef = useRef(showElevation);
   showElevationRef.current = showElevation;
 
@@ -132,7 +136,7 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current, sectorOverlayRef.current, cornersRef.current, marshalSectorsRef.current, sectorFlagsRef.current, showElevationRef.current, segmentOverlayRef.current);
+      drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current, sectorOverlayRef.current, cornersRef.current, marshalSectorsRef.current, sectorFlagsRef.current, showElevationRef.current, segmentOverlayRef.current, trackWidthRef.current);
 
       const now = performance.now();
       const curr = driversRef.current;

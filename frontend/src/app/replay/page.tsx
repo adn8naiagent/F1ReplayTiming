@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, cloneElement } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
 import { useReplaySocket } from "@/hooks/useReplaySocket";
@@ -248,7 +248,8 @@ export default function ReplayPage() {
 
   useEffect(() => {
     if (!appConfig?.f1tv) return;
-    f1tv.status().then((s) => setF1tvSignedIn(s.signed_in)).catch(() => {});
+    // Video needs F1 TV Pro or Premium (Access is timing data only)
+    f1tv.status().then((s) => setF1tvSignedIn(s.signed_in && /\b(pro|premium)\b/i.test(s.product ?? ""))).catch(() => {});
   }, [appConfig?.f1tv]);
 
   const reportProblem = useCallback(() => {
@@ -492,6 +493,14 @@ export default function ReplayPage() {
       elevationRangeM={trackData?.elevation?.range_m ?? null}
     />
   );
+  // The small map over the broadcast: thinner lines, no elevation or sectors
+  const overlayTrackCanvas = cloneElement(mainTrackCanvas, {
+    trackWidth: 5,
+    showElevation: false,
+    sectorOverlay: null,
+    segmentOverlay: null,
+    sectorFlags: null,
+  });
   return (
     <div className="h-dvh flex flex-col bg-f1-dark overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Connection lost — the socket retries on its own in the background */}
@@ -651,17 +660,20 @@ export default function ReplayPage() {
               {/* Race Control toggle - desktop only, mobile has its own section */}
               <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-1.5">
                 {BROADCAST_ENABLED && f1tvSignedIn && (
-                  <button
-                    onClick={() => setBroadcastOn(!broadcastOn)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
-                      broadcastOn
-                        ? "bg-f1-red text-white"
-                        : "bg-f1-card/90 border border-f1-border text-f1-muted hover:text-white backdrop-blur-sm"
-                    }`}
-                    title="Show the F1 TV broadcast"
-                  >
-                    Broadcast
-                  </button>
+                  <div className="flex items-center rounded border border-f1-border bg-f1-card/90 backdrop-blur-sm overflow-hidden">
+                    {([false, true] as const).map((on) => (
+                      <button
+                        key={String(on)}
+                        onClick={() => setBroadcastOn(on)}
+                        className={`px-2 py-1 text-xs font-bold transition-colors ${
+                          broadcastOn === on ? "bg-f1-red text-white" : "text-f1-muted hover:text-white"
+                        }`}
+                        title={on ? "Show the F1 TV broadcast, synced to the timing" : "Show the track map"}
+                      >
+                        {on ? "Broadcast" : "Track map"}
+                      </button>
+                    ))}
+                  </div>
                 )}
                 <button
                   onClick={() => {
@@ -773,14 +785,14 @@ export default function ReplayPage() {
                   selectedDriverNumbers={selectedDrivers
                     .map((abbr) => sessionData?.drivers.find((d) => d.abbreviation === abbr)?.driver_number)
                     .filter((n): n is string => !!n)}
-                  trackOverlay={mainTrackCanvas}
+                  trackOverlay={overlayTrackCanvas}
                 />
               ) : mainTrackCanvas}
 
               {/* Telemetry now in bottom drawer */}
 
               {/* Sector overlay toggle - desktop qualifying only */}
-              {!isMobile && hasSectors && trackData?.sector_boundaries && (
+              {!isMobile && hasSectors && trackData?.sector_boundaries && !broadcastOn && (
                 <div className="absolute bottom-2 right-36 z-20 flex items-center gap-1">
                   {showSectorOverlay && (
                     <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
@@ -817,7 +829,7 @@ export default function ReplayPage() {
               )}
 
               {/* Sector overlay controls - mobile qualifying only */}
-              {isMobile && hasSectors && trackData?.sector_boundaries && (
+              {isMobile && hasSectors && trackData?.sector_boundaries && !broadcastOn && (
                 <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center gap-1">
                   {showSectorOverlay && (
                     <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
