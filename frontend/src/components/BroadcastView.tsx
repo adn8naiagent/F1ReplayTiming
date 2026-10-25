@@ -265,7 +265,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
 
       {/* Kept mounted while hidden so the player stays attached. */}
       {showOnboard && onboardChannel && (
-        <div className={`absolute bottom-3 right-3 w-[28%] max-w-[420px] aspect-video bg-black rounded-lg overflow-hidden border border-white/10 ${showOverlays ? "" : "hidden"}`}>
+        // Top right, above the broadcast and the map
+        <div className={`absolute top-3 right-3 z-20 w-[28%] max-w-[420px] aspect-video bg-black rounded-lg overflow-hidden border border-white/10 shadow-lg ${showOverlays ? "" : "hidden"}`}>
           <video ref={onboardRef} className="w-full h-full object-contain" muted playsInline />
           {onboard.state === "error" && (
             <p className="absolute inset-0 flex items-center justify-center text-[10px] text-f1-muted p-2 text-center">
