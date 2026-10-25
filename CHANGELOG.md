@@ -4,16 +4,19 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 ## 2.5.0
 
-### Improvements
+### Features
 
 - **F1 TV broadcast in replays** — with F1 TV Pro or Premium, switch the track map to **Broadcast** (top right of the track map) to watch the session's F1 TV replay in sync with the timing. The replay is found automatically, and the video follows the replay's play, pause, speed and skips.
-  - **Automatic sync** — the server lines the video up with the timing by matching the onboard cameras' engine sound to each driver's RPM, checked with a second driver. It takes about a minute the first time a session is opened, then it's saved. Adjust it by ±0.5s or ±5s from the hover controls; the adjustment shows as a chip whose × goes back to the automatic sync. Where F1 TV's audio is encrypted, the video's own time stamp is used instead.
-  - **Multi-view** — the broadcast with up to two onboard cameras and the track map beside it. Pick each onboard from a driver menu in the panel; your choices are remembered. Each onboard can show the driver's speed, gear, throttle and brake along the bottom.
-  - **Single view** — the broadcast full width with the track map's lines over it.
-  - **Settings > Broadcast** sets the view to open in, onboard telemetry and the track map. The hover controls switch the view, track map, race control and team radio without changing your settings. On touch screens, tap the video to show them.
-  - **Race control** shows as one line along the bottom of the broadcast when a message arrives, then fades. **Team radio** pops up at the top, as on the track map.
-  - **Other F1 TV feeds** — F1 Live, International, Driver Tracker and Data Channel, depending on the session and your account.
-  - **Mute** — a mute button at the left of the playback controls while the broadcast shows.
+
+- **Automatic broadcast sync** — the server lines the video up with the timing by matching the onboard cameras' engine sound to each driver's RPM, checked with a second driver. It takes about a minute the first time a session is opened, then it's saved. Adjust it by ±0.5s or ±5s from the hover controls; the adjustment shows as a chip whose × goes back to the automatic sync. Where F1 TV's audio is encrypted, the video's own time stamp is used instead.
+
+- **Multi-view** — the broadcast with up to two onboard cameras and the track map beside it. Pick each onboard from a driver menu in the panel; your choices are remembered. Each onboard can show the driver's speed, gear, throttle and brake along the bottom.
+
+- **Single view** — the broadcast full width with the track map's lines over it.
+
+- **Broadcast settings and controls** — **Settings > Broadcast** sets the view to open in, onboard telemetry and the track map. The hover controls switch the view, track map, race control, team radio and radio audio without changing your settings; on touch screens, tap the video to show them. Race control shows as one line along the bottom of the broadcast when a message arrives, then fades, and team radio pops up at the top, as on the track map. Other F1 TV feeds (F1 Live, International, Driver Tracker and Data Channel, depending on the session and your account) can be picked from the hover controls, and a mute button sits at the left of the playback controls while the broadcast shows.
+
+### Improvements
 
 - **Team radio audio kept on your server** — processing a session now stores each radio clip's audio, and replays play it from your server instead of F1's. F1's timing server refuses some networks (VPNs and cloud hosts), which left radio silent even when signed in. For sessions processed before this version, add the audio with `python precompute.py 2026 --radio-audio-only` (needs a network F1 accepts); until then they play from F1 as before.
 
