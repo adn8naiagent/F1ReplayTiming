@@ -469,7 +469,13 @@ export function drawDrivers(
   const offsetX = padX + (w - rangeX * scale) / 2;
   const offsetY = padTop + (h - rangeY * scale) / 2;
 
-  for (const drv of drivers) {
+  // Selected drivers drawn last, and their names after every dot, so
+  // nothing covers them
+  const ordered = [...drivers].sort(
+    (a, b) => Number(highlightedDrivers.includes(a.abbr)) - Number(highlightedDrivers.includes(b.abbr)),
+  );
+  const highlightedLabels: { abbr: string; x: number; y: number }[] = [];
+  for (const drv of ordered) {
     // Rotate driver position
     const dx = drv.x - cx;
     const dy = drv.y - cy;
@@ -504,12 +510,26 @@ export function drawDrivers(
     ctx.restore();
 
     // Driver label: drivers selected on the leaderboard keep theirs when
-    // names are hidden, so they're easy to pick out
-    if (showNames || isHighlighted) {
-      ctx.font = isHighlighted ? "800 12px system-ui, -apple-system, sans-serif" : "800 10px system-ui, -apple-system, sans-serif";
+    // names are hidden, so they're easy to pick out (drawn below)
+    if (isHighlighted) {
+      highlightedLabels.push({ abbr: drv.abbr, x: sx, y: sy - radius - 4 });
+    } else if (showNames) {
+      ctx.font = "800 10px system-ui, -apple-system, sans-serif";
       ctx.fillStyle = "#FFFFFF";
       ctx.textAlign = "center";
       ctx.fillText(drv.abbr, sx, sy - radius - 4);
     }
+  }
+
+  ctx.font = "800 12px system-ui, -apple-system, sans-serif";
+  ctx.textAlign = "center";
+  ctx.lineJoin = "round";
+  for (const l of highlightedLabels) {
+    // A dark outline keeps the name readable over other cars and the track
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.strokeText(l.abbr, l.x, l.y);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(l.abbr, l.x, l.y);
   }
 }

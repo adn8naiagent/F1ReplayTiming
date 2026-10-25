@@ -81,6 +81,10 @@ function isOnboard(c: F1TVChannel) {
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
 
+// Multi-view's side panel, as a share of the width
+const SIDE_MAX = 0.3;
+const SIDE_MIN = 0.16;
+
 export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
@@ -213,6 +217,27 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     return onboards.find((c) => String(c.driver_number) === value)?.channel_id ?? null;
   };
   const sideColumn = multiView;
+  // Multi-view's side panel, as a share of the width: drag its edge to make
+  // it narrower (never wider than the default). Remembered.
+  const [sideShare, setSideShareState] = useState<number>(() => readJson("f1tv_side_share", SIDE_MAX));
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [resizing, setResizing] = useState(false);
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    setResizing(true);
+  };
+  const moveResize = (e: React.PointerEvent) => {
+    if (!resizing || !rootRef.current) return;
+    const rect = rootRef.current.getBoundingClientRect();
+    setSideShareState(Math.max(SIDE_MIN, Math.min(SIDE_MAX, (rect.right - e.clientX) / rect.width)));
+  };
+  const endResize = () => {
+    if (!resizing) return;
+    setResizing(false);
+    setSideShareState((v) => { writeJson("f1tv_side_share", v); return v; });
+  };
+  const mainWidth = sideColumn ? `${(1 - sideShare) * 100}%` : "100%";
   const shownOnboards = sideColumn
     ? onboardDrivers.filter((n): n is string => !!channelOf(n))
     : [];
@@ -320,18 +345,19 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const btnClass = "px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white";
 
   return (
-    <div className="relative w-full h-full bg-black overflow-hidden group">
+    <div ref={rootRef} className="relative w-full h-full bg-black overflow-hidden group">
       {/* Protected video can be drawn in its own hardware layer that ignores
           stacking, so nothing overlaps it: in multi-view the broadcast takes
           the left, and the onboards and map a column on the right. */}
       <video
         ref={mainRef}
-        className={`absolute inset-y-0 left-0 h-full object-contain ${sideColumn ? "w-[70%]" : "w-full"}`}
+        className="absolute inset-y-0 left-0 h-full object-contain"
+        style={{ width: mainWidth }}
         playsInline
       />
 
       {main.state !== "ready" && (
-        <div className={`absolute inset-y-0 left-0 flex flex-col items-center justify-center gap-3 px-6 ${sideColumn ? "w-[70%]" : "w-full"}`}>
+        <div className="absolute inset-y-0 left-0 flex flex-col items-center justify-center gap-3 px-6" style={{ width: mainWidth }}>
           <p className={`text-xs text-center max-w-md leading-relaxed ${contentError || main.state === "error" ? "text-white/80" : "text-f1-muted"}`}>
             {contentError || (main.state === "error" ? main.debug.error?.message : "Loading broadcast…")}
           </p>
@@ -347,7 +373,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       )}
 
       {raceControl && (
-        <div className={`absolute bottom-3 left-0 z-20 flex justify-center pointer-events-none ${sideColumn ? "w-[70%]" : "w-full"}`}>
+        <div className="absolute bottom-3 left-0 z-20 flex justify-center pointer-events-none" style={{ width: mainWidth }}>
           <RaceControlTicker message={raceControl} />
         </div>
       )}
@@ -356,7 +382,28 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           the map. Starts below the page's hover buttons (Track map /
           Broadcast, RC) so they never cover an onboard's ×. */}
       {sideColumn ? (
-        <div className="absolute top-12 bottom-3 right-3 z-20 w-[calc(30%-1.5rem)] flex flex-col gap-2 [container-type:inline-size]">
+        <>
+        {/* Drag the panel's edge to make it narrower: shown on hover, or
+            after a tap on touch screens */}
+        <div
+          onPointerDown={startResize}
+          onPointerMove={moveResize}
+          onPointerUp={endResize}
+          onPointerCancel={endResize}
+          className={`absolute top-12 bottom-3 z-30 w-4 -ml-2 flex items-center justify-center cursor-col-resize touch-none transition-opacity ${
+            resizing || controlsShown ? "opacity-100" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:pointer-events-none"
+          }`}
+          style={{ left: mainWidth }}
+          title="Drag to make the side panel narrower"
+          role="separator"
+          aria-orientation="vertical"
+        >
+          <div className={`w-1 h-16 rounded-full ${resizing ? "bg-white" : "bg-white/50"}`} />
+        </div>
+        <div
+          className="absolute top-12 bottom-3 right-3 z-20 flex flex-col gap-2 [container-type:inline-size]"
+          style={{ width: `calc(${sideShare * 100}% - 1.5rem)` }}
+        >
           {([0, 1] as const).map((slot) => {
             const number = onboardDrivers[slot];
             const channel = channelOf(number);
@@ -413,6 +460,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             </div>
           )}
         </div>
+        </>
       ) : showMap && (
         // Just the track lines over the video: the map's own background is
         // made transparent here
