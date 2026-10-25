@@ -98,6 +98,9 @@ export default function ReplayPage() {
   const [rcPanelOpen, setRcPanelOpen] = useState(false);
   const [rcPinned, setRcPinned] = useState(false);
   const [broadcastOn, setBroadcastOn] = useState(false);
+  // Onboards in the broadcast show their own telemetry, so the panel hides
+  const [broadcastOnboards, setBroadcastOnboards] = useState(false);
+  const onboardTelemetry = broadcastOn && broadcastOnboards;
   const [f1tvSignedIn, setF1tvSignedIn] = useState(false);
 
   // Persist panel layout per session type
@@ -790,6 +793,7 @@ export default function ReplayPage() {
                     .map((abbr) => sessionData?.drivers.find((d) => d.abbreviation === abbr)?.driver_number)
                     .filter((n): n is string => !!n)}
                   trackOverlay={overlayTrackCanvas}
+                  onOnboardsChange={setBroadcastOnboards}
                   driversByNumber={Object.fromEntries(
                     drivers.flatMap((d) => {
                       const n = sessionData?.drivers.find((s) => s.abbreviation === d.abbr)?.driver_number;
@@ -860,7 +864,7 @@ export default function ReplayPage() {
               {/* Fullscreen toggle moved to PlaybackControls */}
 
               {/* Telemetry overlay - desktop only, bottom-left (1-2 drivers) */}
-              {!isMobile && showTelemetry && selectedDrivers.length <= 2 && !settings.showAllPanels && !rcPinned && (
+              {!isMobile && showTelemetry && selectedDrivers.length <= 2 && !settings.showAllPanels && !rcPinned && !onboardTelemetry && (
                 <div className="absolute bottom-2 left-3 z-10 flex flex-col gap-1">
                   <button
                     onClick={() => setShowTelemetry(false)}
@@ -880,7 +884,7 @@ export default function ReplayPage() {
               )}
 
               {/* Telemetry toggle - desktop only, bottom-left */}
-              {!isMobile && !showTelemetry && !settings.showAllPanels && (
+              {!isMobile && !showTelemetry && !settings.showAllPanels && !onboardTelemetry && (
                 <button
                   onClick={() => setShowTelemetry(true)}
                   className="absolute bottom-2 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
