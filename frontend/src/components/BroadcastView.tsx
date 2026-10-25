@@ -601,11 +601,6 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             </button>
           ))}
         </div>
-        {mainOffset === null && syncing && (
-          <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
-            Lining the broadcast up with the timing… The first time for a session takes about a minute.
-          </p>
-        )}
         {mainOffset === null && !syncing && (
           <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
             This session couldn&apos;t be synced automatically. Use the video controls to find the moment that matches the timing (lights out works well), then press Sync.
