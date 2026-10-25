@@ -579,7 +579,7 @@ export default function ReplayPage() {
           )}
 
           {(!isMobile || mobileTrackOpen) && (
-            <div className={`h-[42vh] sm:h-full relative ${!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) ? "flex-1 min-w-0 min-h-0" : ""}`}>
+            <div className={`h-[42vh] sm:h-full relative group/view ${!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) ? "flex-1 min-w-0 min-h-0" : ""}`}>
               {/* Flag badge */}
               {trackStatus !== "green" && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
@@ -658,7 +658,8 @@ export default function ReplayPage() {
               )}
 
               {/* Race Control toggle - desktop only, mobile has its own section */}
-              <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-1.5">
+              {/* Over the broadcast, these show on hover like the player's controls */}
+              <div className={`absolute top-3 right-3 z-30 hidden sm:flex items-center gap-1.5 ${broadcastOn ? "opacity-0 group-hover/view:opacity-100 transition-opacity" : ""}`}>
                 {BROADCAST_ENABLED && f1tvSignedIn && (
                   <div className="flex items-center rounded border border-f1-border bg-f1-card/90 backdrop-blur-sm overflow-hidden">
                     {([false, true] as const).map((on) => (
