@@ -557,42 +557,48 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             </select>
           )}
         </div>
+        {/* How it's synced, with Sync manually beside it (or, while lining
+            up by hand, Set sync here and Cancel) */}
         <div className="flex items-center gap-1.5">
-          {mainOffset === null && !manualControls ? null : manualControls ? (
+          {syncMethod && (
+            <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/80 border border-f1-border text-[10px] text-white/80" title={syncMethod.hint}>
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                syncMethod.tone === "good" ? "bg-green-400" : syncMethod.tone === "busy" ? "bg-white/50 animate-pulse" : "bg-amber-400"
+              }`} />
+              {syncMethod.label}
+            </div>
+          )}
+          {manualControls ? (
             <>
               <button onClick={syncHere} className={`${btnClass} !text-white !bg-f1-red border-f1-red`} title="Line the video up with the timing, then press">
                 Set sync here
               </button>
               {aligning && <button onClick={() => setAligning(false)} className={btnClass}>Cancel</button>}
             </>
-          ) : (
-            <>
-              <button onClick={() => nudge("main", -5)} className={btnClass} title="Video earlier against the timing">−5s</button>
-              <button onClick={() => nudge("main", -0.5)} className={btnClass} title="Video earlier against the timing">−0.5s</button>
-              <button onClick={() => nudge("main", 0.5)} className={btnClass} title="Video later against the timing">+0.5s</button>
-              <button onClick={() => nudge("main", 5)} className={btnClass} title="Video later against the timing">+5s</button>
-              {/* The adjustment made, or the manual sync; × goes back to the automatic sync */}
-              {manualOffset !== null ? (
-                <button onClick={() => resetSync("main")} className={`${btnClass} !text-white`} title="Clear the manual sync">
-                  Manual ×
-                </button>
-              ) : mainNudge !== 0 && (
-                <button onClick={() => resetSync("main")} className={`${btnClass} !text-white tabular-nums`} title="Back to the automatic sync">
-                  {mainNudge > 0 ? "+" : ""}{mainNudge}s ×
-                </button>
-              )}
-              <button onClick={startManualSync} className={btnClass} title="Line the broadcast up with the timing yourself">
-                Sync manually
-              </button>
-            </>
+          ) : mainOffset !== null && (
+            <button onClick={startManualSync} className={btnClass} title="Line the broadcast up with the timing yourself">
+              Sync manually
+            </button>
           )}
         </div>
-        {syncMethod && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/80 border border-f1-border text-[10px] text-white/80" title={syncMethod.hint}>
-            <span className={`w-1.5 h-1.5 rounded-full ${
-              syncMethod.tone === "good" ? "bg-green-400" : syncMethod.tone === "busy" ? "bg-white/50 animate-pulse" : "bg-amber-400"
-            }`} />
-            {syncMethod.label}
+        {/* Fine-tune: nudge the video against the timing */}
+        {!manualControls && mainOffset !== null && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 border border-f1-border">
+            <span className="text-[9px] font-bold text-f1-muted uppercase tracking-wider mr-0.5">Fine-tune video sync</span>
+            <button onClick={() => nudge("main", -5)} className={btnClass} title="Video earlier against the timing">−5s</button>
+            <button onClick={() => nudge("main", -0.5)} className={btnClass} title="Video earlier against the timing">−0.5s</button>
+            <button onClick={() => nudge("main", 0.5)} className={btnClass} title="Video later against the timing">+0.5s</button>
+            <button onClick={() => nudge("main", 5)} className={btnClass} title="Video later against the timing">+5s</button>
+            {/* The adjustment made, or the manual sync; × goes back to the automatic sync */}
+            {manualOffset !== null ? (
+              <button onClick={() => resetSync("main")} className={`${btnClass} !text-white`} title="Clear the manual sync">
+                Manual ×
+              </button>
+            ) : mainNudge !== 0 && (
+              <button onClick={() => resetSync("main")} className={`${btnClass} !text-white tabular-nums`} title="Back to the automatic sync">
+                {mainNudge > 0 ? "+" : ""}{mainNudge}s ×
+              </button>
+            )}
           </div>
         )}
         <div className="flex items-center gap-1.5">
