@@ -106,6 +106,15 @@ export default function ReplayPage() {
     clearTimeout(broadcastControlsTimer.current);
     broadcastControlsTimer.current = setTimeout(() => setBroadcastControls(false), 4000);
   }, []);
+  const [broadcastVolume, setBroadcastVolumeState] = useState(() => {
+    try { const v = Number(localStorage.getItem("f1tv_volume")); return Number.isFinite(v) && localStorage.getItem("f1tv_volume") !== null ? v : 1; } catch { return 1; }
+  });
+  const setBroadcastVolume = (v: number) => {
+    setBroadcastVolumeState(v);
+    try { localStorage.setItem("f1tv_volume", String(v)); } catch {}
+    // Moving the slider up is asking to hear it
+    if (v > 0 && broadcastMuted) toggleBroadcastMute();
+  };
   const [broadcastMuted, setBroadcastMuted] = useState(() => {
     try { return localStorage.getItem("f1tv_muted") === "1"; } catch { return false; }
   });
@@ -513,6 +522,7 @@ export default function ReplayPage() {
   const overlayTrackCanvas = cloneElement(mainTrackCanvas, {
     trackWidth: 5,
     lightTrack: true,
+    compact: true,
     showElevation: false,
     sectorOverlay: null,
     segmentOverlay: null,
@@ -830,6 +840,7 @@ export default function ReplayPage() {
                   onToggleRadioAudio={() => updateSetting("teamRadioMuted", !settings.teamRadioMuted)}
                   controlsShown={broadcastControls}
                   muted={broadcastMuted}
+                  volume={broadcastVolume}
                   driversByNumber={Object.fromEntries(
                     drivers.flatMap((d) => {
                       const n = sessionData?.drivers.find((s) => s.abbreviation === d.abbr)?.driver_number;
@@ -1206,6 +1217,8 @@ export default function ReplayPage() {
         pipActive={pipActive}
         onToggleMute={broadcastOn ? toggleBroadcastMute : undefined}
         muted={broadcastMuted}
+        volume={broadcastVolume}
+        onVolumeChange={setBroadcastVolume}
         onFullscreen={!isMobile ? () => {
           const next = !fullscreen;
           setFullscreen(next);

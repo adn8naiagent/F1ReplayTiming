@@ -5,7 +5,6 @@ import { f1tv, type F1TVChannel, type F1TVContent } from "@/lib/f1tv";
 import type { RCMessage, ReplayDriver } from "@/hooks/useReplaySocket";
 import { useF1TVStream, type StreamDebug, type StreamOptions } from "@/hooks/useF1TVStream";
 import { useReplayClock, useVideoSync } from "@/hooks/useVideoSync";
-import DriverDropdown from "./DriverDropdown";
 
 interface Props {
   /** e.g. "2026_14_R" — keys the saved F1 TV link and sync offsets. */
@@ -39,6 +38,8 @@ interface Props {
   controlsShown: boolean;
   /** The broadcast's sound (onboards are always muted) */
   muted?: boolean;
+  /** 0–1 */
+  volume?: number;
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -80,7 +81,7 @@ function isOnboard(c: F1TVChannel) {
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
@@ -98,6 +99,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const [showMap, setShowMap] = useState(showMapSetting);
   useEffect(() => setShowMap(showMapSetting), [showMapSetting]);
   const toggleMap = () => setShowMap((v) => !v);
+  const [telemetryOn, setTelemetryOn] = useState(showTelemetry);
+  useEffect(() => setTelemetryOn(showTelemetry), [showTelemetry]);
   // Multi-view's two onboards, picked by driver (remembered across sessions)
   const [onboardDrivers, setOnboardDriversState] = useState<[string | null, string | null]>(() =>
     readJson("f1tv_onboard_drivers", [null, null]),
@@ -163,8 +166,11 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
 
   useEffect(() => writeJson("f1tv_stream_opts", opts), [opts]);
   useEffect(() => {
-    if (mainRef.current) mainRef.current.muted = muted;
-  }, [muted, main.state]);
+    if (mainRef.current) {
+      mainRef.current.muted = muted;
+      mainRef.current.volume = Math.max(0, Math.min(1, volume));
+    }
+  }, [muted, volume, main.state]);
 
   // No saved link: find this session's replay on F1 TV.
   useEffect(() => {
@@ -197,14 +203,19 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     });
   }, [link]);
 
+  const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
   const onboards = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && isOnboard(c) && c.driver_number), [content]);
-  const channelOf = (number: string | null) =>
-    number ? onboards.find((c) => String(c.driver_number) === number)?.channel_id ?? null : null;
+  // A side slot holds a driver's number (their onboard) or "feed:<title>"
+  // (another of F1 TV's feeds, such as the Driver Tracker)
+  const channelOf = (value: string | null) => {
+    if (!value) return null;
+    if (value.startsWith("feed:")) return mainFeeds.find((c) => feedKey(c) === value)?.channel_id ?? null;
+    return onboards.find((c) => String(c.driver_number) === value)?.channel_id ?? null;
+  };
   const sideColumn = multiView;
   const shownOnboards = sideColumn
     ? onboardDrivers.filter((n): n is string => !!channelOf(n))
     : [];
-  const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
 
   // (Re)load the main feed.
   useEffect(() => {
@@ -352,6 +363,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             const picker = (
               <OnboardPicker
                 onboards={onboards}
+                feeds={mainFeeds}
                 driversByNumber={driversByNumber}
                 value={number}
                 exclude={onboardDrivers[slot === 0 ? 1 : 0]}
@@ -372,8 +384,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
                   speed={mainOffset !== null ? speed : 1}
                   replaySpeed={speed}
                   nudge={onboardNudge}
-                  driver={driversByNumber[number]}
-                  showTelemetry={showTelemetry}
+                  driver={number.startsWith("feed:") ? undefined : driversByNumber[number]}
+                  showTelemetry={telemetryOn}
+                  onToggleTelemetry={() => setTelemetryOn((v) => !v)}
                   picker={picker}
                   controlsShown={controlsShown}
                   onClose={() => setOnboardDriver(slot, null)}
@@ -386,8 +399,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             return (
               <OnboardBox key={slot}>
                 <div className="w-full h-full rounded-lg border border-dashed border-white/20 flex flex-col items-center justify-center gap-2">
-                  <span className="text-[10px] text-white/50">{onboards.length ? "Onboard camera" : "No onboards for this session"}</span>
-                  {onboards.length > 0 && picker}
+                  <span className="text-[10px] text-white/50">{onboards.length + mainFeeds.length ? "Onboard camera or feed" : "No other feeds for this session"}</span>
+                  {onboards.length + mainFeeds.length > 0 && picker}
                 </div>
               </OnboardBox>
             );
@@ -551,7 +564,7 @@ function RaceControlTicker({ message }: { message: RCMessage }) {
 }
 
 /** One onboard camera, following the broadcast's position. */
-function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, showTelemetry, picker, controlsShown, onClose }: {
+function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, showTelemetry, onToggleTelemetry, picker, controlsShown, onClose }: {
   link: string;
   channel: string;
   opts: StreamOptions;
@@ -563,6 +576,8 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   nudge: number;
   driver?: ReplayDriver;
   showTelemetry: boolean;
+  /** Shows or hides telemetry on the onboards for now (Settings > Broadcast sets the default) */
+  onToggleTelemetry: () => void;
   /** Switches this onboard to another driver (on hover) */
   picker: React.ReactNode;
   controlsShown: boolean;
@@ -585,6 +600,18 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
       <div className={`absolute top-1.5 left-1.5 z-30 transition-opacity ${controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 focus-within:opacity-100 [@media(hover:none)]:pointer-events-none"}`}>{picker}</div>
       <div className="relative w-full h-full bg-black rounded-lg overflow-hidden border border-white/10">
         <video ref={ref} className="w-full h-full object-contain" muted playsInline />
+        {driver && (
+          <button
+            onClick={onToggleTelemetry}
+            className={`absolute top-1.5 right-9 h-6 px-2 rounded-full bg-black/70 text-[10px] font-bold flex items-center gap-1 transition-opacity ${
+              showTelemetry ? "text-white" : "text-white/60 hover:text-white"
+            } ${controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 [@media(hover:none)]:pointer-events-none"}`}
+            title={showTelemetry ? "Hide telemetry on the onboards" : "Show telemetry on the onboards"}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${showTelemetry ? "bg-green-400" : "bg-white/30"}`} />
+            Telemetry
+          </button>
+        )}
         <button
           onClick={onClose}
           className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white/80 hover:text-white text-sm leading-none flex items-center justify-center"
@@ -621,32 +648,104 @@ function OnboardBox({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Choose a driver's onboard camera, like Lap Analysis's driver menus */
-function OnboardPicker({ onboards, driversByNumber, value, exclude, placeholder, onChange }: {
+function feedKey(c: F1TVChannel): string {
+  return `feed:${(c.title || c.channel_id || "").toUpperCase()}`;
+}
+
+/** Choose what a side slot shows: any of F1 TV's other feeds, or any
+ *  driver's onboard (styled like Lap Analysis's driver menus). Drivers are
+ *  in running order; ones not in the timing still show, from F1 TV's list. */
+function OnboardPicker({ onboards, feeds, driversByNumber, value, exclude, placeholder, onChange }: {
   onboards: F1TVChannel[];
+  feeds: F1TVChannel[];
   driversByNumber: Record<string, ReplayDriver>;
   value: string | null;
   exclude: string | null;
   placeholder: string;
-  onChange: (number: string | null) => void;
+  onChange: (value: string | null) => void;
 }) {
-  // Drivers with an onboard, in running order
-  const withOnboard = onboards
-    .map((c) => String(c.driver_number))
-    .filter((n) => n !== exclude && driversByNumber[n])
-    .map((n) => driversByNumber[n])
-    .sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
-  const numberOf = (abbr: string | null) =>
-    abbr ? Object.keys(driversByNumber).find((n) => driversByNumber[n].abbr === abbr) ?? null : null;
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [open]);
+
+  const drivers = onboards
+    .map((c) => {
+      const n = String(c.driver_number);
+      const d = driversByNumber[n];
+      return {
+        value: n,
+        abbr: d?.abbr ?? c.driver_name?.split(" ").pop()?.slice(0, 3).toUpperCase() ?? n,
+        team: d?.team ?? c.team ?? "",
+        color: d?.color ?? (c.color ? (c.color.startsWith("#") ? c.color : `#${c.color}`) : "#888"),
+        position: d?.position ?? 99,
+        number: Number(n),
+      };
+    })
+    .filter((d) => d.value !== exclude)
+    .sort((a, b) => a.position - b.position || a.number - b.number);
+  const otherFeeds = feeds.map((c) => ({ value: feedKey(c), label: feedName(c) })).filter((f) => f.value !== exclude);
+
+  const selectedDriver = drivers.find((d) => d.value === value);
+  const selectedFeed = otherFeeds.find((f) => f.value === value);
+  const pick = (v: string | null) => { onChange(v); setOpen(false); };
+  const row = "w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 transition-colors text-left";
+
   return (
-    <div className="w-44 pointer-events-auto">
-      <DriverDropdown
-        value={value ? driversByNumber[value]?.abbr ?? null : null}
-        onChange={(abbr) => onChange(numberOf(abbr))}
-        drivers={withOnboard}
-        placeholder={placeholder}
-        getColor={(abbr) => withOnboard.find((d) => d.abbr === abbr)?.color ?? "#888"}
-      />
+    <div ref={ref} className="relative w-44 pointer-events-auto">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center gap-2 bg-f1-dark border border-f1-border rounded px-2 py-1.5 text-left hover:border-f1-muted transition-colors"
+      >
+        {selectedDriver ? (
+          <>
+            <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selectedDriver.color }} />
+            <span className="text-xs font-bold text-white">{selectedDriver.abbr}</span>
+            <span className="text-[10px] text-f1-muted truncate">{selectedDriver.team}</span>
+          </>
+        ) : selectedFeed ? (
+          <span className="text-xs font-bold text-white truncate">{selectedFeed.label}</span>
+        ) : (
+          <span className="text-xs text-f1-muted">{placeholder}</span>
+        )}
+        <svg className={`w-3 h-3 ml-auto text-f1-muted flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 right-0 mt-1 bg-f1-dark border border-f1-border rounded shadow-xl z-50 max-h-[260px] overflow-y-auto">
+          {value && (
+            <button onClick={() => pick(null)} className={`${row} text-xs text-f1-muted`}>Clear</button>
+          )}
+          {otherFeeds.length > 0 && (
+            <>
+              <p className="px-2 pt-1.5 pb-0.5 text-[9px] font-bold text-f1-muted uppercase tracking-wider">Feeds</p>
+              {otherFeeds.map((f) => (
+                <button key={f.value} onClick={() => pick(f.value)} className={`${row} ${f.value === value ? "bg-white/10" : ""}`}>
+                  <span className="text-xs font-bold text-white">{f.label}</span>
+                </button>
+              ))}
+            </>
+          )}
+          {drivers.length > 0 && (
+            <>
+              <p className="px-2 pt-1.5 pb-0.5 text-[9px] font-bold text-f1-muted uppercase tracking-wider">Onboards</p>
+              {drivers.map((d) => (
+                <button key={d.value} onClick={() => pick(d.value)} className={`${row} ${d.value === value ? "bg-white/10" : ""}`}>
+                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+                  <span className="text-[10px] font-bold text-f1-muted w-4 text-right">{d.position < 99 ? d.position : ""}</span>
+                  <span className="text-xs font-bold text-white">{d.abbr}</span>
+                  <span className="text-[10px] text-f1-muted truncate">{d.team}</span>
+                </button>
+              ))}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

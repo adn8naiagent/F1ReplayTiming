@@ -96,6 +96,16 @@ const TRACK_STATUS_COLORS: Record<string, string> = {
   red: "#E10600",
 };
 
+/** Space around the track: room for the track map's overlays (flag, legend,
+ *  controls), or just enough for corner numbers when compact. */
+function margins(width: number, height: number, compact: boolean) {
+  if (compact) {
+    const m = Math.max(10, Math.round(Math.min(width, height) * 0.06));
+    return { padX: m, padTop: m, padBottom: m };
+  }
+  return { padX: 40, padTop: 60, padBottom: 90 };
+}
+
 export function drawTrack(
   ctx: CanvasRenderingContext2D,
   points: TrackPoint[],
@@ -113,6 +123,8 @@ export function drawTrack(
   trackWidth: number = 12,
   /** A white track, for drawing over video */
   lightTrack: boolean = false,
+  /** Small margins, for a small map with nothing around it */
+  compact: boolean = false,
 ) {
   if (points.length === 0) return;
 
@@ -120,9 +132,7 @@ export function drawTrack(
   // and the data is present.
   const elevationActive = showElevation && points.some((p) => typeof p.z === "number");
 
-  const padX = 40;
-  const padTop = 60;
-  const padBottom = 90;
+  const { padX, padTop, padBottom } = margins(width, height, compact);
   const w = width - padX * 2;
   const h = height - padTop - padBottom;
 
@@ -425,12 +435,11 @@ export function drawDrivers(
   rotation: number,
   highlightedDrivers: string[],
   showNames: boolean = true,
+  compact: boolean = false,
 ) {
   if (trackPoints.length === 0) return;
 
-  const padX = 40;
-  const padTop = 60;
-  const padBottom = 90;
+  const { padX, padTop, padBottom } = margins(width, height, compact);
   const w = width - padX * 2;
   const h = height - padTop - padBottom;
 

@@ -34,6 +34,9 @@ interface Props {
   /** The broadcast's sound, while it's showing */
   onToggleMute?: () => void;
   muted?: boolean;
+  /** The broadcast's volume, 0–1 (with onToggleMute) */
+  volume?: number;
+  onVolumeChange?: (volume: number) => void;
   onFullscreen?: () => void;
   fullscreen?: boolean;
   qualiPhase?: QualiPhase | null;
@@ -61,6 +64,8 @@ export default function PlaybackControls({
   pipActive,
   onToggleMute,
   muted,
+  volume = 1,
+  onVolumeChange,
   onFullscreen,
   fullscreen,
   qualiPhase,
@@ -277,15 +282,30 @@ export default function PlaybackControls({
         <div className="mb-3">{progressBar}</div>
 
         <div className="flex items-center gap-3">
-          {/* The broadcast's sound, far left while it's showing */}
+          {/* The broadcast's sound, far left while it's showing: mute, and a
+              volume slider that opens on hover */}
           {onToggleMute && (
-            <button
-              onClick={onToggleMute}
-              className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${muted ? "text-f1-red hover:bg-f1-red/10" : "text-f1-muted hover:text-white hover:bg-white/10"}`}
-              title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
-            >
-              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-            </button>
+            <div className="group/volume flex items-center">
+              <button
+                onClick={onToggleMute}
+                className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${muted ? "text-f1-red hover:bg-f1-red/10" : "text-f1-muted hover:text-white hover:bg-white/10"}`}
+                title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
+              >
+                {muted || volume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+              {onVolumeChange && (
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={muted ? 0 : Math.round(volume * 100)}
+                  onChange={(e) => onVolumeChange(Number(e.target.value) / 100)}
+                  className="w-0 opacity-0 group-hover/volume:w-20 group-hover/volume:opacity-100 focus:w-20 focus:opacity-100 ml-1 transition-all duration-200 accent-white cursor-pointer"
+                  aria-label="Broadcast volume"
+                  title={`Volume ${muted ? 0 : Math.round(volume * 100)}%`}
+                />
+              )}
+            </div>
           )}
 
           {/* Skip back buttons */}

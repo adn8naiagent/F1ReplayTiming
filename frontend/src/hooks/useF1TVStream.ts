@@ -21,8 +21,8 @@ function playerErrorMessage(code: number | undefined, data: unknown): string {
         return "F1 TV's video server refused this video. This usually means F1 TV doesn't stream it where your connection appears to be, for example through a VPN set to another country." + ref;
       if (status === 404) return "F1 TV no longer has this video." + ref;
       return `F1 TV's video server returned an error.` + ref;
-    case 1002: // network failure
-      return "Couldn't reach F1 TV's video server. Check your internet connection, and whether a VPN or firewall is blocking it." + ref;
+    case 1002: // no response the browser can read: unreachable, or refused without CORS headers
+      return "F1 TV's video server didn't answer, or refused the video without saying why (the browser hides the reason). This often happens when your internet address changed after the video started, for example turning a VPN on or off. Retry, or reload the page." + ref;
     case 1003:
       return "F1 TV's video server took too long to respond." + ref;
     case 6007: // licence request failed
