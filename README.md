@@ -142,7 +142,7 @@ Since 15 October 2026, F1 only serves past-session timing data to signed-in F1 T
 
 ### VPNs and cloud servers
 
-F1's timing servers refuse requests (HTTP 403) from internet addresses they recognise as VPNs or cloud servers, before checking your F1 TV sign-in. This covers most commercial VPNs and cloud hosts. What matters is where the server's internet traffic comes from: a normal home or business internet connection works, whatever the connection type.
+F1's timing servers refuse requests (HTTP 403) from internet addresses they recognise as VPNs or cloud servers, before checking your F1 TV sign-in. This covers most commercial VPNs and cloud hosts.
 
 | | Through a VPN or from a cloud server |
 |---|---|
