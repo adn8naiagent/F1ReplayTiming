@@ -123,6 +123,9 @@ class LiveSignalRClient:
         # Why the last connection attempt failed, for the live page; cleared
         # once connected.
         self.last_error: str | None = None
+        # Whether the current connection is signed in to F1 TV, so it gets
+        # car positions and telemetry
+        self.signed_in = False
 
     # ------------------------------------------------------------------
     # Public API
@@ -309,6 +312,7 @@ class LiveSignalRClient:
                 None, self._negotiate, None
             )
         topics = _TOPICS + _AUTH_TOPICS if token else _TOPICS
+        self.signed_in = bool(token)
 
         ws_url = f"{_WS_URL}?id={connection_token}"
 

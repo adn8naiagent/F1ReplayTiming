@@ -17,7 +17,8 @@ import SyncPhoto from "@/components/SyncPhoto";
 import PiPWindow from "@/components/PiPWindow";
 import LapAnalysisPanel from "@/components/LapAnalysisPanel";
 import SessionLapAnalysis from "@/components/SessionLapAnalysis";
-import type { LapData } from "@/lib/lapTiming";
+import SectorFocusChips, { sectorTarget } from "@/components/SectorFocus";
+import { buildLapData, type LapData } from "@/lib/lapTiming";
 import type { DominanceOverlay } from "@/lib/lapCompare";
 import { miniStatesAt, miniMarkersWidth, MINI_HEX, type MiniSectorData } from "@/lib/miniSectors";
 import type { SegmentOverlay } from "@/lib/trackRenderer";
@@ -221,24 +222,7 @@ export default function ReplayPage() {
   );
 
   // Build lookup: driver -> lap_number -> lap_time
-  const lapData = useMemo(() => {
-    if (!lapsResponse?.laps) return undefined;
-    const map: LapData = new Map();
-    for (const lap of lapsResponse.laps) {
-      if (!lap.lap_time) continue;
-      let driverMap = map.get(lap.driver);
-      if (!driverMap) {
-        driverMap = new Map();
-        map.set(lap.driver, driverMap);
-      }
-      driverMap.set(lap.lap_number, {
-        time: lap.lap_time,
-        completedAt: lap.time ?? null,
-        sectors: [lap.sector1 ?? null, lap.sector2 ?? null, lap.sector3 ?? null],
-      });
-    }
-    return map;
-  }, [lapsResponse]);
+  const lapData = useMemo(() => (lapsResponse?.laps ? buildLapData(lapsResponse.laps) : undefined), [lapsResponse]);
 
   // Which player: the server setting, a per-tab ?player=old|new override, or
   // the WebSocket player if the static files can't be loaded.
@@ -424,11 +408,10 @@ export default function ReplayPage() {
   // Compute sector overlay for track map
   const SECTOR_HEX: Record<string, string> = { purple: "#A855F7", green: "#22C55E", yellow: "#EAB308" };
   const DEFAULT_SECTOR = "#3A3A4A";
+  const sectorFocus = sectorTarget(sectorFocusDriver, selectedDrivers, drivers);
   const sectorOverlay: SectorOverlay | null = (() => {
     if (!hasSectors || !showSectorOverlay || !trackData?.sector_boundaries) return null;
-    const target = sectorFocusDriver && selectedDrivers.includes(sectorFocusDriver)
-      ? sectorFocusDriver
-      : null;
+    const target = sectorFocus;
     if (!target) return null;
     const drv = drivers.find((d) => d.abbr === target);
     const sectors = drv?.sectors;
@@ -448,8 +431,8 @@ export default function ReplayPage() {
 
   // Track map: the focused driver's mini-sectors instead of three sectors
   const miniOverlay: SegmentOverlay | null = (() => {
-    if (!sectorOverlay || !miniSectors || !miniData || !sectorFocusDriver) return null;
-    const states = miniSectors.states.get(sectorFocusDriver);
+    if (!sectorOverlay || !miniSectors || !miniData || !sectorFocus) return null;
+    const states = miniSectors.states.get(sectorFocus);
     if (!states) return null;
     const segments: SegmentOverlay["segments"] = [];
     miniData.ends.forEach((end, i) => {
@@ -799,28 +782,8 @@ export default function ReplayPage() {
               {/* Sector overlay toggle - desktop qualifying only */}
               {!isMobile && hasSectors && trackData?.sector_boundaries && (
                 <div className="absolute bottom-2 right-36 z-20 flex items-center gap-1">
-                  {showSectorOverlay && selectedDrivers.length === 0 && (
-                    <span className="text-[10px] text-f1-muted mr-1">Select a driver to view sectors</span>
-                  )}
-                  {showSectorOverlay && selectedDrivers.length > 0 && (
-                    selectedDrivers.map((abbr) => {
-                      const drv = drivers.find((d) => d.abbr === abbr);
-                      const isActive = sectorFocusDriver === abbr;
-                      return (
-                        <button
-                          key={abbr}
-                          onClick={() => setSectorFocusDriver(isActive ? null : abbr)}
-                          className={`px-1.5 py-1 border rounded text-[10px] font-bold transition-colors ${
-                            isActive
-                              ? "bg-purple-500/20 border-purple-500/50 text-purple-300"
-                              : "bg-f1-card border-f1-border text-f1-muted hover:text-white"
-                          }`}
-                        >
-                          <span className="inline-block w-1.5 h-1.5 rounded-full mr-1" style={{ backgroundColor: drv?.color }} />
-                          {abbr}
-                        </button>
-                      );
-                    })
+                  {showSectorOverlay && (
+                    <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
                   )}
                   {showSectorOverlay && (
                     <div
@@ -856,30 +819,8 @@ export default function ReplayPage() {
               {/* Sector overlay controls - mobile qualifying only */}
               {isMobile && hasSectors && trackData?.sector_boundaries && (
                 <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center gap-1">
-                  {showSectorOverlay && selectedDrivers.length > 0 && (
-                    <div className="flex items-center gap-1 overflow-x-auto">
-                      {selectedDrivers.map((abbr) => {
-                        const drv = drivers.find((d) => d.abbr === abbr);
-                        const isActive = sectorFocusDriver === abbr;
-                        return (
-                          <button
-                            key={abbr}
-                            onClick={() => setSectorFocusDriver(isActive ? null : abbr)}
-                            className={`flex-shrink-0 px-1.5 py-1 border rounded text-[10px] font-bold transition-colors ${
-                              isActive
-                                ? "bg-purple-500/20 border-purple-500/50 text-purple-300"
-                                : "bg-f1-card/90 border-f1-border text-f1-muted backdrop-blur-sm"
-                            }`}
-                          >
-                            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1" style={{ backgroundColor: drv?.color }} />
-                            {abbr}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-                  {showSectorOverlay && selectedDrivers.length === 0 && (
-                    <span className="text-[10px] text-f1-muted">Select a driver to view sectors</span>
+                  {showSectorOverlay && (
+                    <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
                   )}
                   <button
                     onClick={() => setShowSectorOverlay(!showSectorOverlay)}
