@@ -100,7 +100,7 @@ const TRACK_STATUS_COLORS: Record<string, string> = {
  *  controls), or just enough for corner numbers when compact. */
 function margins(width: number, height: number, compact: boolean) {
   if (compact) {
-    const m = Math.max(10, Math.round(Math.min(width, height) * 0.06));
+    const m = Math.max(8, Math.round(Math.min(width, height) * 0.04));
     return { padX: m, padTop: m, padBottom: m };
   }
   return { padX: 40, padTop: 60, padBottom: 90 };

@@ -406,16 +406,17 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             );
           })}
           {showMap && (
-            // A fixed size, so it stays readable; the onboards scale around it
-            <div className="flex-shrink-0 h-[clamp(170px,38%,300px)] flex justify-center pointer-events-none">
-              <div className="h-full max-w-full aspect-square [&_.bg-f1-dark]:!bg-transparent">{trackOverlay}</div>
+            // A fixed height, so it stays readable (the onboards scale around
+            // it), and the column's full width, so wide tracks fill it too
+            <div className="flex-shrink-0 h-[clamp(170px,38%,300px)] pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
+              {trackOverlay}
             </div>
           )}
         </div>
       ) : showMap && (
         // Just the track lines over the video: the map's own background is
         // made transparent here
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-[32%] max-w-[440px] h-[46%] pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
           {trackOverlay}
         </div>
       )}
