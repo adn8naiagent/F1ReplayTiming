@@ -138,7 +138,24 @@ Since 15 October 2026, F1 only serves past-session timing data to signed-in F1 T
 
 **Docker:** set `F1TV_SECRET_KEY`. Without it, the generated key file lives inside the container. A rebuild loses it, and the saved password can no longer be read, so you'd sign in again.
 
-**Cloud hosts:** F1 blocks downloads from cloud providers even when you're signed in. See [Cloud hosting](#cloud-hosting).
+**VPNs and cloud hosts:** F1 blocks downloads and live timing from most VPNs and cloud servers, even when you're signed in. See [VPNs and cloud servers](#vpns-and-cloud-servers).
+
+### VPNs and cloud servers
+
+F1's timing servers refuse requests (HTTP 403) from internet addresses they recognise as VPNs or cloud servers, before checking your F1 TV sign-in. This covers most commercial VPNs and cloud hosts. What matters is where the server's internet traffic comes from: a normal home or business internet connection works, whatever the connection type.
+
+| | Through a VPN or from a cloud server |
+|---|---|
+| Downloading new sessions: opening an unprocessed session, reprocessing, `precompute.py` | Blocked |
+| Race-weekend background downloads (`AUTO_PRECOMPUTE`) | Blocked |
+| Team radio audio and captions for new sessions | Blocked (they're downloaded with the session) |
+| Live timing | Blocked |
+| Replaying the timing data of sessions already in your storage (track map, leaderboard, telemetry, team radio captions and stored radio audio) | Works: it comes from your storage, not F1 |
+
+> [!WARNING]
+> **Background downloads fail without any message in the app.** If the server's machine is on a VPN during a race weekend, `AUTO_PRECOMPUTE` can't download new sessions, and you'll only see it in the server's logs (`F1 refused … HTTP 403`). The sessions download on a later check once the VPN is off. If you use a VPN on that machine, exclude `livetiming.formula1.com` from it (split tunnelling), or turn it off.
+
+With Docker, the container uses the host computer's internet connection, so a VPN on the host affects it too.
 
 **Other ways to sign in:**
 - `F1_USERNAME` and `F1_PASSWORD` environment variables, which take priority over a saved sign-in.
@@ -242,13 +259,7 @@ volumes:
 Deploy as a single service. Most platforms will detect the `Dockerfile` at the project root automatically.
 
 > [!WARNING]
-> **F1 blocks requests from cloud providers.** Since the F1 TV paywall (15 October 2026), F1's servers refuse requests from cloud providers with HTTP 403, before checking any sign-in. On a cloud host, these don't work:
-> - downloading new sessions: opening an unprocessed session, reprocessing, and `precompute.py`
-> - race-weekend background downloads (`AUTO_PRECOMPUTE`)
-> - team radio and captions for new sessions, which are downloaded with them
-> - live timing, which uses the same F1 servers (expected, not yet confirmed)
->
-> Replays of sessions already in storage, and their team radio, keep working.
+> **F1 blocks requests from cloud servers.** On a cloud host, downloading new sessions, background downloads and live timing don't work. Replaying the timing data of sessions already in storage does. See [VPNs and cloud servers](#vpns-and-cloud-servers).
 
 **Recommended setup:** run a self-hosted copy at home (Docker) that downloads sessions into your R2 bucket, and point the cloud copy at the same bucket to serve them. On the cloud copy, set `AUTO_PRECOMPUTE=off` and `RETENTION_SWEEP_ENABLED=false`, so only the home copy downloads and manages storage.
 

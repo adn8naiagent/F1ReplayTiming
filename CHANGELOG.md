@@ -19,6 +19,10 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Exit in the replay header** — back to the home page, as in live timing.
 
+### Fixes
+
+- **Clearer message when F1 blocks a VPN or cloud server** — when F1 refuses a download or live timing (HTTP 403), the message now says F1 blocks most VPNs and cloud servers and what to do: turn the VPN off, or process on a computer with a normal home or business internet connection. The README has a new [VPNs and cloud servers](README.md#vpns-and-cloud-servers) section. Background downloads (`AUTO_PRECOMPUTE`) that fail this way still only show in the server's logs.
+
 ## 2.4.1
 
 ### Improvements

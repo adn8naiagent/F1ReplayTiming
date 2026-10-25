@@ -217,8 +217,10 @@ def refusal_message() -> str | None:
         return ("F1 rejected the F1 TV sign-in (HTTP 401). Check your F1 TV subscription is active "
                 "(Access or higher), then sign in again.")
     if status == 403:
-        return ("F1 refused the download (HTTP 403). F1 may be blocking this server's network, "
-                "for example a cloud host. Try processing from another network.")
+        return ("F1 refused the download (HTTP 403). F1 blocks downloads from most VPNs and cloud "
+                "servers. If you're using a VPN, turn it off and try again. If this server runs in the "
+                "cloud, process the session on a computer using a normal home or business internet "
+                "connection instead. Sessions you've already downloaded still replay normally.")
     return f"F1's server returned an error (HTTP {status}). Try again later."
 
 
