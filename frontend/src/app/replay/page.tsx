@@ -493,11 +493,13 @@ export default function ReplayPage() {
       elevationRangeM={trackData?.elevation?.range_m ?? null}
     />
   );
-  // The small map over the broadcast: thinner lines, no elevation or sectors
+  // The small map over the broadcast: thinner white lines; no elevation,
+  // sectors or corner numbers
   const overlayTrackCanvas = cloneElement(mainTrackCanvas, {
     trackWidth: 5,
     lightTrack: true,
     showElevation: false,
+    corners: null,
     sectorOverlay: null,
     segmentOverlay: null,
     sectorFlags: null,
