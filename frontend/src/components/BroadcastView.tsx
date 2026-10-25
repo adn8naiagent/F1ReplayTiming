@@ -712,7 +712,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       {/* The broadcast's buttons, when it's one of several views. Clicks
           pass through to the video (for lining up by hand). */}
       {mode !== "single" && broadcastRect && (
-        <div className="absolute z-20 pointer-events-none" style={place(broadcastRect)}>
+        <div className="absolute z-20 pointer-events-none has-[[data-open]]:z-40" style={place(broadcastRect)}>
           {broadcastSlot > 0 && (
             <div className={`absolute top-1.5 left-1.5 z-30 pointer-events-auto transition-opacity ${reveal}`}>
               {pickerFor(broadcastSlot, "Choose a view")}
@@ -760,7 +760,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
 
       {/* Empty views: a placeholder with its picker */}
       {mode !== "single" && views.empty.map(({ slot, rect, compact }) => (
-        <div key={`empty-${slot}`} className="absolute z-20" style={place(rect)}>
+        <div key={`empty-${slot}`} className="absolute z-20 has-[[data-open]]:z-40" style={place(rect)}>
           {compact ? (
             pickerFor(slot, "Add another view")
           ) : (
@@ -1061,7 +1061,7 @@ function OnboardPane({ rect, link, channel, opts, mainRef, mainUtc, mainReady, p
   }, [audible, muted, volume, stream.state]);
 
   return (
-    <div className="absolute z-20 group/pane" style={place(rect)}>
+    <div className="absolute z-20 group/pane has-[[data-open]]:z-40" style={place(rect)}>
       {/* The picker sits outside the rounded frame so its menu isn't cut off */}
       {picker && (
         <div className={`absolute top-1.5 left-1.5 z-30 transition-opacity ${buttons.controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 focus-within:opacity-100 [@media(hover:none)]:pointer-events-none"}`}>{picker}</div>
@@ -1253,8 +1253,9 @@ function SourcePicker({ onboards, driversByNumber, value, placeholder, clearable
   };
   const row = "w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 transition-colors text-left";
 
+  // data-open lifts its view above the others and the track map
   return (
-    <div ref={ref} className="relative w-44 pointer-events-auto">
+    <div ref={ref} data-open={open || undefined} className="relative w-44 pointer-events-auto">
       <button
         onClick={toggle}
         className="w-full flex items-center gap-2 bg-f1-dark border border-f1-border rounded px-2 py-1.5 text-left hover:border-f1-muted transition-colors"
