@@ -18,7 +18,7 @@ import SessionLapAnalysis from "@/components/SessionLapAnalysis";
 import SectorFocusChips, { sectorTarget } from "@/components/SectorFocus";
 import TeamRadio from "@/components/TeamRadio";
 import TelemetryChart from "@/components/TelemetryChart";
-import Leaderboard from "@/components/Leaderboard";
+import Leaderboard, { leaderCrossingTimes } from "@/components/Leaderboard";
 import { miniMarkersWidth, MINI_HEX } from "@/lib/miniSectors";
 import PiPWindow from "@/components/PiPWindow";
 import BroadcastView from "@/components/BroadcastView";
@@ -239,7 +239,16 @@ function LiveTiming() {
   };
 
   const live = useLiveSocket(year, round, sessionType, speed, effectiveDelay);
-  const broadcastLive = useMemo(() => ({ arrivalLag: live.arrivalLag, onDelay: setBroadcastDelay }), [live.arrivalLag]);
+  const latestFrame = useRef(live.frame);
+  latestFrame.current = live.frame;
+  const broadcastLive = useMemo(() => ({
+    arrivalLag: live.arrivalLag,
+    onDelay: setBroadcastDelay,
+    frameClock: () => {
+      const f = latestFrame.current;
+      return f && typeof f.utc === "number" ? { timestamp: f.timestamp, utc: f.utc } : null;
+    },
+  }), [live.arrivalLag]);
 
   // Wake Lock — prevent screen sleep during live sessions
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -260,6 +269,7 @@ function LiveTiming() {
   const sessionTypeUpper = sessionType.toUpperCase();
   const isRace = sessionTypeUpper === "R" || sessionTypeUpper === "S";
   const isQualifying = sessionTypeUpper === "Q" || sessionTypeUpper === "SQ";
+  const leaderCrossings = useMemo(() => (isRace && live.laps ? leaderCrossingTimes(live.laps) : undefined), [isRace, live.laps]);
 
   // RC sound notification
   const lastRcCountRef = useRef(0);
@@ -730,6 +740,7 @@ function LiveTiming() {
                   playing
                   speed={1}
                   live={broadcastLive}
+                  leaderCrossings={leaderCrossings}
                   multiView={settings.broadcastMultiView}
                   onMultiViewChange={(v) => updateSetting("broadcastMultiView", v)}
                   showTelemetry={settings.broadcastTelemetry}

@@ -32,7 +32,15 @@ interface Props {
    *  own pace; the timing is delayed to match it instead (onDelay, in
    *  seconds, or null when unknown). arrivalLag: how long the timing data
    *  takes to reach the page. */
-  live?: { arrivalLag: () => number | null; onDelay: (seconds: number | null) => void } | null;
+  live?: {
+    arrivalLag: () => number | null;
+    onDelay: (seconds: number | null) => void;
+    /** The latest frame's time on the frames' clock and in real time */
+    frameClock: () => { timestamp: number; utc: number } | null;
+  } | null;
+  /** Races: when the leader crossed the line each lap, on the frames' clock,
+   *  for lining the timing up on it */
+  leaderCrossings?: number[];
   /** Mini-sectors (qualifying and practice), for the onboards' sector strip */
   miniSectorData?: MiniSectorData | null;
   /** Race control and team radio switches in the hover controls */
@@ -90,6 +98,10 @@ function isOnboard(c: F1TVChannel) {
 // How far F1 TV's real-time stamp runs ahead of the pictures (measured
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
+// Lining up on the leader crossing the line: the time between it happening
+// on screen and the press, and how far off the timing can be to use it
+const REACTION_S = 0.3;
+const CROSSING_RANGE_S = 30;
 
 // What a view shows: the broadcast, or a driver's onboard (their number)
 type Source = string;
@@ -211,7 +223,7 @@ function layoutViews(mode: "single" | Layout, w: number, h: number, share: numbe
 const SIDE_MAX = 0.3;
 const SIDE_MIN = 0.16;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView, onMultiViewChange, showTelemetry, showMap, onToggleMap: toggleMap, trackOverlay, driversByNumber, live = null, miniSectorData, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView, onMultiViewChange, showTelemetry, showMap, onToggleMap: toggleMap, trackOverlay, driversByNumber, live = null, miniSectorData, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1, leaderCrossings }: Props) {
   const linkKey = live ? `f1tv_content_live_${sessionKey}` : `f1tv_content_${sessionKey}`;
   // Live: looked up fresh each time, as the stream F1 TV lists changes when
   // it goes live
@@ -572,18 +584,51 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   }, [clock, mainChannel, content]);
 
   const nudge = (which: "main" | "onboard", by: number) => {
+    const tenths = (v: number) => Math.round(v * 10) / 10;
     if (which === "onboard") {
-      const next = onboardNudge + by;
+      const next = tenths(onboardNudge + by);
       setOnboardNudge(next);
       writeJson(nudgeKey("onboard"), next);
     } else if (manualOffset !== null) {
       setManualOffset(manualOffset + by);
       writeJson(offsetKey(mainChannel), manualOffset + by);
     } else if (autoOffset !== null || live) {
-      const next = mainNudge + by;
+      const next = tenths(mainNudge + by);
       setMainNudge(next);
       writeJson(nudgeKey("main"), next);
     }
+  };
+
+  // Pressed as the leader crosses the line on screen (the lap count
+  // changing): moves the timing to the nearest time the leader crossed the
+  // line in the timing data
+  const [crossingNote, setCrossingNote] = useState<string | null>(null);
+  useEffect(() => {
+    if (!crossingNote) return;
+    const timer = setTimeout(() => setCrossingNote(null), 4000);
+    return () => clearTimeout(timer);
+  }, [crossingNote]);
+  const syncToCrossing = () => {
+    // The timing's time now, on the frames' clock
+    let now: number | null = null;
+    if (live) {
+      const shown = main.playheadUtc();
+      const f = live.frameClock();
+      if (shown !== null && f) now = shown - stampDelay - mainNudge + (f.timestamp - f.utc);
+    } else if (mainOffset !== null) {
+      now = clock();
+    }
+    if (now === null || !leaderCrossings?.length) return;
+    // The moment on screen was a moment before the press
+    const seen = now - REACTION_S;
+    const nearest = leaderCrossings.reduce((a, b) => (Math.abs(b - seen) < Math.abs(a - seen) ? b : a));
+    const by = seen - nearest;
+    if (Math.abs(by) > CROSSING_RANGE_S) {
+      setCrossingNote(`The timing is more than ${CROSSING_RANGE_S}s from a lap change. Use the buttons to get closer first.`);
+      return;
+    }
+    nudge("main", by);
+    setCrossingNote(`Moved the video ${by >= 0 ? "+" : ""}${by.toFixed(1)}s against the timing`);
   };
 
   const resetSync = (which: "main" | "onboard") => {
@@ -926,7 +971,19 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
                 {mainNudge > 0 ? "+" : ""}{mainNudge}s ×
               </button>
             )}
+            {leaderCrossings && leaderCrossings.length > 0 && (
+              <button
+                onClick={syncToCrossing}
+                className={`${btnClass} !text-white`}
+                title="Press as the leader crosses the line on screen (when the lap count changes) to line the timing up with it"
+              >
+                Leader crossed the line
+              </button>
+            )}
           </div>
+        )}
+        {crossingNote && (
+          <p className="text-[10px] text-white/80 bg-black/85 border border-f1-border rounded px-2 py-1 max-w-[320px]">{crossingNote}</p>
         )}
         <div className="flex items-center gap-1.5">
           {([
