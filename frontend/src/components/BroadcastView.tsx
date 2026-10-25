@@ -31,6 +31,10 @@ interface Props {
   onToggleRaceControl: () => void;
   teamRadioOn: boolean;
   onToggleTeamRadio: () => void;
+  /** The radio clips' own audio: separate, since the broadcast often plays
+   *  the same message (Settings > Team Radio > Mute audio) */
+  radioAudioOn: boolean;
+  onToggleRadioAudio: () => void;
   /** Controls shown without hover (after a tap on a touch screen) */
   controlsShown: boolean;
   /** The broadcast's sound (onboards are always muted) */
@@ -76,7 +80,7 @@ function isOnboard(c: F1TVChannel) {
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, controlsShown, muted = false }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
@@ -453,6 +457,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             ["Track map", showMap, toggleMap, "Shortcut: M"],
             ["Race control", raceControlOn, onToggleRaceControl, "The latest message, along the bottom"],
             ["Team radio", teamRadioOn, onToggleTeamRadio, "Radio messages with captions, at the top"],
+            ...(teamRadioOn
+              ? ([["Radio audio", radioAudioOn, onToggleRadioAudio, "Play each radio message's audio. The broadcast often plays it too, so you may hear it twice"]] as const)
+              : []),
           ] as const).map(([label, on, toggle, title]) => (
             <button
               key={label}

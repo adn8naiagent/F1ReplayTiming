@@ -826,6 +826,8 @@ export default function ReplayPage() {
                   }}
                   teamRadioOn={settings.showTeamRadio}
                   onToggleTeamRadio={() => updateSetting("showTeamRadio", !settings.showTeamRadio)}
+                  radioAudioOn={!settings.teamRadioMuted}
+                  onToggleRadioAudio={() => updateSetting("teamRadioMuted", !settings.teamRadioMuted)}
                   controlsShown={broadcastControls}
                   muted={broadcastMuted}
                   driversByNumber={Object.fromEntries(
