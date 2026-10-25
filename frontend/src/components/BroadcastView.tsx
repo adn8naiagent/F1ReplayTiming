@@ -454,8 +454,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           })}
           {showMap && (
             // A fixed height, so it stays readable (the onboards scale around
-            // it), and the column's full width, so wide tracks fill it too
-            <div className="flex-shrink-0 h-[clamp(170px,38%,300px)] pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
+            // it), and the column's full width, so wide tracks fill it too,
+            // with a margin so corner numbers aren't cut off
+            <div className="flex-shrink-0 h-[clamp(170px,38%,300px)] px-4 py-3 pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
               {trackOverlay}
             </div>
           )}
