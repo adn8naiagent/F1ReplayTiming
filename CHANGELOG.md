@@ -30,7 +30,7 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Failed downloads shown on the home page** — when a background download (`AUTO_PRECOMPUTE`) or a reprocess fails, the home page shows a warning with the session, when it happened and why, with a **Retry** button for each. The session also gets a warning icon in the list; hover over it for the reason. Before, background failures only showed in the server's logs, and a reprocess failure was lost if you closed its pop-up. The warning clears when the session next downloads; **Dismiss** hides it until another session fails. Self-hosted only.
 
-> **Do I need to reprocess?** Not for the broadcast: it works on sessions you've already downloaded. A few things only apply to sessions processed from 2.5.0 on:
+> **What sessions and features need reprocessing?** The broadcast doesn't: it works on sessions you've already downloaded. A few things only apply to sessions processed from 2.5.0 on:
 > - **Team radio audio on your server** — add it to downloaded sessions with `python precompute.py 2026 --radio-audio-only` (no full reprocess needed), on a network F1 accepts.
 > - **Improved team radio captions** — reprocess a session to redo its captions.
 > - **Broadcast sync at processing time** — new sessions are synced while F1 TV's audio can still be read. Older sessions are synced the first time you open their broadcast, if F1 TV's audio can still be read then; otherwise the video's time stamp is used.
