@@ -7,6 +7,43 @@ import { authHeaders, f1tv, F1TVRequestError, type F1TVPlayback } from "@/lib/f1
 type Shaka = typeof shakaNs;
 type ShakaPlayer = InstanceType<Shaka["Player"]>;
 
+/** A plain message for a video player (Shaka) error, with its number for
+ *  troubleshooting. Request errors carry the HTTP status in data[1]. */
+function playerErrorMessage(code: number | undefined, data: unknown): string {
+  const status = Array.isArray(data) && typeof data[1] === "number" ? (data[1] as number) : null;
+  const licenceStatus = Array.isArray(data)
+    ? ((data[0] as { data?: unknown[] } | undefined)?.data?.[1] as number | undefined)
+    : undefined;
+  const ref = ` (player error ${code ?? "unknown"}${status ? `, HTTP ${status}` : ""})`;
+  switch (code) {
+    case 1001: // bad HTTP status
+      if (status === 403)
+        return "F1 TV's video server refused this video. This usually means F1 TV doesn't stream it where your connection appears to be, for example through a VPN set to another country." + ref;
+      if (status === 404) return "F1 TV no longer has this video." + ref;
+      return `F1 TV's video server returned an error.` + ref;
+    case 1002: // no response the browser can read: unreachable, or refused without CORS headers
+      return "F1 TV's video server didn't answer, or refused the video without saying why (the browser hides the reason). This often happens when your internet address changed after the video started, for example turning a VPN on or off. Retry, or reload the page." + ref;
+    case 1003:
+      return "F1 TV's video server took too long to respond." + ref;
+    case 6007: // licence request failed
+      return (
+        "F1 TV refused to unlock this video" +
+        (licenceStatus ? ` (HTTP ${licenceStatus})` : "") +
+        ". F1 TV limits how many videos one account plays at once: close F1 TV on other devices, or show fewer onboards, then retry." +
+        ref
+      );
+    case 6000:
+    case 6001:
+    case 6002:
+    case 6012:
+      return "This browser can't play F1 TV's protected video. Use an up-to-date Chrome, Edge, Firefox or Safari, and check protected content is allowed in its settings." + ref;
+    default:
+      if (code && code >= 4000 && code < 5000) return "F1 TV's description of this video couldn't be read." + ref;
+      if (code && code >= 3000 && code < 4000) return "The browser couldn't play this video." + ref;
+      return "The video couldn't play." + ref;
+  }
+}
+
 export interface StreamOptions {
   /** Send the licence request through our backend (adds the user's token) instead of straight to F1. */
   licenceViaServer: boolean;
@@ -141,14 +178,14 @@ export function useF1TVStream(videoRef: React.RefObject<HTMLVideoElement | null>
           const status = (detail.data?.[0] as { data?: unknown[] } | undefined)?.data?.[1];
           setDebug((d) => ({ ...d, licence: { ...d.licence, lastStatus: typeof status === "number" ? status : null } }));
         }
-        fail(`Player error ${detail?.code}`, detail?.code, detail?.data);
+        fail(playerErrorMessage(detail?.code, detail?.data), detail?.code, detail?.data);
       });
 
       try {
         await player.load(opts.relay ? relayUrl(pb.playback_id, pb.manifest_url) : pb.manifest_url);
       } catch (e) {
         const err = e as shakaNs.util.Error;
-        return fail(`Couldn't load the stream (Shaka error ${err.code})`, err.code, err.data);
+        return fail(playerErrorMessage(err.code, err.data), err.code, err.data);
       }
       if (loadId !== loadIdRef.current) return;
       const drm = player.drmInfo();

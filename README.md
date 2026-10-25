@@ -26,6 +26,7 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 
 ## Features
 
+- **F1 TV broadcast** (new in 2.5, replays only) - watch a session's F1 TV replay inside the app, synced automatically to the timing, with onboard cameras, telemetry and mini-sectors beside it. See [F1 TV broadcast](#f1-tv-broadcast)
 - **Live timing** (Beta) - connect to live F1 sessions during race weekends with real-time data from the F1 SignalR stream, including a broadcast delay slider and automatic detection of post-session replays
 - **Track map** with real-time car positions from GPS telemetry, updating every 0.5 seconds with smooth interpolation, marshal sector flags, and toggleable corner numbers
 - **Driver leaderboard** showing position, gap to leader, interval, last lap time, sector indicators (qualifying/practice), tyre compound and age, tyre history, pit stop count and live pit timer, grid position changes, fastest lap indicator, investigation/penalty status, and sub-1-second interval highlighting
@@ -33,9 +34,13 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 - **Race control messages** - steward decisions, investigations, penalties, track limits, and flag changes displayed in a draggable overlay on the track map with optional sound notifications
 - **Pit position prediction** estimates where a driver would rejoin if they pitted now, with predicted gap ahead and behind, using precomputed pit loss times per circuit with Safety Car and Virtual Safety Car adjustments
 - **Telemetry** for unlimited drivers showing speed, throttle, brake, gear, and DRS (2025 and earlier) plotted against track distance, with a moveable side panel for 3+ driver comparisons
-- **Lap Analysis** (Beta) compare lap times for up to two drivers with a line chart and lap-by-lap history, with pit stop and safety car periods highlighted. Race replay only
+- **Lap Analysis** (Beta) - in races, compare lap times for up to two drivers with a line chart and lap-by-lap history, with pit stop and safety car periods highlighted. In qualifying and practice, every driver's laps sector by sector, and two drivers' best laps compared with the running gap and speed, throttle, brake and gear traces. In replays and live timing
+- **Track dominance** - colours the track map by which of two drivers was faster through each part of the lap, from their best laps, with a count of the parts each one won. Qualifying and practice, in replays and live timing (desktop). Open it from Lap Analysis > Compare
+
+  ![Track dominance: Antonelli and Leclerc's best laps in qualifying at the 2026 United States Grand Prix](frontend/public/track-dominance.png)
+
 - **Picture-in-Picture** mode for a compact floating window with track map, race control, leaderboard, and telemetry
-- **Broadcast sync** - match the replay to a recording of a session, either by uploading a screenshot of the timing tower (using AI vision) or by manually entering gap times
+- **Sync to a recording** - match the replay to a recording you're watching elsewhere, either by uploading a screenshot of the timing tower (using AI vision) or by manually entering gap times
 - **Weather data** including air and track temperature, humidity, wind, and rainfall status
 - **Track status flags** for green, yellow, Safety Car, Virtual Safety Car, and red flag conditions
 - **Playback controls** with 0.5x to 20x speed, skip buttons (5s, 30s, 1m, 5m), lap jumping, a progress bar, and red flag countdown with skip-to-restart
@@ -43,6 +48,52 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 - **Full screen mode** hides the session banner and enters browser fullscreen for a distraction-free view
 - **Imperial units** toggle for °F and mph in settings
 - **Passphrase authentication** to optionally restrict access when publicly hosted
+
+## F1 TV Broadcast
+
+Watch the session's F1 TV replay inside the app, in step with the timing. Switch the track map to **Broadcast** (top right of the track map): the app finds the session on F1 TV, lines the video up with the timing, and keeps it there as you play, pause, change speed and skip, including **Skip to restart** after a red flag.
+
+**Replays only for now.** Broadcast isn't available in live timing yet.
+
+**Needs:** an F1 TV **Pro or Premium** subscription, signed in on the server (see [F1 TV account](#f1-tv-account)). Self-hosted only. Tablets and larger screens. F1 TV only streams in some countries and decides by your internet address, so a VPN can stop the video; if it won't play, the app says why.
+
+### Views
+
+- **Multi-view** - the broadcast with up to two drivers' onboard cameras and the track map beside it. Pick each onboard from a driver menu; drag the edge of the side panel to make it narrower.
+- **Single view** - the broadcast full width, with the track map's lines over it.
+
+Choose which opens in **Settings > Broadcast**, along with onboard telemetry, the track map and race control. The hover controls on the video change the same choices, and they're remembered. On touch screens, tap the video to show the controls.
+
+### Onboards
+
+Each onboard can show, switched on or off for each one:
+
+- **Telemetry** - the driver's speed, gear, a throttle gauge and a brake light, from the timing.
+- **Sector strip** (qualifying and practice) - the driver's mini-sectors as one line along the bottom edge of the video, filling in purple, green or yellow as they complete each one, with gaps between the three sectors.
+
+### Overlays and sound
+
+- **Track map** beside the onboards or over the broadcast, with drivers selected on the leaderboard highlighted and named.
+- **Race control** - the latest message along the bottom of the broadcast, fading after a few seconds.
+- **Team radio** - captions at the top, as on the track map. **Radio audio** has its own switch, since the broadcast often plays the same message. Radio audio is stored on your server when a session is processed, so it plays from there. For sessions downloaded before 2.5, add it with `python precompute.py 2026 --radio-audio-only` (Docker: `docker compose exec f1timing python precompute.py 2026 --radio-audio-only`).
+- **Volume** - mute and a volume slider at the left of the playback controls.
+
+### Automatic sync
+
+The first time you open a session's broadcast, the server works out where the replay starts in F1 TV's video. An onboard camera's sound is mostly its car's engine, and the engine's pitch follows its revs, which are in the timing data. The server slides the two against each other until they line up, and checks the answer with a second driver (they must agree within 0.3 seconds). Races use the start, which never repeats; qualifying and practice use a flying lap. It runs when the session is processed, while F1 TV's audio can still be read (F1 TV protects some replays' audio later on); if that doesn't work, it tries again the first time you open the broadcast (about a minute). The result is saved with the session. All of F1 TV's feeds for a session share one timeline, so the onboards follow the broadcast.
+
+The hover controls show how the session is synced:
+
+| Status | Meaning |
+|---|---|
+| Synced by engine sound (VER, STR) | Matched as above, with the drivers used. Accurate to a fraction of a second |
+| Lining up with the timing… | The first match is running |
+| Synced by video time stamp (approximate) | F1 TV protects some sessions' audio, so the engine sound can't be matched; the time stamp in F1 TV's video is used instead, usually within a second or two |
+| Synced manually | You lined it up yourself |
+
+**Fine-tune video sync** nudges the video ±0.5s or ±5s; the adjustment is remembered per session, and its × goes back to the automatic sync. **Sync manually** gives the video its own play bar: find the moment that matches the timing (lights out or a car crossing the line works well) and press **Set sync here**.
+
+Picture quality adjusts to your connection: it starts lower and improves after a few seconds.
 
 ## Architecture
 
@@ -138,7 +189,24 @@ Since 15 October 2026, F1 only serves past-session timing data to signed-in F1 T
 
 **Docker:** set `F1TV_SECRET_KEY`. Without it, the generated key file lives inside the container. A rebuild loses it, and the saved password can no longer be read, so you'd sign in again.
 
-**Cloud hosts:** F1 blocks downloads from cloud providers even when you're signed in. See [Cloud hosting](#cloud-hosting).
+**VPNs and cloud hosts:** F1 blocks downloads and live timing from most VPNs and cloud servers, even when you're signed in. See [VPNs and cloud servers](#vpns-and-cloud-servers).
+
+### VPNs and cloud servers
+
+F1's timing servers refuse requests (HTTP 403) from internet addresses they recognise as VPNs or cloud servers, before checking your F1 TV sign-in. This covers most commercial VPNs and cloud hosts.
+
+| | Through a VPN or from a cloud server |
+|---|---|
+| Downloading new sessions: opening an unprocessed session, reprocessing, `precompute.py` | Blocked |
+| Race-weekend background downloads (`AUTO_PRECOMPUTE`) | Blocked |
+| Team radio audio and captions for new sessions | Blocked (they're downloaded with the session) |
+| Live timing | Blocked |
+| Replaying the timing data of sessions already in your storage (track map, leaderboard, telemetry, team radio captions and stored radio audio) | Works: it comes from your storage, not F1 |
+
+> [!WARNING]
+> **Background downloads fail if the server's machine is on a VPN.** During a race weekend, `AUTO_PRECOMPUTE` then can't download new sessions. The home page shows a warning for each session that failed, with a Retry button, and the sessions also download on a later check once the VPN is off. If you use a VPN on that machine, exclude `livetiming.formula1.com` from it (split tunnelling), or turn it off.
+
+With Docker, the container uses the host computer's internet connection, so a VPN on the host affects it too.
 
 **Other ways to sign in:**
 - `F1_USERNAME` and `F1_PASSWORD` environment variables, which take priority over a saved sign-in.
@@ -242,13 +310,7 @@ volumes:
 Deploy as a single service. Most platforms will detect the `Dockerfile` at the project root automatically.
 
 > [!WARNING]
-> **F1 blocks requests from cloud providers.** Since the F1 TV paywall (15 October 2026), F1's servers refuse requests from cloud providers with HTTP 403, before checking any sign-in. On a cloud host, these don't work:
-> - downloading new sessions: opening an unprocessed session, reprocessing, and `precompute.py`
-> - race-weekend background downloads (`AUTO_PRECOMPUTE`)
-> - team radio and captions for new sessions, which are downloaded with them
-> - live timing, which uses the same F1 servers (expected, not yet confirmed)
->
-> Replays of sessions already in storage, and their team radio, keep working.
+> **F1 blocks requests from cloud servers.** On a cloud host, downloading new sessions, background downloads and live timing don't work. Replaying the timing data of sessions already in storage does. See [VPNs and cloud servers](#vpns-and-cloud-servers).
 
 **Recommended setup:** run a self-hosted copy at home (Docker) that downloads sessions into your R2 bucket, and point the cloud copy at the same bucket to serve them. On the cloud copy, set `AUTO_PRECOMPUTE=off` and `RETENTION_SWEEP_ENABLED=false`, so only the home copy downloads and manages storage.
 

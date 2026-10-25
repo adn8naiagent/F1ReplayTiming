@@ -90,8 +90,9 @@ def _describe_error(e: Exception) -> str:
     """A user-facing reason the connection to F1 failed."""
     if isinstance(e, urllib.error.HTTPError):
         if e.code == 403:
-            return ("F1 is refusing live timing connections from this server (HTTP 403). "
-                    "F1 blocks some networks, such as cloud hosts and VPNs.")
+            return ("F1 refused the live timing connection (HTTP 403). F1 blocks live timing from "
+                    "most VPNs and cloud servers. If you're using a VPN, turn it off. Live timing will "
+                    "keep retrying and connect once F1 accepts the connection.")
         if e.code == 401:
             return "F1 rejected the connection (HTTP 401). Sign in to F1 TV again."
         return f"F1's live timing server returned an error (HTTP {e.code})."

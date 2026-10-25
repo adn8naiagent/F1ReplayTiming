@@ -38,6 +38,8 @@ export interface F1TVContent {
 
 export interface F1TVPlayback {
   playback_id: string;
+  /** Real time (epoch seconds) at the video's 0:00, from the stream */
+  video_start_utc: number | null;
   manifest_url: string;
   license_url: string | null;
   stream_type: string | null;
@@ -78,6 +80,16 @@ export const f1tv = {
   signInToken: (token: string) => request<F1TVStatus>("POST", "/sign-in", { token }),
   signOut: () => request<F1TVStatus>("DELETE", "/sign-in"),
   content: (q: string) => request<F1TVContent>("GET", `/content?q=${encodeURIComponent(q)}`),
+  /** Real time (epoch seconds) at a replay's 0:00, to sync the broadcast */
+  replayStart: (year: number, round: number, type: string) =>
+    request<{ replay_start_utc: number }>("GET", `/replay-start?year=${year}&round=${round}&type=${type}`),
+  /** Where the replay's 0:00 is in the session's F1 TV video (seconds),
+   *  matched from the onboards' engine sound. Slow the first time. */
+  sync: (year: number, round: number, type: string) =>
+    request<{ offset: number; content_id: string; drivers?: string[] }>("GET", `/sync?year=${year}&round=${round}&type=${type}`),
+  /** The F1 TV replay of a session, found from the round and session start */
+  find: (year: number, round: number, type: string) =>
+    request<{ content_id: string; title: string | null }>("GET", `/find?year=${year}&round=${round}&type=${type}`),
   play: (content: string, channelId: string | null) =>
     request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId }),
 };

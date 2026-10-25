@@ -28,6 +28,58 @@ def _error(e: f1tv_video.F1TVError) -> JSONResponse:
     return JSONResponse(status_code=status, content={"detail": str(e), "f1tv_status": e.status, "f1tv_body": e.body})
 
 
+@router.get("/sync")
+async def sync(year: int, round: int, type: str):
+    """Where the replay's 0:00 is in F1 TV's video (seconds), matched from
+    the onboards' engine sound. Worked out once per session; the first time
+    takes a minute or so."""
+    from services import broadcast_sync
+
+    try:
+        return await broadcast_sync.offset(year, round, type)
+    except Exception as e:
+        logger.info("Broadcast sync for %s %s %s: %s", year, round, type, e)
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/replay-start")
+async def replay_start(year: int, round: int, type: str):
+    """The real time (epoch seconds) at a replay's 0:00, to line Broadcast
+    video up with the timing."""
+    from services.storage import aget_json
+
+    info = await aget_json(f"sessions/{year}/{round}/{type}/info.json") or {}
+    if info.get("replay_start_utc"):
+        return {"replay_start_utc": info["replay_start_utc"]}
+    # Sessions processed before it was stored: team radio clips carry both
+    # their replay time and their real time
+    from services.team_radio import parse_utc
+    from datetime import timezone
+    import statistics
+
+    clips = (await aget_json(f"sessions/{year}/{round}/{type}/team_radio.json") or {}).get("clips") or []
+    starts = []
+    for c in clips:
+        utc = parse_utc((c.get("utc") or "").rstrip("Z"))
+        if utc is not None and c.get("t") is not None:
+            starts.append(utc.replace(tzinfo=timezone.utc).timestamp() - float(c["t"]))
+    if not starts:
+        raise HTTPException(status_code=404, detail="Reprocess this session to sync Broadcast automatically")
+    return {"replay_start_utc": statistics.median(starts)}
+
+
+@router.get("/find")
+async def find(year: int, round: int, type: str):
+    """The F1 TV replay of a session, so Broadcast can open it without a link."""
+    try:
+        found = await f1tv_video.find_replay(year, round, type)
+    except f1tv_video.F1TVError as e:
+        raise HTTPException(status_code=e.status or 502, detail=str(e))
+    if not found:
+        raise HTTPException(status_code=404, detail="No F1 TV replay found for this session yet")
+    return found
+
+
 @router.get("/content")
 async def content(q: str):
     try:

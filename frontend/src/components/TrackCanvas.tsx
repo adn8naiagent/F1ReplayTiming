@@ -18,6 +18,12 @@ interface Props {
   marshalSectors?: MarshalSector[] | null;
   sectorFlags?: SectorFlag[] | null;
   showElevation?: boolean;
+  /** Track line width in pixels; thinner for small overlays */
+  trackWidth?: number;
+  /** A white track, for drawing over video */
+  lightTrack?: boolean;
+  /** Small margins, for a small map with nothing around it */
+  compact?: boolean;
   elevationRangeM?: number | null;
 }
 
@@ -39,7 +45,7 @@ function getCanvasWindow(canvas: HTMLCanvasElement | null): Window {
 }
 
 
-export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers, playbackSpeed = 1, showDriverNames = true, sectorOverlay = null, segmentOverlay = null, corners = null, marshalSectors = null, sectorFlags = null, showElevation = false, elevationRangeM = null }: Props) {
+export default function TrackCanvas({ trackPoints, rotation, trackStatus = "green", drivers, highlightedDrivers, playbackSpeed = 1, showDriverNames = true, sectorOverlay = null, segmentOverlay = null, corners = null, marshalSectors = null, sectorFlags = null, showElevation = false, elevationRangeM = null, trackWidth = 12, lightTrack = false, compact = false }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const sizeRef = useRef<{ w: number; h: number }>({ w: 0, h: 0 });
@@ -62,6 +68,12 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
   marshalSectorsRef.current = marshalSectors;
   const sectorFlagsRef = useRef(sectorFlags);
   sectorFlagsRef.current = sectorFlags;
+  const lightTrackRef = useRef(lightTrack);
+  lightTrackRef.current = lightTrack;
+  const compactRef = useRef(compact);
+  compactRef.current = compact;
+  const trackWidthRef = useRef(trackWidth);
+  trackWidthRef.current = trackWidth;
   const showElevationRef = useRef(showElevation);
   showElevationRef.current = showElevation;
 
@@ -132,7 +144,7 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current, sectorOverlayRef.current, cornersRef.current, marshalSectorsRef.current, sectorFlagsRef.current, showElevationRef.current, segmentOverlayRef.current);
+      drawTrack(ctx, trackPoints, w, h, rotation, trackStatusRef.current, sectorOverlayRef.current, cornersRef.current, marshalSectorsRef.current, sectorFlagsRef.current, showElevationRef.current, segmentOverlayRef.current, trackWidthRef.current, lightTrackRef.current, compactRef.current);
 
       const now = performance.now();
       const curr = driversRef.current;
@@ -148,7 +160,7 @@ export default function TrackCanvas({ trackPoints, rotation, trackStatus = "gree
         return { ...drv, x, y };
       });
 
-      drawDrivers(ctx, interpolated, trackPoints, w, h, rotation, highlightedDrivers, showNamesRef.current);
+      drawDrivers(ctx, interpolated, trackPoints, w, h, rotation, highlightedDrivers, showNamesRef.current, compactRef.current);
 
       hostWindow.requestAnimationFrame(animate);
     }
