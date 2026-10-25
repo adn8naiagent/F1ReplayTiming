@@ -809,8 +809,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
         </div>
       ) : mode === "single" && showMap && (
         // Just the track lines over the video: the map's own background is
-        // made transparent here
-        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
+        // made transparent here. Above an onboard in the main view too.
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 z-[25] w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
           {trackOverlay}
         </div>
       )}
