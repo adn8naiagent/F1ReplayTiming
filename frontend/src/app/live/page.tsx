@@ -269,6 +269,19 @@ function LiveTiming() {
   const sessionTypeUpper = sessionType.toUpperCase();
   const isRace = sessionTypeUpper === "R" || sessionTypeUpper === "S";
   const isQualifying = sessionTypeUpper === "Q" || sessionTypeUpper === "SQ";
+  // While the timing is held back further than there's timing yet (the
+  // server has only just connected): over the timing and the map
+  const delayNotice = live.delayWait !== null && (
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-f1-card/85 backdrop-blur-sm pointer-events-none px-4">
+      <div className="text-center">
+        <p className="text-sm font-bold text-white">{broadcastOn ? "Syncing with the broadcast" : "Applying the delay"}</p>
+        <p className="text-xs text-f1-muted mt-1 leading-relaxed">
+          Timing held back {Math.round(Math.abs(effectiveDelay))}s{broadcastOn ? " to match the video" : ""}.
+          {" "}Showing in {live.delayWait}s.
+        </p>
+      </div>
+    </div>
+  );
   const leaderCrossings = useMemo(() => (isRace && live.laps ? leaderCrossingTimes(live.laps) : undefined), [isRace, live.laps]);
 
   // RC sound notification
@@ -747,20 +760,23 @@ function LiveTiming() {
                   showMap={settings.broadcastMap}
                   onToggleMap={() => updateSetting("broadcastMap", !settings.broadcastMap)}
                   trackOverlay={
-                    <TrackCanvas
-                      trackPoints={trackPoints}
-                      rotation={rotation}
-                      trackStatus={trackStatus}
-                      drivers={trackDrivers}
-                      highlightedDrivers={selectedDrivers}
-                      playbackSpeed={1}
-                      showDriverNames={settings.showDriverNames}
-                      corners={settings.showCorners ? trackData?.corners : null}
-                      marshalSectors={trackData?.marshal_sectors}
-                      trackWidth={5}
-                      lightTrack
-                      compact
-                    />
+                    <div className="relative w-full h-full">
+                      <TrackCanvas
+                        trackPoints={trackPoints}
+                        rotation={rotation}
+                        trackStatus={trackStatus}
+                        drivers={trackDrivers}
+                        highlightedDrivers={selectedDrivers}
+                        playbackSpeed={1}
+                        showDriverNames={settings.showDriverNames}
+                        corners={settings.showCorners ? trackData?.corners : null}
+                        marshalSectors={trackData?.marshal_sectors}
+                        trackWidth={5}
+                        lightTrack
+                        compact
+                      />
+                      {delayNotice}
+                    </div>
                   }
                   raceControl={settings.broadcastRaceControl ? (live.rcMessages || [])[0] ?? null : null}
                   raceControlOn={settings.broadcastRaceControl}
@@ -780,17 +796,20 @@ function LiveTiming() {
                   )}
                 />
               ) : trackPoints.length > 0 ? (
-                <TrackCanvas
-                  trackPoints={trackPoints}
-                  rotation={rotation}
-                  trackStatus={trackStatus}
-                  drivers={trackDrivers}
-                  highlightedDrivers={selectedDrivers}
-                  playbackSpeed={1}
-                  showDriverNames={settings.showDriverNames}
-                  corners={settings.showCorners ? trackData?.corners : null}
-                  {...trackExtras}
-                />
+                <>
+                  <TrackCanvas
+                    trackPoints={trackPoints}
+                    rotation={rotation}
+                    trackStatus={trackStatus}
+                    drivers={trackDrivers}
+                    highlightedDrivers={selectedDrivers}
+                    playbackSpeed={1}
+                    showDriverNames={settings.showDriverNames}
+                    corners={settings.showCorners ? trackData?.corners : null}
+                    {...trackExtras}
+                  />
+                  {delayNotice}
+                </>
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <p className="text-f1-muted text-sm">Track data not available</p>
@@ -916,6 +935,8 @@ function LiveTiming() {
             )}
 
             {(!isMobile || mobileLeaderboardOpen) && (
+              <div className="relative h-full">
+              {delayNotice}
               <Leaderboard
                 drivers={drivers}
                 highlightedDrivers={selectedDrivers}
@@ -927,6 +948,7 @@ function LiveTiming() {
                 onScaleChange={setLeaderboardScale}
                 miniSectors={miniSectors}
               />
+              </div>
             )}
           </div>
           </div>

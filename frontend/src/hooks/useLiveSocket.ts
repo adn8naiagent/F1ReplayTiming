@@ -23,7 +23,13 @@ interface LiveState {
   qualiPhases: QualiPhaseInfo[];
   /** When the session started, on the frames' clock */
   sessionStart: number | null;
+  /** Delayed, but with no timing that old yet (the server only just
+   *  connected): seconds until there is, else null */
+  delayWait: number | null;
 }
+
+// How long frames are kept (more while the delay is longer)
+const KEEP_MS = 130_000;
 
 interface BufferedFrame {
   frame: ReplayFrame;
@@ -43,7 +49,8 @@ export function useLiveSocket(
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const delayRef = useRef(delayOffset);
   delayRef.current = delayOffset;
-  const hasShownFirstFrame = useRef(false);
+  // The frame showing, while delayed
+  const shownRef = useRef<BufferedFrame | null>(null);
   const lagsRef = useRef<number[]>([]);
   const arrivalLagRef = useRef<number | null>(null);
   /** Seconds between data happening and reaching this page (live only) */
@@ -61,40 +68,47 @@ export function useLiveSocket(
     laps: null,
     qualiPhases: [],
     sessionStart: null,
+    delayWait: null,
   });
 
-  // Delay processing: buffer frames and release them after |delayOffset| seconds.
-  // Any non-zero value (positive or negative) activates buffering.
+  // Delay: every frame is kept for a couple of minutes (the server sends
+  // its last two minutes on connecting too), and the page shows the newest
+  // one at least |delayOffset| seconds old. When the delay grows (the
+  // broadcast comes on) it goes straight back to that moment rather than
+  // waiting for it; when it shrinks it skips forward.
   const absDelay = Math.abs(delayOffset);
   useEffect(() => {
     if (absDelay === 0) {
-      bufferRef.current = [];
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
+      shownRef.current = null;
+      setState((s) => (s.delayWait === null ? s : { ...s, delayWait: null }));
+      const latest = bufferRef.current[bufferRef.current.length - 1];
+      if (latest) setState((s) => ({ ...s, frame: latest.frame, rcMessages: latest.rcMessages }));
       return;
     }
 
     const delayMs = absDelay * 1000;
-    timerRef.current = setInterval(() => {
+    const show = () => {
       const now = Date.now();
       const buffer = bufferRef.current;
-      // Find the latest frame that's been buffered long enough
-      let releaseIdx = -1;
+      if (!buffer.length) return;
+      let idx = -1;
       for (let i = buffer.length - 1; i >= 0; i--) {
         if (now - buffer[i].receivedAt >= delayMs) {
-          releaseIdx = i;
+          idx = i;
           break;
         }
       }
-      if (releaseIdx >= 0) {
-        const { frame, rcMessages } = buffer[releaseIdx];
-        // Remove released and older frames
-        bufferRef.current = buffer.slice(releaseIdx + 1);
-        setState((s) => ({ ...s, frame, rcMessages }));
+      // Nothing that old yet: the oldest there is, the nearest to it
+      const wait = idx < 0 ? Math.ceil((delayMs - (now - buffer[0].receivedAt)) / 1000) : null;
+      setState((s) => (s.delayWait === wait ? s : { ...s, delayWait: wait }));
+      const entry = buffer[Math.max(0, idx)];
+      if (entry !== shownRef.current) {
+        shownRef.current = entry;
+        setState((s) => ({ ...s, frame: entry.frame, rcMessages: entry.rcMessages }));
       }
-    }, 200);
+    };
+    show();
+    timerRef.current = setInterval(show, 200);
 
     return () => {
       if (timerRef.current) {
@@ -104,8 +118,19 @@ export function useLiveSocket(
     };
   }, [absDelay]);
 
+  const keepFrame = (frame: ReplayFrame, rcMessages: RCMessage[], receivedAt: number) => {
+    const buffer = bufferRef.current;
+    buffer.push({ frame, rcMessages, receivedAt });
+    const cutoff = Date.now() - Math.max(KEEP_MS, (Math.abs(delayRef.current) + 10) * 1000);
+    let old = 0;
+    while (old < buffer.length && buffer[old].receivedAt < cutoff) old++;
+    if (old) buffer.splice(0, old);
+  };
+
   useEffect(() => {
     let aborted = false;
+    bufferRef.current = [];
+    shownRef.current = null;
     const url = wsUrl(`/ws/live/${year}/${round}?type=${sessionType}&speed=${speed}`);
     const ws = new WebSocket(url);
     wsRef.current = ws;
@@ -130,22 +155,7 @@ export function useLiveSocket(
           }));
           break;
         case "frame": {
-          const frame: ReplayFrame = {
-            timestamp: msg.timestamp,
-            lap: msg.lap,
-            total_laps: msg.total_laps,
-            session_type: msg.session_type,
-            drivers: msg.drivers,
-            status: msg.status,
-            weather: msg.weather,
-            quali_phase: msg.quali_phase,
-            team_radio: msg.team_radio,
-            mini_sector_counts: msg.mini_sector_counts,
-            mini_sector_ends: msg.mini_sector_ends,
-            signed_in: msg.signed_in,
-            utc: msg.utc,
-            sector_flags: msg.sector_flags,
-          };
+          const frame = toFrame(msg);
           const rcMessages: RCMessage[] = msg.rc_messages || [];
           // How long after it happened each frame reaches us: the lowest of
           // recent ones (frames come in batches), for the broadcast's delay
@@ -156,18 +166,20 @@ export function useLiveSocket(
             arrivalLagRef.current = Math.min(...lags);
           }
 
-          if (delayRef.current !== 0) {
-            // Show first frame immediately so the user sees data right away,
-            // then buffer subsequent frames for delayed release
-            if (!hasShownFirstFrame.current) {
-              hasShownFirstFrame.current = true;
-              setState((s) => ({ ...s, frame, rcMessages }));
-            }
-            bufferRef.current.push({ frame, rcMessages, receivedAt: Date.now() });
-          } else {
-            // No delay - show immediately
-            setState((s) => ({ ...s, frame, rcMessages }));
-          }
+          keepFrame(frame, rcMessages, Date.now());
+          // No delay: show it now (with one, the timer picks the frame)
+          if (delayRef.current === 0) setState((s) => ({ ...s, frame, rcMessages }));
+          break;
+        }
+        // The server's last two minutes, on connecting: placed as if they'd
+        // arrived as they happened, the newest just now
+        case "history": {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const frames: any[] = (msg.frames || []).filter((m: any) => typeof m.utc === "number");
+          if (!frames.length) break;
+          const newest = frames[frames.length - 1].utc;
+          const now = Date.now();
+          for (const m of frames) keepFrame(toFrame(m), m.rc_messages || [], now - (newest - m.utc) * 1000);
           break;
         }
         case "finished":
@@ -221,4 +233,24 @@ export function useLiveSocket(
   }, []);
 
   return { ...state, send, arrivalLag };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toFrame(msg: any): ReplayFrame {
+  return {
+    timestamp: msg.timestamp,
+    lap: msg.lap,
+    total_laps: msg.total_laps,
+    session_type: msg.session_type,
+    drivers: msg.drivers,
+    status: msg.status,
+    weather: msg.weather,
+    quali_phase: msg.quali_phase,
+    team_radio: msg.team_radio,
+    mini_sector_counts: msg.mini_sector_counts,
+    mini_sector_ends: msg.mini_sector_ends,
+    signed_in: msg.signed_in,
+    utc: msg.utc,
+    sector_flags: msg.sector_flags,
+  };
 }
