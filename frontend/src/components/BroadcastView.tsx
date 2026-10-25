@@ -202,7 +202,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             tone: "rough",
           }
         : manualOffset !== null
-          ? { label: "Synced by hand", hint: "Lined up with Sync broadcast here.", tone: "rough" }
+          ? { label: "Synced manually", hint: "Lined up with Sync broadcast here.", tone: "rough" }
           : null;
 
   const clock = useReplayClock(timestamp, playing, speed);
