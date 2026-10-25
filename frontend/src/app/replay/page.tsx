@@ -98,6 +98,14 @@ export default function ReplayPage() {
   const [rcPanelOpen, setRcPanelOpen] = useState(false);
   const [rcPinned, setRcPinned] = useState(false);
   const [broadcastOn, setBroadcastOn] = useState(false);
+  // Touch screens can't hover: a tap on the broadcast shows its controls for a few seconds
+  const [broadcastControls, setBroadcastControls] = useState(false);
+  const broadcastControlsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const revealBroadcastControls = useCallback(() => {
+    setBroadcastControls(true);
+    clearTimeout(broadcastControlsTimer.current);
+    broadcastControlsTimer.current = setTimeout(() => setBroadcastControls(false), 4000);
+  }, []);
   const [broadcastMuted, setBroadcastMuted] = useState(() => {
     try { return localStorage.getItem("f1tv_muted") === "1"; } catch { return false; }
   });
@@ -589,7 +597,9 @@ export default function ReplayPage() {
           )}
 
           {(!isMobile || mobileTrackOpen) && (
-            <div className={`h-[42vh] sm:h-full relative group/view ${!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) ? "flex-1 min-w-0 min-h-0" : ""}`}>
+            <div
+              onPointerDown={(e) => { if (broadcastOn && e.pointerType !== "mouse") revealBroadcastControls(); }}
+              className={`h-[42vh] sm:h-full relative group/view ${!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) ? "flex-1 min-w-0 min-h-0" : ""}`}>
               {/* Flag badge */}
               {trackStatus !== "green" && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
@@ -669,7 +679,7 @@ export default function ReplayPage() {
 
               {/* Race Control toggle - desktop only, mobile has its own section */}
               {/* Over the broadcast, these show on hover like the player's controls */}
-              <div className={`absolute top-3 right-3 z-30 hidden sm:flex items-center gap-1.5 ${broadcastOn ? "opacity-0 group-hover/view:opacity-100 transition-opacity" : ""}`}>
+              <div className={`absolute top-3 right-3 z-30 hidden sm:flex items-center gap-1.5 ${broadcastOn ? `transition-opacity ${broadcastControls ? "opacity-100" : "opacity-0 group-hover/view:opacity-100 [@media(hover:none)]:pointer-events-none"}` : ""}`}>
                 {BROADCAST_ENABLED && f1tvSignedIn && (
                   <div className="flex items-center rounded border border-f1-border bg-f1-card/90 backdrop-blur-sm overflow-hidden">
                     {([false, true] as const).map((on) => (
@@ -686,6 +696,8 @@ export default function ReplayPage() {
                     ))}
                   </div>
                 )}
+                {/* On the broadcast, race control is in its hover controls */}
+                {!broadcastOn && (
                 <button
                   onClick={() => {
                     if (rcPinned) {
@@ -706,6 +718,7 @@ export default function ReplayPage() {
                   </svg>
                   RC
                 </button>
+                )}
               </div>
 
               {/* Race Control Messages panel (floating, hidden when pinned) */}
@@ -799,6 +812,13 @@ export default function ReplayPage() {
                   showMap={settings.broadcastMap}
                   trackOverlay={overlayTrackCanvas}
                   raceControl={rcPanelOpen || rcPinned ? (replay.frame?.rc_messages || [])[0] ?? null : null}
+                  raceControlOn={rcPanelOpen || rcPinned}
+                  onToggleRaceControl={() => {
+                    if (rcPanelOpen || rcPinned) { setRcPanelOpen(false); setRcPinned(false); } else setRcPanelOpen(true);
+                  }}
+                  teamRadioOn={settings.showTeamRadio}
+                  onToggleTeamRadio={() => updateSetting("showTeamRadio", !settings.showTeamRadio)}
+                  controlsShown={broadcastControls}
                   muted={broadcastMuted}
                   driversByNumber={Object.fromEntries(
                     drivers.flatMap((d) => {

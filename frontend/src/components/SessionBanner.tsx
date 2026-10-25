@@ -384,7 +384,7 @@ export default function SessionBanner({
                       <div className="grid grid-cols-2 gap-2">
                         {([
                           [true, "Multi-view", "The broadcast, up to two onboards and the track map side by side"],
-                          [false, "Broadcast", "The broadcast full width, with the track map over it"],
+                          [false, "Single view", "The broadcast full width, with the track map over it"],
                         ] as const).map(([value, label, hint]) => (
                           <button
                             key={label}

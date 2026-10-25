@@ -5,6 +5,7 @@ import { f1tv, type F1TVChannel, type F1TVContent } from "@/lib/f1tv";
 import type { RCMessage, ReplayDriver } from "@/hooks/useReplaySocket";
 import { useF1TVStream, type StreamDebug, type StreamOptions } from "@/hooks/useF1TVStream";
 import { useReplayClock, useVideoSync } from "@/hooks/useVideoSync";
+import DriverDropdown from "./DriverDropdown";
 
 interface Props {
   /** e.g. "2026_14_R" — keys the saved F1 TV link and sync offsets. */
@@ -25,6 +26,13 @@ interface Props {
   driversByNumber: Record<string, ReplayDriver>;
   /** The latest race control message, when race control is on */
   raceControl?: RCMessage | null;
+  /** Race control and team radio switches in the hover controls */
+  raceControlOn: boolean;
+  onToggleRaceControl: () => void;
+  teamRadioOn: boolean;
+  onToggleTeamRadio: () => void;
+  /** Controls shown without hover (after a tap on a touch screen) */
+  controlsShown: boolean;
   /** The broadcast's sound (onboards are always muted) */
   muted?: boolean;
 }
@@ -45,6 +53,21 @@ function writeJson(key: string, value: unknown) {
   } catch {}
 }
 
+// F1 TV's names for its other feeds (which ones there are depends on the
+// account and the session)
+const FEED_NAMES: Record<string, string> = {
+  "F1 LIVE": "F1 Live",
+  "INTERNATIONAL": "International",
+  "TRACKER": "Driver Tracker",
+  "DATA": "Data Channel",
+  "PIT LANE": "Pit Lane Channel",
+};
+
+function feedName(c: F1TVChannel): string {
+  const title = (c.title || "").trim();
+  return FEED_NAMES[title.toUpperCase()] ?? title.toLowerCase().replace(/\b\w/g, (ch) => ch.toUpperCase());
+}
+
 function isOnboard(c: F1TVChannel) {
   return (c.type || "").toLowerCase() === "obc" || c.driver_number != null;
 }
@@ -53,7 +76,7 @@ function isOnboard(c: F1TVChannel) {
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, muted = false }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, controlsShown, muted = false }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
@@ -317,6 +340,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             const picker = (
               <OnboardPicker
                 onboards={onboards}
+                driversByNumber={driversByNumber}
                 value={number}
                 exclude={onboardDrivers[slot === 0 ? 1 : 0]}
                 placeholder={slot === 0 ? "Choose an onboard" : "Add a second onboard"}
@@ -339,6 +363,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
                   driver={driversByNumber[number]}
                   showTelemetry={showTelemetry}
                   picker={picker}
+                  controlsShown={controlsShown}
                   onClose={() => setOnboardDriver(slot, null)}
                 />
               );
@@ -371,11 +396,15 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       )}
 
       {/* Controls */}
-      <div className="absolute top-3 left-3 z-20 flex flex-col items-start gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      {/* Shown on hover, or for a few seconds after a tap on touch screens
+          (where hidden controls mustn't catch taps) */}
+      <div className={`absolute top-3 left-3 z-20 flex flex-col items-start gap-1.5 transition-opacity ${
+        controlsShown ? "opacity-100" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:pointer-events-none"
+      }`}>
         <div className="flex items-center gap-1.5">
           {/* Flips the view for now; Settings > Broadcast sets the default */}
           <div className="flex rounded border border-f1-border overflow-hidden">
-            {([[true, "Multi-view"], [false, "Broadcast"]] as const).map(([value, label]) => (
+            {([[true, "Multi-view"], [false, "Single view"]] as const).map(([value, label]) => (
               <button
                 key={label}
                 onClick={() => setMultiView(value)}
@@ -391,7 +420,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             <select value={mainChannel ?? ""} onChange={(e) => setMainChannel(e.target.value || null)} className={selectClass}>
               <option value="">Main feed</option>
               {mainFeeds.map((c) => (
-                <option key={c.channel_id!} value={c.channel_id!}>{c.title}</option>
+                <option key={c.channel_id!} value={c.channel_id!}>{feedName(c)}</option>
               ))}
             </select>
           )}
@@ -420,9 +449,23 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={toggleMap} className={btnClass} title="Shortcut: M">
-            {showMap ? "Hide" : "Show"} track map
-          </button>
+          {([
+            ["Track map", showMap, toggleMap, "Shortcut: M"],
+            ["Race control", raceControlOn, onToggleRaceControl, "The latest message, along the bottom"],
+            ["Team radio", teamRadioOn, onToggleTeamRadio, "Radio messages with captions, at the top"],
+          ] as const).map(([label, on, toggle, title]) => (
+            <button
+              key={label}
+              onClick={toggle}
+              title={title}
+              className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-bold transition-colors ${
+                on ? "bg-white/15 border-white/30 text-white" : "bg-f1-card/90 border-f1-border text-f1-muted hover:text-white"
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${on ? "bg-green-400" : "bg-white/25"}`} />
+              {label}
+            </button>
+          ))}
         </div>
         {mainOffset === null && syncing && (
           <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
@@ -493,7 +536,7 @@ function RaceControlTicker({ message }: { message: RCMessage }) {
 }
 
 /** One onboard camera, following the broadcast's position. */
-function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, showTelemetry, picker, onClose }: {
+function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, showTelemetry, picker, controlsShown, onClose }: {
   link: string;
   channel: string;
   opts: StreamOptions;
@@ -507,6 +550,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   showTelemetry: boolean;
   /** Switches this onboard to another driver (on hover) */
   picker: React.ReactNode;
+  controlsShown: boolean;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -521,9 +565,11 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
 
   return (
     <OnboardBox>
-      <div className="relative w-full h-full bg-black rounded-lg overflow-hidden border border-white/10 group/pane">
+      <div className="relative w-full h-full group/pane">
+      {/* The picker sits outside the rounded frame so its menu isn't cut off */}
+      <div className={`absolute top-1.5 left-1.5 z-30 transition-opacity ${controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 focus-within:opacity-100 [@media(hover:none)]:pointer-events-none"}`}>{picker}</div>
+      <div className="relative w-full h-full bg-black rounded-lg overflow-hidden border border-white/10">
         <video ref={ref} className="w-full h-full object-contain" muted playsInline />
-        <div className="absolute top-1.5 left-1.5 opacity-0 group-hover/pane:opacity-100 transition-opacity">{picker}</div>
         <button
           onClick={onClose}
           className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white/80 hover:text-white text-sm leading-none flex items-center justify-center"
@@ -539,6 +585,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
           </p>
         )}
       </div>
+      </div>
     </OnboardBox>
   );
 }
@@ -553,29 +600,33 @@ function OnboardBox({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Choose a driver's onboard camera */
-function OnboardPicker({ onboards, value, exclude, placeholder, onChange }: {
+/** Choose a driver's onboard camera, like Lap Analysis's driver menus */
+function OnboardPicker({ onboards, driversByNumber, value, exclude, placeholder, onChange }: {
   onboards: F1TVChannel[];
+  driversByNumber: Record<string, ReplayDriver>;
   value: string | null;
   exclude: string | null;
   placeholder: string;
   onChange: (number: string | null) => void;
 }) {
+  // Drivers with an onboard, in running order
+  const withOnboard = onboards
+    .map((c) => String(c.driver_number))
+    .filter((n) => n !== exclude && driversByNumber[n])
+    .map((n) => driversByNumber[n])
+    .sort((a, b) => (a.position ?? 99) - (b.position ?? 99));
+  const numberOf = (abbr: string | null) =>
+    abbr ? Object.keys(driversByNumber).find((n) => driversByNumber[n].abbr === abbr) ?? null : null;
   return (
-    <select
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value || null)}
-      className="bg-f1-card/90 border border-f1-border rounded px-1.5 py-1 text-[10px] text-white focus:outline-none pointer-events-auto"
-    >
-      <option value="">{placeholder}</option>
-      {onboards
-        .filter((c) => String(c.driver_number) !== exclude)
-        .map((c) => (
-          <option key={c.channel_id!} value={String(c.driver_number)}>
-            {c.driver_number} {c.driver_name || c.title}
-          </option>
-        ))}
-    </select>
+    <div className="w-44 pointer-events-auto">
+      <DriverDropdown
+        value={value ? driversByNumber[value]?.abbr ?? null : null}
+        onChange={(abbr) => onChange(numberOf(abbr))}
+        drivers={withOnboard}
+        placeholder={placeholder}
+        getColor={(abbr) => withOnboard.find((d) => d.abbr === abbr)?.color ?? "#888"}
+      />
+    </div>
   );
 }
 
