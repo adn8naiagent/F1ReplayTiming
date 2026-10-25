@@ -458,8 +458,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
               key={label}
               onClick={toggle}
               title={title}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-bold transition-colors ${
-                on ? "bg-white/15 border-white/30 text-white" : "bg-f1-card/90 border-f1-border text-f1-muted hover:text-white"
+              className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-bold backdrop-blur-sm transition-colors ${
+                on ? "bg-black/80 border-white/40 text-white" : "bg-black/80 border-f1-border text-white/60 hover:text-white"
               }`}
             >
               <span className={`w-1.5 h-1.5 rounded-full ${on ? "bg-green-400" : "bg-white/25"}`} />
