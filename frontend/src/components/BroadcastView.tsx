@@ -94,7 +94,7 @@ const STAMP_DELAY_S = 7.7;
 // What a view shows: the broadcast, or a driver's onboard (their number)
 type Source = string;
 const BROADCAST = "broadcast";
-// Multi-view's views: slot 0 is the big view, then up to four more
+// Multi-view's views: slot 0 is the main view, then up to four more
 const SLOT_COUNT = 5;
 type Layout = "focus" | "grid";
 
@@ -119,8 +119,8 @@ const EDGE = 12;
 const GAP = 8;
 const PICKER_H = 30;
 
-/** Where each view goes. Single view: the big view fills it. Main + 2: the
- *  big view on the left; a column on the right with two views (16:9 at the
+/** Where each view goes. Single view: the main view fills it. Main + 2: the
+ *  main view on the left; a column on the right with two views (16:9 at the
  *  column's width, shrinking when they and the map don't fit), then the map.
  *  Grid: three across and two down, the map in the bottom-right. Empty slots
  *  get a placeholder with a picker (the column's second, just its picker). */
@@ -212,7 +212,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     setTelemetryOn(() => bySlot([], showTelemetry));
   }, [showTelemetry]); // eslint-disable-line react-hooks/exhaustive-deps
   // What each view shows. Every session opens with just the broadcast, in
-  // the big view; switching to the track map and back keeps the choices.
+  // the main view; switching to the track map and back keeps the choices.
   const [slots, setSlots] = useState<(Source | null)[]>(
     () => slotsThisPage.get(sessionKey) ?? [BROADCAST, null, null, null, null],
   );
@@ -226,10 +226,10 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       slotsThisPage.set(sessionKey, next);
       return next;
     });
-  // Multi-view's layout (remembered): a big view with two beside it, or a grid
+  // Multi-view's layout (remembered): a main view with two beside it, or a grid
   const [layout, setLayoutState] = useState<Layout>(() => readJson<Layout>("f1tv_layout", "focus"));
   const setLayout = (value: Layout) => { setLayoutState(value); writeJson("f1tv_layout", value); };
-  // The sound follows the big view, unless a view's speaker picked another
+  // The sound follows the main view, unless a view's speaker picked another
   const [audioPick, setAudioPick] = useState<Source | null>(null);
   const [showDebug, setShowDebug] = useState(false);
 
@@ -615,11 +615,11 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const selectClass = "bg-f1-card/90 border border-f1-border rounded px-1.5 py-1 text-[10px] text-white focus:outline-none";
   const btnClass = "px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white";
 
-  // A view's own buttons: its sound, swapping into the big view, closing
+  // A view's own buttons: its sound, swapping into the main view, closing
   const viewButtons = (slot: number, source: Source): ViewButtonProps => ({
     audible: audible === source,
     audioTitle: audible === source
-      ? audioPick === source && slot > 0 ? "Playing this view's sound. Click to follow the big view again" : "Playing this view's sound"
+      ? audioPick === source && slot > 0 ? "Playing this view's sound. Click to follow the main view again" : "Playing this view's sound"
       : "Play this view's sound instead",
     // Only a choice when more than one view is showing
     onAudio: shownCount > 1 ? () => setAudioPick(slot === 0 || audioPick === source ? null : source) : undefined,
@@ -795,26 +795,27 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           {multiView && (
             <div className="flex rounded border border-f1-border overflow-hidden">
               {([
-                ["focus", "Main + 2", "A big view, with two smaller views and the track map beside it"],
-                ["grid", "Grid", "Five views and the track map, all the same size"],
-              ] as const).map(([value, label, title]) => (
+                ["focus", "Main view, with two smaller views and the track map beside it"],
+                ["grid", "Grid: five views and the track map, all the same size"],
+              ] as const).map(([value, title]) => (
                 <button
                   key={value}
                   onClick={() => setLayout(value)}
                   title={title}
-                  className={`px-2 py-1 text-[10px] font-bold transition-colors ${
+                  aria-label={title}
+                  className={`px-1.5 py-1 transition-colors ${
                     layout === value ? "bg-white text-black" : "bg-f1-card/90 text-f1-muted hover:text-white"
                   }`}
                 >
-                  {label}
+                  <LayoutIcon layout={value} />
                 </button>
               ))}
             </div>
           )}
         </div>
-        {/* What the big view shows, and which broadcast feed */}
-        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 border border-f1-border">
-          <span className="text-[9px] font-bold text-f1-muted uppercase tracking-wider mr-0.5">{multiView ? "Big view" : "Showing"}</span>
+        {/* What the main view shows, and which broadcast feed */}
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/85 border border-f1-border">
+          <span className="text-[9px] font-bold text-f1-muted uppercase tracking-wider mr-0.5">{multiView ? "Main view" : "Showing"}</span>
           {pickerFor(0, "Choose a view")}
           {broadcastSlot >= 0 && mainFeeds.length > 0 && (
             <select value={mainChannel ?? ""} onChange={(e) => setMainChannel(e.target.value || null)} className={selectClass}>
@@ -851,7 +852,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
         </div>
         {/* Fine-tune: nudge the video against the timing */}
         {!manualControls && (mainOffset !== null || (live && main.state === "ready")) && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 border border-f1-border">
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/85 border border-f1-border">
             <span className="text-[9px] font-bold text-f1-muted uppercase tracking-wider mr-0.5">Fine-tune video sync</span>
             <button onClick={() => nudge("main", -5)} className={btnClass} title="Video earlier against the timing">−5s</button>
             <button onClick={() => nudge("main", -0.5)} className={btnClass} title="Video earlier against the timing">−0.5s</button>
@@ -976,7 +977,7 @@ function OnboardPane({ rect, link, channel, opts, mainRef, mainUtc, mainReady, p
   sectors: { states: number[] | null; counts: number[]; ends: number[] } | null;
   showSectors: boolean;
   onToggleSectors: () => void;
-  /** Switches this view to another (on hover); none in the big view, whose
+  /** Switches this view to another (on hover); none in the main view, whose
    *  picker is in the main controls */
   picker: React.ReactNode | null;
   buttons: ViewButtonProps;
@@ -1070,7 +1071,7 @@ type ViewButtonProps = {
 };
 
 /** A view's buttons, top right, on hover: any switches of its own, its
- *  sound, swap into the big view, and close. */
+ *  sound, swap into the main view, and close. */
 function ViewButtons({ audible, audioTitle, onAudio, onSwap, onClose, controlsShown, clearOfPageButtons, hover, extra }: ViewButtonProps & {
   /** Shown on hovering this view, or (over the broadcast, which lets clicks
    *  through) anywhere on the player */
@@ -1093,7 +1094,7 @@ function ViewButtons({ audible, audioTitle, onAudio, onSwap, onClose, controlsSh
         </button>
       )}
       {onSwap && (
-        <button onClick={onSwap} className={`${round} text-white/80 hover:text-white text-xs`} title="Swap with the big view" aria-label="Swap with the big view">
+        <button onClick={onSwap} className={`${round} text-white/80 hover:text-white text-xs`} title="Swap with the main view" aria-label="Swap with the main view">
           ⇄
         </button>
       )}
@@ -1103,6 +1104,32 @@ function ViewButtons({ audible, audioTitle, onAudio, onSwap, onClose, controlsSh
         </button>
       )}
     </div>
+  );
+}
+
+/** A layout drawn as boxes: the views filled, the track map outlined. */
+function LayoutIcon({ layout }: { layout: Layout }) {
+  const map = (x: number, y: number, w: number, h: number) => (
+    <rect x={x + 0.5} y={y + 0.5} width={w - 1} height={h - 1} rx={0.8} fill="none" stroke="currentColor" strokeWidth={1} />
+  );
+  return (
+    <svg width="27" height="15" viewBox="0 0 27 15" fill="currentColor" aria-hidden>
+      {layout === "focus" ? (
+        <>
+          <rect x={0} y={0} width={18} height={15} rx={1} />
+          <rect x={19.5} y={0} width={7.5} height={4.2} rx={0.8} />
+          <rect x={19.5} y={5.2} width={7.5} height={4.2} rx={0.8} />
+          {map(19.5, 10.4, 7.5, 4.6)}
+        </>
+      ) : (
+        <>
+          {[0, 1, 2, 3, 4].map((i) => (
+            <rect key={i} x={(i % 3) * 9.25} y={Math.floor(i / 3) * 8} width={8.5} height={7} rx={0.8} />
+          ))}
+          {map(18.5, 8, 8.5, 7)}
+        </>
+      )}
+    </svg>
   );
 }
 
