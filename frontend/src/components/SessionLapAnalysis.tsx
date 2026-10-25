@@ -13,7 +13,7 @@ import { ReplayDriver, QualiPhaseInfo } from "@/hooks/useReplaySocket";
 import { LapEntry } from "@/components/Leaderboard";
 import DriverDropdown from "@/components/DriverDropdown";
 import LapTraceChart from "@/components/LapTraceChart";
-import { fetchLapTelemetry, compareLaps, dominanceOverlay, cornerFractions, LapComparison, DominanceOverlay } from "@/lib/lapCompare";
+import { fetchLapTelemetry, fetchLiveLapTelemetry, compareLaps, dominanceOverlay, cornerFractions, LapComparison, DominanceOverlay } from "@/lib/lapCompare";
 import { TYRE_COLORS, TYRE_SHORT } from "@/lib/constants";
 import { lapColorClass, LapData } from "@/lib/lapTiming";
 import {
@@ -51,8 +51,8 @@ interface Props {
   /** Shows track dominance on the main track map (desktop) */
   onDominanceChange?: (overlay: DominanceOverlay | null) => void;
   onClose?: () => void;
-  /** The Compare tab; off in live timing, which has no lap telemetry to compare */
-  compare?: boolean;
+  /** Live timing: lap traces come from the live session */
+  live?: boolean;
 }
 
 const SECOND_DRIVER_COLOR = "#06B6D4"; // cyan, when both drivers' team colours are too alike
@@ -87,15 +87,14 @@ type Tab = "sectors" | "compare";
 
 export default function SessionLapAnalysis({
   laps, drivers, currentTime, currentLap, lapData, qualiPhases, isQualifying,
-  year, round, sessionType, trackPoints, corners, onDominanceChange, onClose, compare: compareTab = true,
+  year, round, sessionType, trackPoints, corners, onDominanceChange, onClose, live = false,
 }: Props) {
   // The desktop panel has a Hide button; the mobile section doesn't. Lap
   // traces and track dominance are desktop only.
   const desktop = !!onClose;
-  const [savedTab, setTab] = useState<Tab>(() => {
+  const [tab, setTab] = useState<Tab>(() => {
     try { return localStorage.getItem("f1replay_lap_tab") === "compare" ? "compare" : "sectors"; } catch { return "sectors"; }
   });
-  const tab: Tab = compareTab ? savedTab : "sectors";
   const [driver, setDriver] = useState<string | null>(null);
   const [compare, setCompare] = useState<[string | null, string | null]>([null, null]);
   const [range, setRange] = useState<string>("All");
@@ -227,15 +226,25 @@ export default function SessionLapAnalysis({
   useEffect(() => {
     if (!traceKey || !bestA || !bestB) { setTraces(null); return; }
     let cancelled = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
     setTraces((prev) => (prev?.key === traceKey ? prev : null));
-    Promise.all([
-      fetchLapTelemetry(year, round, sessionType, active[0], bestA.lapNumber),
-      fetchLapTelemetry(year, round, sessionType, active[1], bestB.lapNumber),
-    ])
-      .then(([a, b]) => { if (!cancelled) setTraces({ key: traceKey, comparison: compareLaps(a, b, bestA.secs, bestB.secs) }); })
-      .catch(() => { if (!cancelled) setTraces({ key: traceKey, comparison: null }); });
-    return () => { cancelled = true; };
-  }, [traceKey, year, round, sessionType]); // eslint-disable-line react-hooks/exhaustive-deps
+    const fetchTrace = live ? fetchLiveLapTelemetry : fetchLapTelemetry;
+    // Live, a lap's trace is ready a couple of seconds after it completes
+    const load = (attempt: number) => {
+      Promise.all([
+        fetchTrace(year, round, sessionType, active[0], bestA.lapNumber),
+        fetchTrace(year, round, sessionType, active[1], bestB.lapNumber),
+      ])
+        .then(([a, b]) => { if (!cancelled) setTraces({ key: traceKey, comparison: compareLaps(a, b, bestA.secs, bestB.secs) }); })
+        .catch(() => {
+          if (cancelled) return;
+          if (live && attempt < 5) retry = setTimeout(() => load(attempt + 1), 3000);
+          else setTraces({ key: traceKey, comparison: null });
+        });
+    };
+    load(0);
+    return () => { cancelled = true; clearTimeout(retry); };
+  }, [traceKey, year, round, sessionType, live]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const comparison = traces?.key === traceKey ? traces?.comparison ?? null : null;
   const cornerMarks = useMemo(
@@ -351,7 +360,7 @@ export default function SessionLapAnalysis({
       )}
 
       {/* Tabs */}
-      {compareTab && <div className="flex flex-shrink-0 border-b border-f1-border">
+      <div className="flex flex-shrink-0 border-b border-f1-border">
         {(["sectors", "compare"] as const).map((t) => (
           <button
             key={t}
@@ -363,7 +372,7 @@ export default function SessionLapAnalysis({
             {t === "sectors" ? "Sectors" : "Compare"}
           </button>
         ))}
-      </div>}
+      </div>
 
       <div className="flex-1 overflow-y-auto min-h-0">
         {tab === "sectors" ? (

@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["live"])
@@ -321,6 +321,17 @@ async def _get_or_create_session(
             return None
 
     return _live_sessions[key]
+
+
+@router.get("/api/live/{year}/{round_num}/telemetry")
+async def live_lap_telemetry(year: int, round_num: int, type: str = Query("Q"), driver: str = Query(...), lap: int = Query(...)):
+    """One lap's telemetry recorded during the live session, for Lap
+    Analysis's Compare tab. Auth is enforced by the /api middleware."""
+    session = _live_sessions.get(f"{year}_{round_num}_{type}")
+    trace = session._state_manager.lap_trace(driver, lap) if session and session._state_manager else None
+    if trace is None:
+        raise HTTPException(status_code=404, detail="Not recorded yet")
+    return trace
 
 
 @router.websocket("/ws/live/{year}/{round_num}")

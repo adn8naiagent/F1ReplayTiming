@@ -11,9 +11,11 @@ import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
 import type { SectorOverlay, SegmentOverlay } from "@/lib/trackRenderer";
 import { buildLapData } from "@/lib/lapTiming";
+import type { DominanceOverlay } from "@/lib/lapCompare";
 import LapNotifications from "@/components/LapNotifications";
 import LapAnalysisPanel from "@/components/LapAnalysisPanel";
 import SessionLapAnalysis from "@/components/SessionLapAnalysis";
+import SectorFocusChips, { sectorTarget } from "@/components/SectorFocus";
 import TeamRadio from "@/components/TeamRadio";
 import TelemetryChart from "@/components/TelemetryChart";
 import Leaderboard from "@/components/Leaderboard";
@@ -101,6 +103,8 @@ function LiveTiming() {
   const [mobileTrackOpen, setMobileTrackOpen] = useState(true);
   const [mobileLeaderboardOpen, setMobileLeaderboardOpen] = useState(true);
   const [lapAnalysisOpen, setLapAnalysisOpen] = useState(false);
+  // Track dominance from Lap Analysis's Compare tab, on the track map
+  const [dominance, setDominance] = useState<DominanceOverlay | null>(null);
   const [mobileLapAnalysisOpen, setMobileLapAnalysisOpen] = useState(false);
   const [mobileRcOpen, setMobileRcOpen] = useState(true);
   const [leaderboardScale, setLeaderboardScale] = useState(1);
@@ -306,10 +310,11 @@ function LiveTiming() {
   const hasSectors = !isRace;
   const SECTOR_HEX: Record<string, string> = { purple: "#A855F7", green: "#22C55E", yellow: "#EAB308" };
   const DEFAULT_SECTOR = "#3A3A4A";
+  const sectorFocus = sectorTarget(sectorFocusDriver, selectedDrivers, drivers);
   const sectorOverlay: SectorOverlay | null = (() => {
     if (!hasSectors || !showSectorOverlay || !trackData?.sector_boundaries) return null;
-    if (!sectorFocusDriver || !selectedDrivers.includes(sectorFocusDriver)) return null;
-    const sectors = drivers.find((d) => d.abbr === sectorFocusDriver)?.sectors;
+    if (!sectorFocus) return null;
+    const sectors = drivers.find((d) => d.abbr === sectorFocus)?.sectors;
     const hex = (n: number) => SECTOR_HEX[sectors?.find((s) => s.num === n)?.color ?? ""] ?? DEFAULT_SECTOR;
     return { boundaries: trackData.sector_boundaries, colors: { s1: hex(1), s2: hex(2), s3: hex(3) } };
   })();
@@ -317,8 +322,8 @@ function LiveTiming() {
   // worked out where each one is on track (after a lap or two)
   const miniEnds = live.frame?.mini_sector_ends;
   const miniOverlay: SegmentOverlay | null = (() => {
-    if (!sectorOverlay || isMobile || !settings.showMiniSectors || !miniEnds || !sectorFocusDriver) return null;
-    const states = drivers.find((d) => d.abbr === sectorFocusDriver)?.mini_sectors;
+    if (!sectorOverlay || isMobile || !settings.showMiniSectors || !miniEnds || !sectorFocus) return null;
+    const states = drivers.find((d) => d.abbr === sectorFocus)?.mini_sectors;
     if (!states) return null;
     const segments: SegmentOverlay["segments"] = [];
     miniEnds.forEach((end, i) => {
@@ -329,7 +334,7 @@ function LiveTiming() {
   })();
   const trackExtras = {
     sectorOverlay,
-    segmentOverlay: miniOverlay,
+    segmentOverlay: dominance ?? miniOverlay,
     marshalSectors: trackData?.marshal_sectors,
     sectorFlags: live.frame?.sector_flags,
     showElevation: settings.showElevation,
@@ -572,6 +577,20 @@ function LiveTiming() {
                 </div>
               )}
 
+              {/* Track dominance legend (from Lap Analysis → Compare) */}
+              {dominance && (
+                <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded bg-f1-card/90 border border-f1-border backdrop-blur-sm text-[10px]">
+                  <span className="font-bold text-f1-muted uppercase tracking-wider">Track dominance</span>
+                  {dominance.legend.map((l) => (
+                    <span key={l.abbr} className="flex items-center gap-1 font-bold text-white">
+                      <span className="w-3 h-1.5 rounded-sm" style={{ backgroundColor: l.color }} />
+                      {l.abbr}
+                      <span className="font-normal text-f1-muted">{l.count}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {/* Qualifying lap-completion bubbles */}
               <LapNotifications
                 enabled={settings.showLapNotifications}
@@ -673,30 +692,8 @@ function LiveTiming() {
               {/* Sector overlay controls - qualifying and practice */}
               {hasSectors && trackData?.sector_boundaries && (
                 <div className={`absolute bottom-2 z-20 flex items-center gap-1 ${isMobile ? "left-2 right-2" : liveLaps ? "right-24" : "right-3"}`}>
-                  {showSectorOverlay && selectedDrivers.length === 0 && (
-                    <span className="text-[10px] text-f1-muted mr-1">Select a driver to view sectors</span>
-                  )}
-                  {showSectorOverlay && selectedDrivers.length > 0 && (
-                    <div className="flex items-center gap-1 overflow-x-auto">
-                      {selectedDrivers.map((abbr) => {
-                        const drv = drivers.find((d) => d.abbr === abbr);
-                        const isActive = sectorFocusDriver === abbr;
-                        return (
-                          <button
-                            key={abbr}
-                            onClick={() => setSectorFocusDriver(isActive ? null : abbr)}
-                            className={`flex-shrink-0 px-1.5 py-1 border rounded text-[10px] font-bold transition-colors ${
-                              isActive
-                                ? "bg-purple-500/20 border-purple-500/50 text-purple-300"
-                                : "bg-f1-card/90 border-f1-border text-f1-muted hover:text-white backdrop-blur-sm"
-                            }`}
-                          >
-                            <span className="inline-block w-1.5 h-1.5 rounded-full mr-1" style={{ backgroundColor: drv?.color }} />
-                            {abbr}
-                          </button>
-                        );
-                      })}
-                    </div>
+                  {showSectorOverlay && (
+                    <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
                   )}
                   {showSectorOverlay && !isMobile && (
                     <div
@@ -805,8 +802,11 @@ function LiveTiming() {
                     year={year}
                     round={round}
                     sessionType={sessionType}
+                    trackPoints={trackData?.track_points}
+                    corners={trackData?.corners}
+                    onDominanceChange={setDominance}
                     onClose={() => setLapAnalysisOpen(false)}
-                    compare={false}
+                    live
                   />
                 )}
               </div>
@@ -870,7 +870,7 @@ function LiveTiming() {
                     year={year}
                     round={round}
                     sessionType={sessionType}
-                    compare={false}
+                    live
                   />
                 )}
               </div>

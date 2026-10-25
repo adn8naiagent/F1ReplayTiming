@@ -48,7 +48,7 @@ const AVAILABILITY: [string, string, string, string][] = [
   ["Last lap time", "RL", "RL", "RL"],
   ["Sectors on the track map", "-", "RL", "RL"],
   ["Lap Analysis", "RL", "RL", "RL"],
-  ["Track dominance", "-", "R", "R"],
+  ["Track dominance", "-", "RL", "RL"],
   ["Lap notifications", "-", "RL", "-"],
   ["Telemetry", "RL", "RL", "RL"],
   ["Track elevation, marshal sector flags", "RL", "RL", "RL"],
@@ -512,9 +512,10 @@ export default function FeaturesPage() {
             <h2 className="text-lg font-bold text-white mb-1">Sectors on the Track Map</h2>
             <SessionChips practice qualifying />
             <p className="text-f1-text leading-relaxed mb-3">
-              Click <span className="font-bold text-white">Show Sectors</span> on the track map, select a driver,
-              then pick them from the buttons beside it. The track is coloured by that driver&apos;s sectors
-              on the current lap &mdash; purple, green or yellow, and grey until each is completed.
+              Click <span className="font-bold text-white">Show Sectors</span> on the track map. The track is
+              coloured by the selected driver&apos;s sectors on the current lap &mdash; purple, green or yellow, and
+              grey until each is completed. With two drivers selected, switch between them beside the button;
+              with none, it shows the leader.
             </p>
             <p className="text-f1-text leading-relaxed">
               On desktop, switch between <span className="font-bold text-white">Sectors</span> and{" "}
@@ -539,7 +540,7 @@ export default function FeaturesPage() {
               A dedicated panel for analysing driver pace. On desktop, open it via the
               &quot;Laps&quot; button on the track map &mdash; the panel slides out to the left. On mobile,
               it appears as a collapsible section. In live timing, it builds up from the laps completed since
-              live timing connected; the Compare tab is replays only.
+              live timing connected.
             </p>
             <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mb-2">Races</p>
             <p className="text-f1-text leading-relaxed mb-3">

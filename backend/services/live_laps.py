@@ -110,17 +110,18 @@ class LapRecorder:
     def laps_completed(
         self, number: str, count: int, ts: float, compound: str | None, tyre_life: int | None,
         baseline: bool = False,
-    ) -> None:
+    ) -> int | None:
         """NumberOfLaps from the feed. baseline is for the snapshot F1 sends
-        on connecting: laps before then aren't known."""
+        on connecting: laps before then aren't known. Returns the lap number
+        recorded, if any."""
         prev = self._count.get(number, 0)
         self._count[number] = count
         if baseline or count <= prev:
-            return
+            return None
         lap_number = count - self._count_offset
         if lap_number < 1:  # leaving the pit lane for the first time
             self._pending[number] = _Pending(pit_out=True)
-            return
+            return None
         p = self._p(number)
         llt = self._last_lap_time.get(number)
         lap_time = llt[0] if llt and ts - llt[1] <= _LATE_S else None
@@ -147,6 +148,7 @@ class LapRecorder:
         self._laps.append(lap)
         self._pending[number] = _Pending()
         self.version += 1
+        return lap_number
 
     def race_control(self, message: str) -> None:
         """Lap deletions (and reinstatements) by the stewards."""

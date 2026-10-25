@@ -317,6 +317,9 @@ class LiveStateManager:
         from services.live_laps import LapRecorder
         self.laps = LapRecorder(session_type in ("R", "S"))
         self._timing_seen = False  # the first TimingData is F1's snapshot
+        # Each lap's telemetry, for Lap Analysis's Compare tab (not races)
+        from services.live_traces import LapTraceRecorder
+        self.traces = None if session_type in ("R", "S") else LapTraceRecorder()
         # Live clock minus UTC, from car positions (which carry UTC). Maps
         # F1's UTC times (qualifying parts) and positions onto the clock.
         self._clock_offsets: deque[float] = deque(maxlen=60)
@@ -464,9 +467,15 @@ class LiveStateManager:
             if "NumberOfLaps" in updates:
                 try:
                     laps_done = int(updates["NumberOfLaps"])
-                    self.laps.laps_completed(
+                    done = self.laps.laps_completed(
                         str(number), laps_done, _ts, drv.compound, drv.tyre_life, baseline=snapshot,
                     )
+                    if done is not None and self.traces is not None:
+                        offset = self._clock_offset()
+                        if offset is None and _ts > 1e9:
+                            offset = 0.0
+                        if offset is not None:
+                            self.traces.lap_completed(str(number), done, _ts - offset)
                     if (drv._laps_completed is not None
                             and laps_done > drv._laps_completed
                             and not drv.in_pit):
@@ -811,6 +820,9 @@ class LiveStateManager:
                 drv.x = norm_x
                 drv.y = norm_y
 
+            if sample_t is not None and self.traces is not None and self._track_xy is not None:
+                self.traces.position(number, sample_t, drv.relative_distance)
+
             if sample_t is not None:
                 samples = self._pos_samples.setdefault(number, deque(maxlen=40))
                 if not samples or sample_t > samples[-1][0]:
@@ -874,6 +886,18 @@ class LiveStateManager:
         entries = data.get("Entries")
         if not entries or not isinstance(entries, list):
             return
+        # Every sample goes to the lap traces
+        if self.traces is not None:
+            from services.team_radio import parse_utc
+            for entry in entries:
+                utc = parse_utc((entry or {}).get("Utc", ""))
+                if utc is None:
+                    continue
+                t = utc.replace(tzinfo=timezone.utc).timestamp()
+                for number, car in ((entry or {}).get("Cars") or {}).items():
+                    ch = (car or {}).get("Channels") or {}
+                    self.traces.car_data(str(number), t, ch.get("2"), ch.get("4"), ch.get("5"),
+                                         ch.get("3"), ch.get("0"), ch.get("45"))
         cars = (entries[-1] or {}).get("Cars") or {}
         for number, car in cars.items():
             channels = (car or {}).get("Channels") or {}
@@ -1220,6 +1244,14 @@ class LiveStateManager:
 
     # --- SessionStatus ------------------------------------------------
 
+    def lap_trace(self, abbr: str, lap_number: int) -> dict[str, Any] | None:
+        """One lap's telemetry in the replay's format, if recorded."""
+        if self.traces is None:
+            return None
+        number = next((n for n, d in self._drivers.items() if d.abbr == abbr), None)
+        trace = self.traces.get(number, lap_number) if number else None
+        return {"driver": abbr, **trace} if trace else None
+
     def laps_message(self) -> dict[str, Any]:
         """Lap history for the live page: laps, qualifying part starts and
         when the session started, all on the live clock."""
@@ -1316,6 +1348,8 @@ class LiveStateManager:
         now = time.monotonic()
 
         self._apply_smoothed_positions()
+        if self.traces is not None:
+            self.traces.process()
         # Mini-sectors: qualifying and practice, like replays
         show_mini = not self._is_race and sum(self._mini_counts) > 0
 
