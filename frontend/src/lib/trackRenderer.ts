@@ -303,10 +303,11 @@ export function drawTrack(
     ctx.stroke();
   }
 
-  // Draw track center line (not on a white track)
+  // Draw track center line: on a white track, a dark core like the
+  // broadcast's track map
   ctx.beginPath();
-  ctx.strokeStyle = lightTrack ? "rgba(0, 0, 0, 0)" : "#4A4A5A";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = lightTrack ? "#15151E" : "#4A4A5A";
+  ctx.lineWidth = lightTrack ? Math.max(1.5, trackWidth * 0.35) : 2;
   const [sx, sy] = toScreen(rotated[0]);
   ctx.moveTo(sx, sy);
   for (let i = 1; i < rotated.length; i++) {
