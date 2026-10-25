@@ -10,7 +10,7 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Automatic broadcast sync** — the server lines the video up with the timing by matching the onboard cameras' engine sound to each driver's RPM, checked with a second driver. It takes about a minute the first time a session is opened, then it's saved. Adjust it by ±0.5s or ±5s from the hover controls; the adjustment shows as a chip whose × goes back to the automatic sync. Where F1 TV's audio is encrypted, the video's own time stamp is used instead.
 
-- **Multi-view** — the broadcast with up to two onboard cameras and the track map beside it. Pick each onboard from a driver menu in the panel; your choices are remembered. Each onboard can show the driver's speed, gear, throttle and brake along the bottom.
+- **Multi-view** — the broadcast with up to two onboard cameras and the track map beside it. Pick each onboard from a driver menu in the panel; your choices are remembered. Each onboard can show the driver's speed, gear, throttle and brake, and in qualifying and practice their mini-sectors as a coloured strip along the bottom edge, each switched on or off per onboard.
 
 - **Single view** — the broadcast full width with the track map's lines over it.
 

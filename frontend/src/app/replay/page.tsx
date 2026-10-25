@@ -95,7 +95,15 @@ export default function ReplayPage() {
   const [pipLeaderboardOpen, setPipLeaderboardOpen] = useState(true);
   const [showSectorOverlay, setShowSectorOverlay] = useState(false);
   const [sectorFocusDriver, setSectorFocusDriver] = useState<string | null>(null);
-  const [rcPanelOpen, setRcPanelOpen] = useState(false);
+  // Race control on the track map view, remembered on its own (the
+  // broadcast has its own setting)
+  const [rcPanelOpen, setRcPanelOpenState] = useState(() => {
+    try { return localStorage.getItem("f1replay_rc_open") === "1"; } catch { return false; }
+  });
+  const setRcPanelOpen = (open: boolean) => {
+    setRcPanelOpenState(open);
+    try { localStorage.setItem("f1replay_rc_open", open ? "1" : "0"); } catch {}
+  };
   const [rcPinned, setRcPinned] = useState(false);
   const [broadcastOn, setBroadcastOn] = useState(false);
   // Touch screens can't hover: a tap on the broadcast shows its controls for a few seconds
@@ -140,7 +148,6 @@ export default function ReplayPage() {
         if (layout.showTelemetry != null) setShowTelemetry(layout.showTelemetry);
         if (layout.telemetryPosition != null) setTelemetryPosition(layout.telemetryPosition);
         if (layout.rcPinned != null) setRcPinned(layout.rcPinned);
-        if (layout.rcPanelOpen != null) setRcPanelOpen(layout.rcPanelOpen);
         if (layout.lapAnalysisOpen != null) setLapAnalysisOpen(layout.lapAnalysisOpen);
         if (layout.showSectorOverlay != null) setShowSectorOverlay(layout.showSectorOverlay);
       }
@@ -362,8 +369,10 @@ export default function ReplayPage() {
   // they stay above the early returns below.
   const miniWanted = ["Q", "SQ", "FP1", "FP2", "FP3"].includes(sessionType)
     && settings.showMiniSectors && !isMobile && (settings.showSectors || showSectorOverlay);
+  // The broadcast's onboards can show them too, whatever the leaderboard's setting
+  const miniForOnboards = ["Q", "SQ", "FP1", "FP2", "FP3"].includes(sessionType) && broadcastOn;
   const { data: miniData } = useApi<MiniSectorData>(
-    miniWanted ? `/api/sessions/${year}/${round}/minisectors?type=${sessionType}` : null,
+    miniWanted || miniForOnboards ? `/api/sessions/${year}/${round}/minisectors?type=${sessionType}` : null,
   );
   const miniTime = replay.frame?.timestamp ?? 0;
   const miniFrameDrivers = replay.frame?.drivers;
@@ -832,6 +841,7 @@ export default function ReplayPage() {
                   showTelemetry={settings.broadcastTelemetry}
                   showMap={settings.broadcastMap}
                   trackOverlay={overlayTrackCanvas}
+                  miniSectorData={miniForOnboards ? miniData ?? null : null}
                   onMultiViewChange={(v) => updateSetting("broadcastMultiView", v)}
                   onToggleMap={() => updateSetting("broadcastMap", !settings.broadcastMap)}
                   raceControl={settings.broadcastRaceControl ? (replay.frame?.rc_messages || [])[0] ?? null : null}

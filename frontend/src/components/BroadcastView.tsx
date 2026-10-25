@@ -5,6 +5,7 @@ import { f1tv, type F1TVChannel, type F1TVContent } from "@/lib/f1tv";
 import type { RCMessage, ReplayDriver } from "@/hooks/useReplaySocket";
 import { useF1TVStream, type StreamDebug, type StreamOptions } from "@/hooks/useF1TVStream";
 import { useReplayClock, useVideoSync } from "@/hooks/useVideoSync";
+import { MINI_HEX, MINI_PIT, miniStatesAt, type MiniSectorData } from "@/lib/miniSectors";
 
 interface Props {
   /** e.g. "2026_14_R" — keys the saved F1 TV link and sync offsets. */
@@ -27,6 +28,8 @@ interface Props {
   driversByNumber: Record<string, ReplayDriver>;
   /** The latest race control message, when race control is on */
   raceControl?: RCMessage | null;
+  /** Mini-sectors (qualifying and practice), for the onboards' sector strip */
+  miniSectorData?: MiniSectorData | null;
   /** Race control and team radio switches in the hover controls */
   raceControlOn: boolean;
   onToggleRaceControl: () => void;
@@ -91,7 +94,7 @@ const onboardsThisPage = new Map<string, [string | null, string | null]>();
 const SIDE_MAX = 0.3;
 const SIDE_MIN = 0.16;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView, onMultiViewChange, showTelemetry, showMap, onToggleMap: toggleMap, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView, onMultiViewChange, showTelemetry, showMap, onToggleMap: toggleMap, trackOverlay, driversByNumber, miniSectorData, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
@@ -106,6 +109,14 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   // Telemetry on each onboard, switched one at a time (Settings > Broadcast
   // sets both)
   // (remembered; changing the setting resets both)
+  // Each onboard's mini-sector strip, switched one at a time (remembered)
+  const [sectorsOn, setSectorsOnState] = useState<[boolean, boolean]>(() => readJson("f1tv_onboard_sectors", [true, true]));
+  const toggleSectors = (slot: 0 | 1) =>
+    setSectorsOnState((v) => {
+      const next: [boolean, boolean] = slot === 0 ? [!v[0], v[1]] : [v[0], !v[1]];
+      writeJson("f1tv_onboard_sectors", next);
+      return next;
+    });
   const [telemetryOn, setTelemetryOnState] = useState<[boolean, boolean]>(() =>
     readJson("f1tv_onboard_telemetry", [showTelemetry, showTelemetry]),
   );
@@ -489,6 +500,17 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
                   replaySpeed={speed}
                   nudge={onboardNudge}
                   driver={driversByNumber[number]}
+                  sectors={
+                    miniSectorData && driversByNumber[number]
+                      ? {
+                          states: miniStatesAt(miniSectorData, driversByNumber[number].abbr, timestamp ?? 0),
+                          counts: miniSectorData.counts,
+                          ends: miniSectorData.ends,
+                        }
+                      : null
+                  }
+                  showSectors={sectorsOn[slot]}
+                  onToggleSectors={() => toggleSectors(slot)}
                   showTelemetry={telemetryOn[slot]}
                   onToggleTelemetry={() => setTelemetryOn((v) => (slot === 0 ? [!v[0], v[1]] : [v[0], !v[1]]))}
                   picker={picker}
@@ -687,7 +709,7 @@ function RaceControlTicker({ message }: { message: RCMessage }) {
 }
 
 /** One onboard camera, following the broadcast's position. */
-function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, showTelemetry, onToggleTelemetry, picker, controlsShown, onClose }: {
+function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, sectors, showSectors, onToggleSectors, showTelemetry, onToggleTelemetry, picker, controlsShown, onClose }: {
   link: string;
   channel: string;
   opts: StreamOptions;
@@ -701,6 +723,10 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   showTelemetry: boolean;
   /** Shows or hides this onboard's telemetry for now (Settings > Broadcast sets the default) */
   onToggleTelemetry: () => void;
+  /** This driver's mini-sectors now; null outside qualifying and practice */
+  sectors: { states: number[] | null; counts: number[]; ends: number[] } | null;
+  showSectors: boolean;
+  onToggleSectors: () => void;
   /** Switches this onboard to another driver (on hover) */
   picker: React.ReactNode;
   controlsShown: boolean;
@@ -724,16 +750,24 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
       <div className="relative w-full h-full bg-black rounded-lg overflow-hidden border border-white/10">
         <video ref={ref} className="w-full h-full object-contain" muted playsInline />
         {driver && (
-          <button
-            onClick={onToggleTelemetry}
-            className={`absolute top-1.5 right-9 h-6 px-2 rounded-full bg-black/70 text-[10px] font-bold flex items-center gap-1 transition-opacity ${
-              showTelemetry ? "text-white" : "text-white/60 hover:text-white"
-            } ${controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 [@media(hover:none)]:pointer-events-none"}`}
-            title={showTelemetry ? "Hide telemetry on this onboard" : "Show telemetry on this onboard"}
-          >
-            <span className={`w-1.5 h-1.5 rounded-full ${showTelemetry ? "bg-green-400" : "bg-white/30"}`} />
-            Telemetry
-          </button>
+          <div className={`absolute top-1.5 right-9 flex items-center gap-1 transition-opacity ${
+            controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 [@media(hover:none)]:pointer-events-none"
+          }`}>
+            {([
+              ...(sectors ? ([["Sectors", showSectors, onToggleSectors, "this onboard's mini-sectors along the bottom"]] as const) : []),
+              ["Telemetry", showTelemetry, onToggleTelemetry, "telemetry on this onboard"],
+            ] as const).map(([label, on, toggle, what]) => (
+              <button
+                key={label}
+                onClick={toggle}
+                className={`h-6 px-2 rounded-full bg-black/70 text-[10px] font-bold flex items-center gap-1 ${on ? "text-white" : "text-white/60 hover:text-white"}`}
+                title={`${on ? "Hide" : "Show"} ${what}`}
+              >
+                <span className={`w-1.5 h-1.5 rounded-full ${on ? "bg-green-400" : "bg-white/30"}`} />
+                {label}
+              </button>
+            ))}
+          </div>
         )}
         <button
           onClick={onClose}
@@ -743,7 +777,8 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
         >
           ×
         </button>
-        {showTelemetry && <OnboardTelemetry driver={driver} speed={replaySpeed} />}
+        {sectors && showSectors && <SectorStrip {...sectors} />}
+        {showTelemetry && <OnboardTelemetry driver={driver} speed={replaySpeed} raised={!!sectors && showSectors} />}
         {stream.state === "error" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
             <p className="text-[10px] text-white/80 leading-snug">{stream.debug.error?.message}</p>
@@ -857,13 +892,36 @@ function OnboardPicker({ onboards, driversByNumber, value, exclude, placeholder,
  *  gear, a throttle gauge, a brake tag that lights up, and DRS when open. Replay
  *  frames come every half second of race time, so the gauge glides from one
  *  reading to the next over that time rather than stepping. */
-function OnboardTelemetry({ driver, speed }: { driver?: ReplayDriver; speed: number }) {
+/** The driver's mini-sectors as one line along the bottom edge: a block per
+ *  mini-sector, as long as it is on track, coloured as it's completed
+ *  (purple, green, yellow), with a wider gap between the three sectors. */
+function SectorStrip({ states, counts, ends }: { states: number[] | null; counts: number[]; ends: number[] }) {
+  const sectorEnds = new Set(counts.map((_, s) => counts.slice(0, s + 1).reduce((a, b) => a + b, 0) - 1));
+  return (
+    <div className="absolute bottom-0 inset-x-0 h-1.5 flex bg-black/40">
+      {ends.map((end, i) => {
+        const status = states?.[i] ?? 0;
+        const color = MINI_HEX[status] ?? (status === MINI_PIT ? "rgba(255,255,255,0.35)" : "rgba(255,255,255,0.12)");
+        const last = i === ends.length - 1;
+        return (
+          <span
+            key={i}
+            className={`h-full ${last ? "" : sectorEnds.has(i) ? "border-r-2 border-black" : "border-r border-black/70"}`}
+            style={{ width: `${(end - (i ? ends[i - 1] : 0)) * 100}%`, backgroundColor: color }}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+function OnboardTelemetry({ driver, speed, raised = false }: { driver?: ReplayDriver; speed: number; raised?: boolean }) {
   if (!driver || driver.speed == null) return null;
   const throttle = Math.max(0, Math.min(100, driver.throttle ?? 0));
   const drsOpen = (driver.drs ?? 0) >= 10;
   const frameMs = Math.round(500 / Math.max(speed, 0.25));
   return (
-    <div className="absolute bottom-1.5 inset-x-0 mx-auto w-fit max-w-[calc(100%-0.75rem)] flex items-center gap-2 h-6 pl-1.5 pr-2 rounded-full bg-black/65 backdrop-blur-sm border border-white/10 text-white tabular-nums">
+    <div className={`absolute ${raised ? "bottom-3" : "bottom-1.5"} inset-x-0 mx-auto w-fit max-w-[calc(100%-0.75rem)] flex items-center gap-2 h-6 pl-1.5 pr-2 rounded-full bg-black/65 backdrop-blur-sm border border-white/10 text-white tabular-nums`}>
       <span className="w-1 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: driver.color }} />
       <span className="text-[10px] font-extrabold tracking-wide">{driver.abbr}</span>
       <span className="flex items-baseline gap-0.5 w-11 justify-end">
