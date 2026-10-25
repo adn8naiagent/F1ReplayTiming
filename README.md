@@ -71,7 +71,7 @@ Each onboard can show, switched on or off for each one:
 
 - **Track map** beside the onboards or over the broadcast, with drivers selected on the leaderboard highlighted and named.
 - **Race control** - the latest message along the bottom of the broadcast, fading after a few seconds.
-- **Team radio** - captions at the top, as on the track map. **Radio audio** has its own switch, since the broadcast often plays the same message. Radio audio is stored on your server when a session is processed, so it plays from there.
+- **Team radio** - captions at the top, as on the track map. **Radio audio** has its own switch, since the broadcast often plays the same message. Radio audio is stored on your server when a session is processed, so it plays from there. For sessions downloaded before 2.5, add it with `python precompute.py 2026 --radio-audio-only` (Docker: `docker compose exec f1timing python precompute.py 2026 --radio-audio-only`).
 - **Volume** - mute and a volume slider at the left of the playback controls.
 
 ### Automatic sync
