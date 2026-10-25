@@ -111,6 +111,8 @@ export function drawTrack(
   segmentOverlay?: SegmentOverlay | null,
   /** Track line width in pixels (thinner for small maps) */
   trackWidth: number = 12,
+  /** A white track, for drawing over video */
+  lightTrack: boolean = false,
 ) {
   if (points.length === 0) return;
 
@@ -284,7 +286,9 @@ export function drawTrack(
   } else {
     ctx.beginPath();
     const effectiveStatus = (sectorFlags && sectorFlags.length > 0 && (trackStatus === "yellow")) ? "green" : trackStatus;
-    ctx.strokeStyle = TRACK_STATUS_COLORS[effectiveStatus] || "#3A3A4A";
+    ctx.strokeStyle = lightTrack && effectiveStatus === "green"
+      ? "rgba(255, 255, 255, 0.9)"
+      : TRACK_STATUS_COLORS[effectiveStatus] || "#3A3A4A";
     ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -299,9 +303,9 @@ export function drawTrack(
     ctx.stroke();
   }
 
-  // Draw track center line
+  // Draw track center line (not on a white track)
   ctx.beginPath();
-  ctx.strokeStyle = "#4A4A5A";
+  ctx.strokeStyle = lightTrack ? "rgba(0, 0, 0, 0)" : "#4A4A5A";
   ctx.lineWidth = 2;
   const [sx, sy] = toScreen(rotated[0]);
   ctx.moveTo(sx, sy);

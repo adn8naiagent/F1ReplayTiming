@@ -496,6 +496,7 @@ export default function ReplayPage() {
   // The small map over the broadcast: thinner lines, no elevation or sectors
   const overlayTrackCanvas = cloneElement(mainTrackCanvas, {
     trackWidth: 5,
+    lightTrack: true,
     showElevation: false,
     sectorOverlay: null,
     segmentOverlay: null,
