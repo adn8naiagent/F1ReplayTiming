@@ -12,13 +12,18 @@ interface Props {
   timestamp: number | undefined;
   playing: boolean;
   speed: number;
-  /** Driver numbers selected in the leaderboard; the first with an onboard is shown. */
-  selectedDriverNumbers: string[];
-  /** The track map, shown as an overlay in the top corner. */
+  /** Settings > Broadcast: the view to open in (multi-view: broadcast,
+   *  onboards and map side by side; otherwise the map over the broadcast),
+   *  onboard telemetry, and the map. The hover controls flip these for now
+   *  without changing the settings. */
+  multiView: boolean;
+  showTelemetry: boolean;
+  showMap: boolean;
+  /** The track map, beside the onboards or over the broadcast. */
   trackOverlay: React.ReactNode;
   /** Drivers in the current frame by racing number, for the onboard's telemetry */
   driversByNumber: Record<string, ReplayDriver>;
-  /** Told whether onboards (with their own telemetry) are showing */
+  /** Told whether onboard telemetry is showing (the page's own is hidden then) */
   onOnboardsChange?: (showing: boolean) => void;
   /** The broadcast's sound (onboards are always muted) */
   muted?: boolean;
@@ -48,38 +53,38 @@ function isOnboard(c: F1TVChannel) {
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, selectedDriverNumbers, trackOverlay, driversByNumber, onOnboardsChange, muted = false }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, onOnboardsChange, muted = false }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
   // Finding this session on F1 TV automatically; the link box is the fallback
   const [finding, setFinding] = useState<"searching" | "not_found" | null>(null);
   const [findError, setFindError] = useState<string | null>(null);
-  const [manual, setManual] = useState(false);
   const [content, setContent] = useState<F1TVContent | null>(null);
   const [contentError, setContentError] = useState<string | null>(null);
 
   const [opts, setOpts] = useState<StreamOptions>(() => readJson("f1tv_stream_opts", { licenceViaServer: true, relay: false }));
   const [mainChannel, setMainChannel] = useState<string | null>(null);
-  // Up to two onboards, following the first two drivers selected on the
-  // leaderboard. × closes one until the next leaderboard click, or until
-  // it's picked in the onboard menu.
-  const [onboardChannels, setOnboardChannels] = useState<[string | null, string | null]>([null, null]);
-  const [closedOnboards, setClosedOnboards] = useState<Set<string>>(() => new Set());
-  const prevSelected = useRef<string[]>(selectedDriverNumbers);
-  // Onboards can be turned off; then selecting drivers only highlights them
-  const [showOnboard, setShowOnboardState] = useState<boolean>(() => readJson("f1tv_show_onboard", true));
-  const setShowOnboard = (update: boolean | ((v: boolean) => boolean)) => {
-    setShowOnboardState((v) => {
-      const next = typeof update === "function" ? update(v) : update;
-      writeJson("f1tv_show_onboard", next);
+  // The view and map follow Settings, and the hover controls flip them for now
+  const [multiView, setMultiView] = useState(multiViewSetting);
+  useEffect(() => setMultiView(multiViewSetting), [multiViewSetting]);
+  const [showMap, setShowMap] = useState(showMapSetting);
+  useEffect(() => setShowMap(showMapSetting), [showMapSetting]);
+  const toggleMap = () => setShowMap((v) => !v);
+  // Multi-view's two onboards, picked by driver (remembered across sessions)
+  const [onboardDrivers, setOnboardDriversState] = useState<[string | null, string | null]>(() =>
+    readJson("f1tv_onboard_drivers", [null, null]),
+  );
+  const setOnboardDriver = (slot: 0 | 1, number: string | null) => {
+    setOnboardDriversState((prev) => {
+      const next: [string | null, string | null] = [...prev];
+      next[slot] = number;
+      // Closing the first moves the second up
+      if (!next[0] && next[1]) next.reverse();
+      writeJson("f1tv_onboard_drivers", next);
       return next;
     });
   };
-  const [showOverlays, setShowOverlays] = useState(true);
-  // The track map over the broadcast, on its own switch (remembered)
-  const [showMap, setShowMapState] = useState<boolean>(() => readJson("f1tv_show_map", true));
-  const toggleMap = () => setShowMapState((v) => { writeJson("f1tv_show_map", !v); return !v; });
   const [showDebug, setShowDebug] = useState(false);
 
   const mainRef = useRef<HTMLVideoElement>(null);
@@ -136,7 +141,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
 
   // No saved link: find this session's replay on F1 TV.
   useEffect(() => {
-    if (link || manual) return;
+    if (link) return;
     const [year, round, type] = sessionKey.split("_");
     let cancelled = false;
     setFinding("searching");
@@ -153,7 +158,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
         setFindError(e.message);
       });
     return () => { cancelled = true; };
-  }, [link, manual, sessionKey, linkKey]);
+  }, [link, sessionKey, linkKey]);
 
   // Look up the feeds for the saved link.
   useEffect(() => {
@@ -165,41 +170,19 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
     });
   }, [link]);
 
-  const onboards = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && isOnboard(c)), [content]);
-  const shownOnboards = showOnboard ? onboardChannels.filter((c): c is string => !!c) : [];
-  const onboardVisible = shownOnboards.length > 0 && showOverlays;
+  const onboards = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && isOnboard(c) && c.driver_number), [content]);
+  const channelOf = (number: string | null) =>
+    number ? onboards.find((c) => String(c.driver_number) === number)?.channel_id ?? null : null;
+  const sideColumn = multiView;
+  const shownOnboards = sideColumn
+    ? onboardDrivers.filter((n): n is string => !!channelOf(n))
+    : [];
+  const telemetryShowing = shownOnboards.length > 0 && showTelemetry;
   useEffect(() => {
-    onOnboardsChange?.(onboardVisible);
+    onOnboardsChange?.(telemetryShowing);
     return () => onOnboardsChange?.(false);
-  }, [onboardVisible, onOnboardsChange]);
-  const driverOf = (channel: string) => {
-    const c = onboards.find((o) => o.channel_id === channel);
-    return c?.driver_number != null ? driversByNumber[String(c.driver_number)] : undefined;
-  };
+  }, [telemetryShowing, onOnboardsChange]);
   const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
-
-  // Follow the leaderboard selection: an onboard for each of the first two
-  // selected drivers. Any leaderboard click reopens closed onboards.
-  useEffect(() => {
-    const changed = selectedDriverNumbers.join() !== prevSelected.current.join();
-    prevSelected.current = selectedDriverNumbers;
-    const closed = changed ? new Set<string>() : closedOnboards;
-    if (changed) {
-      setClosedOnboards(closed);
-      if (selectedDriverNumbers.length) setShowOnboard(true);
-    }
-    const matches = selectedDriverNumbers
-      .map((n) => onboards.find((c) => String(c.driver_number) === n)?.channel_id ?? null)
-      .filter((c): c is string => !!c && !closed.has(c))
-      .slice(0, 2);
-    if (matches.length || selectedDriverNumbers.length) setOnboardChannels([matches[0] ?? null, matches[1] ?? null]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedDriverNumbers, onboards]);
-
-  const closeOnboard = (channel: string) => {
-    setClosedOnboards((s) => new Set(s).add(channel));
-    setOnboardChannels(([a, b]) => (a === channel ? [b, null] : [a, b === channel ? null : b]));
-  };
 
   // (Re)load the main feed.
   useEffect(() => {
@@ -247,11 +230,11 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
     }
   };
 
-  // "h" hides the overlays.
+  // M shows or hides the track map; Shift+D the stream details.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === "h") setShowOverlays((v) => !v);
+      if (e.key === "D") setShowDebug((v) => !v); // stream details, for troubleshooting
       if (e.key === "m") toggleMap();
     };
     window.addEventListener("keydown", onKey);
@@ -271,7 +254,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
       <div className="w-full h-full flex items-center justify-center bg-black">
         <div className="max-w-md w-full px-6 space-y-3">
           <p className="text-sm text-white font-bold">Watch the F1 TV broadcast</p>
-          {finding === "not_found" && !manual && (
+          {finding === "not_found" && (
             <p className="text-xs text-yellow-400 leading-relaxed">{findError}</p>
           )}
           <p className="text-xs text-f1-muted leading-relaxed">
@@ -306,12 +289,11 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   return (
     <div className="relative w-full h-full bg-black overflow-hidden group">
       {/* Protected video can be drawn in its own hardware layer that ignores
-          stacking, so the onboard never overlaps the broadcast: with an
-          onboard showing, the broadcast takes the left and the onboard and
-          map a column on the right. */}
+          stacking, so nothing overlaps it: in multi-view the broadcast takes
+          the left, and the onboards and map a column on the right. */}
       <video
         ref={mainRef}
-        className={`absolute inset-y-0 left-0 h-full object-contain ${onboardVisible ? "w-[70%]" : "w-full"}`}
+        className={`absolute inset-y-0 left-0 h-full object-contain ${sideColumn ? "w-[70%]" : "w-full"}`}
         playsInline
       />
 
@@ -323,27 +305,55 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
         </div>
       )}
 
-      {/* Right-hand column beside the broadcast: up to two onboards, then
+      {/* Multi-view's column: up to two onboards, one under the other, then
           the map. Starts below the page's hover buttons (Track map /
           Broadcast, RC) so they never cover an onboard's ×. */}
-      {onboardVisible ? (
-        <div className="absolute top-12 bottom-3 right-3 z-20 w-[calc(30%-1.5rem)] flex flex-col gap-2">
-          {shownOnboards.map((channel) => (
-            <OnboardPane
-              key={channel}
-              link={link}
-              channel={channel}
-              opts={opts}
-              mainRef={mainRef}
-              mainReady={main.state === "ready"}
-              playing={broadcastPlaying}
-              speed={mainOffset !== null ? speed : 1}
-              replaySpeed={speed}
-              nudge={onboardNudge}
-              driver={driverOf(channel)}
-              onClose={() => closeOnboard(channel)}
-            />
-          ))}
+      {sideColumn ? (
+        <div className="absolute top-12 bottom-3 right-3 z-20 w-[calc(30%-1.5rem)] flex flex-col gap-2 [container-type:inline-size]">
+          {([0, 1] as const).map((slot) => {
+            const number = onboardDrivers[slot];
+            const channel = channelOf(number);
+            const picker = (
+              <OnboardPicker
+                onboards={onboards}
+                value={number}
+                exclude={onboardDrivers[slot === 0 ? 1 : 0]}
+                placeholder={slot === 0 ? "Choose an onboard" : "Add a second onboard"}
+                onChange={(n) => setOnboardDriver(slot, n)}
+              />
+            );
+            if (channel && number) {
+              return (
+                <OnboardPane
+                  key={`${slot}-${channel}`}
+                  link={link}
+                  channel={channel}
+                  opts={opts}
+                  mainRef={mainRef}
+                  mainReady={main.state === "ready"}
+                  playing={broadcastPlaying}
+                  speed={mainOffset !== null ? speed : 1}
+                  replaySpeed={speed}
+                  nudge={onboardNudge}
+                  driver={driversByNumber[number]}
+                  showTelemetry={showTelemetry}
+                  picker={picker}
+                  onClose={() => setOnboardDriver(slot, null)}
+                />
+              );
+            }
+            // An empty first slot is a placeholder the size of an onboard;
+            // the second, just its picker
+            if (slot === 1) return channelOf(onboardDrivers[0]) ? <div key={slot} className="flex-shrink-0">{picker}</div> : null;
+            return (
+              <OnboardBox key={slot}>
+                <div className="w-full h-full rounded-lg border border-dashed border-white/20 flex flex-col items-center justify-center gap-2">
+                  <span className="text-[10px] text-white/50">{onboards.length ? "Onboard camera" : "No onboards for this session"}</span>
+                  {onboards.length > 0 && picker}
+                </div>
+              </OnboardBox>
+            );
+          })}
           {showMap && (
             // A fixed size, so it stays readable; the onboards scale around it
             <div className="flex-shrink-0 h-[clamp(170px,38%,300px)] flex justify-center pointer-events-none">
@@ -351,7 +361,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
             </div>
           )}
         </div>
-      ) : showOverlays && showMap && (
+      ) : showMap && (
         // Just the track lines over the video: the map's own background is
         // made transparent here
         <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
@@ -362,6 +372,20 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
       {/* Controls */}
       <div className="absolute top-3 left-3 z-20 flex flex-col items-start gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <div className="flex items-center gap-1.5">
+          {/* Flips the view for now; Settings > Broadcast sets the default */}
+          <div className="flex rounded border border-f1-border overflow-hidden">
+            {([[true, "Multi-view"], [false, "Broadcast"]] as const).map(([value, label]) => (
+              <button
+                key={label}
+                onClick={() => setMultiView(value)}
+                className={`px-2 py-1 text-[10px] font-bold transition-colors ${
+                  multiView === value ? "bg-white text-black" : "bg-f1-card/90 text-f1-muted hover:text-white"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           {mainFeeds.length > 0 && (
             <select value={mainChannel ?? ""} onChange={(e) => setMainChannel(e.target.value || null)} className={selectClass}>
               <option value="">Main feed</option>
@@ -370,6 +394,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
               ))}
             </select>
           )}
+        </div>
+        <div className="flex items-center gap-1.5">
           {mainOffset === null ? (
             <button onClick={syncHere} className={`${btnClass} !text-white !bg-f1-red border-f1-red`} title="Line the video up with the timing, then press">
               Sync broadcast here
@@ -380,62 +406,21 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
               <button onClick={() => nudge("main", -0.5)} className={btnClass} title="Video earlier against the timing">−0.5s</button>
               <button onClick={() => nudge("main", 0.5)} className={btnClass} title="Video later against the timing">+0.5s</button>
               <button onClick={() => nudge("main", 5)} className={btnClass} title="Video later against the timing">+5s</button>
-              {mainNudge !== 0 && <span className="text-[10px] font-bold text-white/80 bg-black/60 rounded px-1.5 py-1 tabular-nums">{mainNudge > 0 ? "+" : ""}{mainNudge}s</span>}
-              <button onClick={() => resetSync("main")} className={btnClass}>{autoOffset !== null ? "Reset sync" : "Re-sync"}</button>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5">
-          {([0, 1] as const).map((slot) => (
-            <select
-              key={slot}
-              value={onboardChannels[slot] ?? ""}
-              onChange={(e) => {
-                const next: [string | null, string | null] = [...onboardChannels];
-                next[slot] = e.target.value || null;
-                setOnboardChannels(next);
-                if (e.target.value) setClosedOnboards((s) => { const n = new Set(s); n.delete(e.target.value); return n; });
-                // Picking one here is asking to see it, even if onboards were hidden
-                if (e.target.value) setShowOnboard(true);
-              }}
-              className={selectClass}
-            >
-              <option value="">{slot === 0 ? "No onboard" : "No second onboard"}</option>
-              {onboards.map((c) => (
-                <option key={c.channel_id!} value={c.channel_id!}>
-                  {c.driver_number ? `${c.driver_number} ` : ""}{c.driver_name || c.title}
-                </option>
-              ))}
-            </select>
-          ))}
-          {onboardChannels.some(Boolean) && (
-            <>
-              <button onClick={() => nudge("onboard", -0.5)} className={btnClass}>−0.5s</button>
-              <button onClick={() => nudge("onboard", 0.5)} className={btnClass}>+0.5s</button>
-              {onboardNudge !== 0 && <button onClick={() => resetSync("onboard")} className={btnClass}>Reset</button>}
-              <button onClick={() => setShowOnboard((v) => !v)} className={btnClass}>{showOnboard ? "Hide" : "Show"} onboards</button>
+              {/* The adjustment made; × goes back to the automatic sync */}
+              {mainNudge !== 0 && autoOffset !== null && (
+                <button onClick={() => resetSync("main")} className={`${btnClass} !text-white tabular-nums`} title="Back to the automatic sync">
+                  {mainNudge > 0 ? "+" : ""}{mainNudge}s ×
+                </button>
+              )}
+              {autoOffset === null && (
+                <button onClick={() => resetSync("main")} className={btnClass} title="Line the video up with the timing again">Sync again</button>
+              )}
             </>
           )}
         </div>
         <div className="flex items-center gap-1.5">
           <button onClick={toggleMap} className={btnClass} title="Shortcut: M">
-            {showMap ? "Hide" : "Show"} map
-          </button>
-          <button onClick={() => setShowOverlays((v) => !v)} className={btnClass} title="Hide or show the map and onboards. Shortcut: H">
-            {showOverlays ? "Hide" : "Show"} overlays
-          </button>
-          <button onClick={() => setShowDebug((v) => !v)} className={btnClass}>Debug</button>
-          <button
-            onClick={() => {
-              setManual(true);
-              setLink("");
-              setContent(null);
-              writeJson(linkKey, null);
-              void main.unload();
-            }}
-            className={btnClass}
-          >
-            Change link
+            {showMap ? "Hide" : "Show"} track map
           </button>
         </div>
         {mainOffset === null && syncing && (
@@ -469,7 +454,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
 }
 
 /** One onboard camera, following the broadcast's position. */
-function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, onClose }: {
+function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, showTelemetry, picker, onClose }: {
   link: string;
   channel: string;
   opts: StreamOptions;
@@ -480,6 +465,9 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   replaySpeed: number;
   nudge: number;
   driver?: ReplayDriver;
+  showTelemetry: boolean;
+  /** Switches this onboard to another driver (on hover) */
+  picker: React.ReactNode;
   onClose: () => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -493,26 +481,62 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   }, [link, channel, opts]);
 
   return (
-    // Fills the space the map leaves, as large as fits at 16:9
-    <div className="flex-1 min-h-0 flex justify-center [container-type:size]">
-    <div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-white/10" style={{ width: "min(100cqw, 100cqh * 16 / 9)" }}>
-      <video ref={ref} className="w-full h-full object-contain" muted playsInline />
-      <button
-        onClick={onClose}
-        className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white/80 hover:text-white text-sm leading-none flex items-center justify-center"
-        title="Close this onboard (a leaderboard click brings it back)"
-        aria-label="Close onboard"
-      >
-        ×
-      </button>
-      <OnboardTelemetry driver={driver} speed={replaySpeed} />
-      {stream.state === "error" && (
-        <p className="absolute inset-0 flex items-center justify-center text-[10px] text-f1-muted p-2 text-center">
-          {stream.debug.error?.message}
-        </p>
-      )}
+    <OnboardBox>
+      <div className="relative w-full h-full bg-black rounded-lg overflow-hidden border border-white/10 group/pane">
+        <video ref={ref} className="w-full h-full object-contain" muted playsInline />
+        <div className="absolute top-1.5 left-1.5 opacity-0 group-hover/pane:opacity-100 transition-opacity">{picker}</div>
+        <button
+          onClick={onClose}
+          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white/80 hover:text-white text-sm leading-none flex items-center justify-center"
+          title="Close this onboard"
+          aria-label="Close onboard"
+        >
+          ×
+        </button>
+        {showTelemetry && <OnboardTelemetry driver={driver} speed={replaySpeed} />}
+        {stream.state === "error" && (
+          <p className="absolute inset-0 flex items-center justify-center text-[10px] text-f1-muted p-2 text-center">
+            {stream.debug.error?.message}
+          </p>
+        )}
+      </div>
+    </OnboardBox>
+  );
+}
+
+/** An onboard's space in the column: 16:9 at the column's width, shrinking
+ *  (still 16:9) when two onboards and the map don't fit. */
+function OnboardBox({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="flex-1 min-h-0 flex justify-center [container-type:size]" style={{ maxHeight: "calc(100cqw * 9 / 16)" }}>
+      <div className="aspect-video" style={{ width: "min(100cqw, 100cqh * 16 / 9)" }}>{children}</div>
     </div>
-    </div>
+  );
+}
+
+/** Choose a driver's onboard camera */
+function OnboardPicker({ onboards, value, exclude, placeholder, onChange }: {
+  onboards: F1TVChannel[];
+  value: string | null;
+  exclude: string | null;
+  placeholder: string;
+  onChange: (number: string | null) => void;
+}) {
+  return (
+    <select
+      value={value ?? ""}
+      onChange={(e) => onChange(e.target.value || null)}
+      className="bg-f1-card/90 border border-f1-border rounded px-1.5 py-1 text-[10px] text-white focus:outline-none pointer-events-auto"
+    >
+      <option value="">{placeholder}</option>
+      {onboards
+        .filter((c) => String(c.driver_number) !== exclude)
+        .map((c) => (
+          <option key={c.channel_id!} value={String(c.driver_number)}>
+            {c.driver_number} {c.driver_name || c.title}
+          </option>
+        ))}
+    </select>
   );
 }
 

@@ -533,6 +533,7 @@ export default function ReplayPage() {
           year={year}
           settings={settings}
           onSettingChange={updateSetting}
+          broadcastSettings={BROADCAST_ENABLED && f1tvSignedIn}
           weather={weather}
           mobileTeamAbbrHidden={mobileTeamAbbrHidden}
           onReportProblem={reportProblem}
@@ -795,9 +796,9 @@ export default function ReplayPage() {
                   timestamp={replay.frame?.timestamp}
                   playing={replay.playing}
                   speed={replay.speed}
-                  selectedDriverNumbers={selectedDrivers
-                    .map((abbr) => sessionData?.drivers.find((d) => d.abbreviation === abbr)?.driver_number)
-                    .filter((n): n is string => !!n)}
+                  multiView={settings.broadcastMultiView}
+                  showTelemetry={settings.broadcastTelemetry}
+                  showMap={settings.broadcastMap}
                   trackOverlay={overlayTrackCanvas}
                   onOnboardsChange={setBroadcastOnboards}
                   muted={broadcastMuted}
