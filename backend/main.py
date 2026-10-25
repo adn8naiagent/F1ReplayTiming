@@ -85,6 +85,7 @@ PUBLIC_MODE_BLOCKED = [
     (None, re.compile(r"/api/storage(/.*)?$")),
     (None, re.compile(r"/api/f1tv(/.*)?$")),
     (None, re.compile(r"/api/captions(/.*)?$")),
+    (None, re.compile(r"/api/live/\d+/\d+/telemetry$")),
 ]
 
 

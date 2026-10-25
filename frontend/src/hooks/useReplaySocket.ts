@@ -40,6 +40,8 @@ export interface ReplayDriver {
   pit_prediction_margin: number | null;
   pit_prediction_free_air: number | null;
   sectors: { num: number; color: "purple" | "green" | "yellow" }[] | null;
+  /** Live only: the most recent lap, coloured by F1's flags */
+  last_lap?: { time: string; personal: boolean; overall: boolean } | null;
   /** Live only: mini-sector statuses in lap order (qualifying and practice) */
   mini_sectors?: number[];
 }
@@ -83,6 +85,10 @@ export interface ReplayFrame {
   team_radio?: RadioClip[];
   /** Live only: mini-sectors per sector, when the feed has them */
   mini_sector_counts?: number[];
+  /** Live only: whether the server's live connection gets car positions (F1 TV sign-in) */
+  signed_in?: boolean;
+  /** Live only: where each mini-sector ends, 0–1 along the lap, once worked out */
+  mini_sector_ends?: number[];
 }
 
 export interface QualiPhaseInfo {

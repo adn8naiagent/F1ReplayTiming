@@ -35,6 +35,21 @@ export function fetchLapTelemetry(
   return p;
 }
 
+/** One lap's telemetry recorded during a live session (services/live_traces.py).
+ *  Not ready until a couple of seconds after the lap completes. */
+export function fetchLiveLapTelemetry(
+  year: number, round: number, type: string, driver: string, lap: number,
+): Promise<LapTelemetry> {
+  const key = `live/${year}/${round}/${type}/${driver}/${lap}`;
+  let p = cache.get(key);
+  if (!p) {
+    p = apiFetch<LapTelemetry>(`/api/live/${year}/${round}/telemetry?type=${type}&driver=${driver}&lap=${lap}`);
+    p.catch(() => cache.delete(key)); // not recorded yet: try again later
+    cache.set(key, p);
+  }
+  return p;
+}
+
 /**
  * Elapsed time at each sample, from integrating distance over speed, then
  * scaled so the lap adds up to its official time. Telemetry is sampled, so

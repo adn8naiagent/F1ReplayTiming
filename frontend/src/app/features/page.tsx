@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import SiteFooter from "@/components/SiteFooter";
 import LeaderboardGuide from "@/components/LeaderboardGuide";
+import LapAnalysisGuide from "@/components/LapAnalysisGuide";
 
 // Which sessions a feature works in, shown under each section's heading.
 function SessionChips({ practice, qualifying, race }: { practice?: boolean; qualifying?: boolean; race?: boolean }) {
@@ -43,13 +44,14 @@ const AVAILABILITY: [string, string, string, string][] = [
   ["Team radio with captions", "RL", "RL", "RL"],
   ["Pit position prediction", "RL", "-", "-"],
   ["Sectors and mini-sectors", "-", "RL", "RL"],
-  ["Last lap time", "R", "R", "R"],
-  ["Sectors on the track map", "-", "R", "R"],
-  ["Lap Analysis", "R", "R", "R"],
-  ["Track dominance", "-", "R", "R"],
-  ["Lap notifications", "-", "R", "-"],
+  ["Out-lap indicator", "-", "RL", "RL"],
+  ["Last lap time", "RL", "RL", "RL"],
+  ["Sectors on the track map", "-", "RL", "RL"],
+  ["Lap Analysis", "RL", "RL", "RL"],
+  ["Track dominance", "-", "RL", "RL"],
+  ["Lap notifications", "-", "RL", "-"],
   ["Telemetry", "RL", "RL", "RL"],
-  ["Track elevation, marshal sector flags", "R", "R", "R"],
+  ["Track elevation, marshal sector flags", "RL", "RL", "RL"],
   ["Picture-in-picture", "RL", "RL", "RL"],
   ["Playback controls, broadcast sync", "R", "R", "R"],
   ["Broadcast delay", "L", "L", "L"],
@@ -240,7 +242,7 @@ export default function FeaturesPage() {
               <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
                 <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Last lap</span>
                 <span className="text-xs tabular-nums text-f1-muted flex-shrink-0">1:32.456</span>
-                <span className="w-full sm:w-auto text-sm text-f1-text">The driver&apos;s most recently completed lap time. Replays only.</span>
+                <span className="w-full sm:w-auto text-sm text-f1-text">The driver&apos;s most recently completed lap time. Purple for the session&apos;s fastest, green for a personal best.</span>
               </div>
 
               {/* Grid delta */}
@@ -363,7 +365,7 @@ export default function FeaturesPage() {
             <p className="text-f1-text leading-relaxed">
               When a driver completes a lap, a pop-up shows their lap time, coloured purple for the
               session best or green for a personal best, with each sector&apos;s time beside its marker.
-              Turn them off, or just the sector times, in Settings &gt; Leaderboard. Replays only.
+              Turn them off, or just the sector times, in Settings &gt; Leaderboard.
             </p>
           </section>
 
@@ -510,14 +512,15 @@ export default function FeaturesPage() {
             <h2 className="text-lg font-bold text-white mb-1">Sectors on the Track Map</h2>
             <SessionChips practice qualifying />
             <p className="text-f1-text leading-relaxed mb-3">
-              Click <span className="font-bold text-white">Show Sectors</span> on the track map, select a driver,
-              then pick them from the buttons beside it. The track is coloured by that driver&apos;s sectors
-              on the current lap &mdash; purple, green or yellow, and grey until each is completed.
+              Click <span className="font-bold text-white">Show Sectors</span> on the track map. The track is
+              coloured by the selected driver&apos;s sectors on the current lap &mdash; purple, green or yellow, and
+              grey until each is completed. With two drivers selected, switch between them beside the button;
+              with none, it shows the leader.
             </p>
             <p className="text-f1-text leading-relaxed">
               On desktop, switch between <span className="font-bold text-white">Sectors</span> and{" "}
               <span className="font-bold text-white">Mini-sectors</span> beside the button to colour the track
-              mini-sector by mini-sector instead. Replays only.
+              mini-sector by mini-sector instead. In live timing, mini-sectors appear on the map once each has been passed a few times, usually within a lap or two.
             </p>
           </section>
           </>
@@ -536,7 +539,8 @@ export default function FeaturesPage() {
             <p className="text-f1-text leading-relaxed mb-3">
               A dedicated panel for analysing driver pace. On desktop, open it via the
               &quot;Laps&quot; button on the track map &mdash; the panel slides out to the left. On mobile,
-              it appears as a collapsible section.
+              it appears as a collapsible section. In live timing, it builds up from the laps completed since
+              live timing connected.
             </p>
             <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mb-2">Races</p>
             <p className="text-f1-text leading-relaxed mb-3">
@@ -563,29 +567,8 @@ export default function FeaturesPage() {
                 <span className="w-full sm:w-auto text-sm text-f1-text">Full lap-by-lap breakdown showing lap time, tyre compound, and pit stop indicators for each selected driver.</span>
               </div>
             </div>
-            <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mt-5 mb-2">Qualifying and practice</p>
-            <p className="text-f1-text leading-relaxed mb-3">
-              Two tabs. Everything counts only what has happened by the current replay time, so bests
-              and colours change as the session plays.
-            </p>
-            <div className="space-y-4">
-              <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Sectors</span>
-                <span className="flex items-center gap-1.5 flex-shrink-0 text-[10px] tabular-nums">
-                  <span className="text-purple-400">28.412</span>
-                  <span className="text-green-400">35.106</span>
-                  <span className="text-white">27.950</span>
-                </span>
-                <span className="w-full sm:w-auto text-sm text-f1-text">The session&apos;s best sectors and theoretical best lap, each driver&apos;s ideal lap (best three sectors added up), and one driver&apos;s laps with sector times &mdash; purple for the session best, green for a personal best. Qualifying can be filtered by Q1, Q2 and Q3; practice adds a chart of flying laps. Out and in laps are marked, and laps deleted by the stewards are struck through, with the reason on hover.</span>
-              </div>
-              <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap">
-                <span className="w-24 flex-shrink-0 text-sm font-bold text-f1-muted">Compare</span>
-                <span className="flex items-center gap-1.5 flex-shrink-0 text-[10px] tabular-nums">
-                  <span className="text-green-400">-0.148</span>
-                </span>
-                <span className="w-full sm:w-auto text-sm text-f1-text">Two drivers&apos; best laps side by side, sector by sector. On desktop, traces of both laps along the track &mdash; gap, speed, throttle, brake and gear, with corner numbers &mdash; and Track dominance, which colours the track map by who was faster through each part of the lap.</span>
-              </div>
-            </div>
+            <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mt-6 mb-3">Qualifying and practice</p>
+            <LapAnalysisGuide />
           </section>
 
           {/* Telemetry */}

@@ -128,7 +128,30 @@ def describe() -> dict[str, Any]:
         "ai_model": ai_model(),
         "ai_model_locked": _env("TEAM_RADIO_AI_MODEL") is not None,
         "ai_models": AI_MODELS,
+        # Whether each Whisper model is on this server, and download progress
+        "model_status": {m["id"]: _model_status(m["id"]) for m in WHISPER_MODELS},
     }
+
+
+def _model_status(name: str) -> dict[str, Any]:
+    from services import whisper_models
+
+    try:
+        return whisper_models.status(name)
+    except ImportError:  # faster-whisper not installed
+        return {"state": "unavailable"}
+
+
+def download_selected() -> None:
+    """Download the replay and live models now if they aren't here, so
+    they're ready before the next clip."""
+    from services import whisper_models
+
+    try:
+        for live in (False, True):
+            whisper_models.ensure(whisper_model(live))
+    except ImportError:
+        pass
 
 
 _UNSET = object()

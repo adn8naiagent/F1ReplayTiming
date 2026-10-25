@@ -304,6 +304,17 @@ export default function Leaderboard({ drivers, highlightedDrivers, onDriverClick
 
               {/* Last lap time */}
               {settings.showLastLapTime && (() => {
+                // Live timing: F1's last lap time and colour flags
+                if (!lapData && drv.last_lap !== undefined) {
+                  const last = drv.retired ? null : drv.last_lap;
+                  const color = last?.overall ? "text-purple-400" : last?.personal ? "text-green-400" : "text-f1-muted";
+                  return (
+                    <span className={`w-[50px] sm:w-[60px] flex-shrink-0 text-[11px] sm:text-xs text-right tabular-nums ${color}`} title="Last lap time">
+                      {last?.time ?? ""}
+                    </span>
+                  );
+                }
+
                 const driverLaps = lapData?.get(drv.abbr);
                 if (!driverLaps) return (
                   <span className="w-[50px] sm:w-[60px] flex-shrink-0" />
