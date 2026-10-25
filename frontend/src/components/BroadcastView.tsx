@@ -149,10 +149,14 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   // stamp is used, which runs a few seconds early; a manual Sync is the
   // last resort. Nudges are remembered per session. The onboards follow
   // the broadcast (F1 TV's feeds share one timeline), with their own nudge.
-  const offsetKey = (channel: string | null) => `f1tv_offset_${sessionKey}_${content?.content_id}_${channel ?? "main"}`;
+  // (v2: manual syncs made before they could override the automatic one are dropped)
+  const offsetKey = (channel: string | null) => `f1tv_offset2_${sessionKey}_${content?.content_id}_${channel ?? "main"}`;
   // (v2: nudges made against the earlier, less accurate sync are dropped)
   const nudgeKey = (which: "main" | "onboard") => `f1tv_nudge2_${sessionKey}_${which}`;
   const [manualOffset, setManualOffset] = useState<number | null>(null);
+  // Lining up by hand: the video plays freely with its own controls until
+  // Set sync here
+  const [aligning, setAligning] = useState(false);
   const [mainNudge, setMainNudge] = useState<number>(() => readJson(nudgeKey("main"), 0));
   const [onboardNudge, setOnboardNudge] = useState<number>(() => readJson(nudgeKey("onboard"), 0));
   const [replayStart, setReplayStart] = useState<number | null>(null);
@@ -180,10 +184,15 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       : replayStart !== null && videoStart !== null
         ? replayStart - videoStart + STAMP_DELAY_S
         : null;
-  const mainOffset = autoOffset !== null ? autoOffset + mainNudge : manualOffset;
+  // A manual sync wins over the automatic one until it's cleared
+  const mainOffset = aligning ? null : manualOffset ?? (autoOffset !== null ? autoOffset + mainNudge : null);
   // How this session is synced, for the hover controls
   const soundSynced = !!soundSync && link.includes(soundSync.content_id);
-  const syncMethod: { label: string; hint: string; tone: "good" | "rough" | "busy" } | null = soundSynced
+  const syncMethod: { label: string; hint: string; tone: "good" | "rough" | "busy" } | null = aligning
+    ? { label: "Syncing manually…", hint: "Find the moment in the broadcast that matches the timing, then press Set sync here.", tone: "busy" }
+    : manualOffset !== null
+    ? { label: "Synced manually", hint: "Lined up with Sync manually. Clear it to go back to the automatic sync.", tone: "rough" }
+    : soundSynced
     ? {
         label: `Synced by engine sound${soundSync!.drivers?.length ? ` (${soundSync!.drivers.join(", ")})` : ""}`,
         hint: "Lined up by matching onboard engine sound to the drivers' revs in the timing. Accurate to a fraction of a second.",
@@ -201,9 +210,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             hint: "F1 TV's audio for this session is protected, so the engine sound couldn't be matched. Lined up from the time stamp in F1 TV's video instead, usually within a second or two. Adjust with the buttons if needed.",
             tone: "rough",
           }
-        : manualOffset !== null
-          ? { label: "Synced manually", hint: "Lined up with Sync broadcast here.", tone: "rough" }
-          : null;
+        : null;
 
   const clock = useReplayClock(timestamp, playing, speed);
   const mainDrift = useVideoSync(mainRef, main.state === "ready", clock, playing, speed, mainOffset);
@@ -298,13 +305,19 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link, content, mainChannel, opts]);
 
-  // Manual sync, only when the automatic offset isn't available
+  // Manual sync: pause both, let the video be scrubbed to the moment that
+  // matches the timing, then record the gap
+  const startManualSync = () => {
+    setAligning(true);
+    mainRef.current?.pause();
+  };
   const syncHere = useCallback(() => {
     const video = mainRef.current;
     if (!video) return;
     const offset = video.currentTime - clock();
     setManualOffset(offset);
     writeJson(offsetKey(mainChannel), offset);
+    setAligning(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clock, mainChannel, content]);
 
@@ -313,13 +326,13 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       const next = onboardNudge + by;
       setOnboardNudge(next);
       writeJson(nudgeKey("onboard"), next);
+    } else if (manualOffset !== null) {
+      setManualOffset(manualOffset + by);
+      writeJson(offsetKey(mainChannel), manualOffset + by);
     } else if (autoOffset !== null) {
       const next = mainNudge + by;
       setMainNudge(next);
       writeJson(nudgeKey("main"), next);
-    } else if (manualOffset !== null) {
-      setManualOffset(manualOffset + by);
-      writeJson(offsetKey(mainChannel), manualOffset + by);
     }
   };
 
@@ -327,12 +340,12 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     if (which === "onboard") {
       setOnboardNudge(0);
       writeJson(nudgeKey("onboard"), 0);
-    } else if (autoOffset !== null) {
-      setMainNudge(0);
-      writeJson(nudgeKey("main"), 0);
-    } else {
+    } else if (manualOffset !== null) {
       setManualOffset(null);
       writeJson(offsetKey(mainChannel), null);
+    } else {
+      setMainNudge(0);
+      writeJson(nudgeKey("main"), 0);
     }
   };
 
@@ -549,25 +562,32 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          {mainOffset === null ? (
-            <button onClick={syncHere} className={`${btnClass} !text-white !bg-f1-red border-f1-red`} title="Line the video up with the timing, then press">
-              Sync broadcast here
-            </button>
+          {aligning || mainOffset === null ? (
+            <>
+              <button onClick={syncHere} className={`${btnClass} !text-white !bg-f1-red border-f1-red`} title="Line the video up with the timing, then press">
+                Set sync here
+              </button>
+              {aligning && <button onClick={() => setAligning(false)} className={btnClass}>Cancel</button>}
+            </>
           ) : (
             <>
               <button onClick={() => nudge("main", -5)} className={btnClass} title="Video earlier against the timing">−5s</button>
               <button onClick={() => nudge("main", -0.5)} className={btnClass} title="Video earlier against the timing">−0.5s</button>
               <button onClick={() => nudge("main", 0.5)} className={btnClass} title="Video later against the timing">+0.5s</button>
               <button onClick={() => nudge("main", 5)} className={btnClass} title="Video later against the timing">+5s</button>
-              {/* The adjustment made; × goes back to the automatic sync */}
-              {mainNudge !== 0 && autoOffset !== null && (
+              {/* The adjustment made, or the manual sync; × goes back to the automatic sync */}
+              {manualOffset !== null ? (
+                <button onClick={() => resetSync("main")} className={`${btnClass} !text-white`} title="Clear the manual sync">
+                  Manual ×
+                </button>
+              ) : mainNudge !== 0 && (
                 <button onClick={() => resetSync("main")} className={`${btnClass} !text-white tabular-nums`} title="Back to the automatic sync">
                   {mainNudge > 0 ? "+" : ""}{mainNudge}s ×
                 </button>
               )}
-              {autoOffset === null && (
-                <button onClick={() => resetSync("main")} className={btnClass} title="Line the video up with the timing again">Sync again</button>
-              )}
+              <button onClick={startManualSync} className={btnClass} title="Line the broadcast up with the timing yourself">
+                Sync manually
+              </button>
             </>
           )}
         </div>
@@ -601,9 +621,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             </button>
           ))}
         </div>
-        {mainOffset === null && !syncing && (
+        {(aligning || (mainOffset === null && !syncing)) && (
           <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
-            This session couldn&apos;t be synced automatically. Use the video controls to find the moment that matches the timing (lights out works well), then press Sync.
+            {aligning ? "" : "This session couldn't be synced automatically. "}Use the video controls to find the moment that matches the timing (lights out or a car crossing the line works well), then press Set sync here.
           </p>
         )}
       </div>
