@@ -681,7 +681,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const statusRect = broadcastRect ?? (contentError || main.state === "error" ? views.rects[0] ?? { x: 0, y: 0, w: size.w, h: size.h } : null);
 
   return (
-    <div ref={setRoot} className="relative w-full h-full bg-black overflow-hidden group">
+    // isolate: the views stack among themselves, so the page's overlays
+    // (lap notifications, team radio) always sit on top of them
+    <div ref={setRoot} className="relative isolate w-full h-full bg-black overflow-hidden group">
       {/* Protected video can be drawn in its own hardware layer that ignores
           stacking, so views never overlap. The broadcast is what the timing
           and onboards follow, so it keeps playing, hidden, when no view
