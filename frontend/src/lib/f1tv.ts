@@ -83,6 +83,10 @@ export const f1tv = {
   /** Real time (epoch seconds) at a replay's 0:00, to sync the broadcast */
   replayStart: (year: number, round: number, type: string) =>
     request<{ replay_start_utc: number }>("GET", `/replay-start?year=${year}&round=${round}&type=${type}`),
+  /** Where the replay's 0:00 is in the session's F1 TV video (seconds),
+   *  matched from the onboards' engine sound. Slow the first time. */
+  sync: (year: number, round: number, type: string) =>
+    request<{ offset: number; content_id: string }>("GET", `/sync?year=${year}&round=${round}&type=${type}`),
   /** The F1 TV replay of a session, found from the round and session start */
   find: (year: number, round: number, type: string) =>
     request<{ content_id: string; title: string | null }>("GET", `/find?year=${year}&round=${round}&type=${type}`),

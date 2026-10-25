@@ -44,6 +44,10 @@ function isOnboard(c: F1TVChannel) {
   return (c.type || "").toLowerCase() === "obc" || c.driver_number != null;
 }
 
+// How far F1 TV's real-time stamp runs ahead of the pictures (measured
+// against the engine-sound match)
+const STAMP_DELAY_S = 7.7;
+
 export default function BroadcastView({ sessionKey, timestamp, playing, speed, selectedDriverNumbers, trackOverlay, driversByNumber, onOnboardsChange, muted = false }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
@@ -82,12 +86,14 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   const main = useF1TVStream(mainRef);
 
   // Sync. The broadcast follows the replay: video time = replay time + offset.
-  // Both carry real (UTC) times, so the offset is worked out automatically;
-  // a manual Sync is the fallback for sessions without them. ±0.5s nudges
-  // are remembered per session. The onboard follows the broadcast (F1 TV's
-  // feeds share one clock), with its own nudge.
+  // The server matches the onboards' engine sound to the timing's RPM for
+  // the offset. Where it can't (encrypted audio), the video's real-time
+  // stamp is used, which runs a few seconds early; a manual Sync is the
+  // last resort. Nudges are remembered per session. The onboards follow
+  // the broadcast (F1 TV's feeds share one timeline), with their own nudge.
   const offsetKey = (channel: string | null) => `f1tv_offset_${sessionKey}_${content?.content_id}_${channel ?? "main"}`;
-  const nudgeKey = (which: "main" | "onboard") => `f1tv_nudge_${sessionKey}_${which}`;
+  // (v2: nudges made against the earlier, less accurate sync are dropped)
+  const nudgeKey = (which: "main" | "onboard") => `f1tv_nudge2_${sessionKey}_${which}`;
   const [manualOffset, setManualOffset] = useState<number | null>(null);
   const [mainNudge, setMainNudge] = useState<number>(() => readJson(nudgeKey("main"), 0));
   const [onboardNudge, setOnboardNudge] = useState<number>(() => readJson(nudgeKey("onboard"), 0));
@@ -96,8 +102,26 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
     const [year, round, type] = sessionKey.split("_");
     f1tv.replayStart(Number(year), Number(round), type).then((r) => setReplayStart(r.replay_start_utc)).catch(() => setReplayStart(null));
   }, [sessionKey]);
+  const [soundSync, setSoundSync] = useState<{ offset: number; content_id: string } | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  useEffect(() => {
+    const [year, round, type] = sessionKey.split("_");
+    let cancelled = false;
+    setSoundSync(null);
+    setSyncing(true);
+    f1tv.sync(Number(year), Number(round), type)
+      .then((r) => { if (!cancelled) setSoundSync(r); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setSyncing(false); });
+    return () => { cancelled = true; };
+  }, [sessionKey]);
   const videoStart = main.debug.playback?.video_start_utc ?? null;
-  const autoOffset = replayStart !== null && videoStart !== null ? replayStart - videoStart : null;
+  const autoOffset =
+    soundSync && link.includes(soundSync.content_id)
+      ? soundSync.offset
+      : replayStart !== null && videoStart !== null
+        ? replayStart - videoStart + STAMP_DELAY_S
+        : null;
   const mainOffset = autoOffset !== null ? autoOffset + mainNudge : manualOffset;
 
   const clock = useReplayClock(timestamp, playing, speed);
@@ -414,9 +438,14 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
             Change link
           </button>
         </div>
-        {mainOffset === null && (
+        {mainOffset === null && syncing && (
           <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
-            This session can&apos;t be synced automatically (reprocess it to fix that). Use the video controls to find the moment that matches the timing (lights out works well), then press Sync.
+            Lining the broadcast up with the timing… The first time for a session takes about a minute.
+          </p>
+        )}
+        {mainOffset === null && !syncing && (
+          <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
+            This session couldn&apos;t be synced automatically. Use the video controls to find the moment that matches the timing (lights out works well), then press Sync.
           </p>
         )}
       </div>

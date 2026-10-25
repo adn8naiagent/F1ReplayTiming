@@ -28,6 +28,20 @@ def _error(e: f1tv_video.F1TVError) -> JSONResponse:
     return JSONResponse(status_code=status, content={"detail": str(e), "f1tv_status": e.status, "f1tv_body": e.body})
 
 
+@router.get("/sync")
+async def sync(year: int, round: int, type: str):
+    """Where the replay's 0:00 is in F1 TV's video (seconds), matched from
+    the onboards' engine sound. Worked out once per session; the first time
+    takes a minute or so."""
+    from services import broadcast_sync
+
+    try:
+        return await broadcast_sync.offset(year, round, type)
+    except Exception as e:
+        logger.info("Broadcast sync for %s %s %s: %s", year, round, type, e)
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 @router.get("/replay-start")
 async def replay_start(year: int, round: int, type: str):
     """The real time (epoch seconds) at a replay's 0:00, to line Broadcast
