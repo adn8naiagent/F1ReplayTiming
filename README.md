@@ -22,7 +22,7 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 
 ## Features
 
-- **F1 TV broadcast** (new in 2.5) - watch a session's F1 TV replay inside the app, synced automatically to the timing, with onboard cameras, telemetry and mini-sectors beside it. See [F1 TV broadcast](#f1-tv-broadcast)
+- **F1 TV broadcast** (new in 2.5, replays only) - watch a session's F1 TV replay inside the app, synced automatically to the timing, with onboard cameras, telemetry and mini-sectors beside it. See [F1 TV broadcast](#f1-tv-broadcast)
 - **Live timing** (Beta) - connect to live F1 sessions during race weekends with real-time data from the F1 SignalR stream, including a broadcast delay slider and automatic detection of post-session replays
 - **Track map** with real-time car positions from GPS telemetry, updating every 0.5 seconds with smooth interpolation, marshal sector flags, and toggleable corner numbers
 - **Driver leaderboard** showing position, gap to leader, interval, last lap time, sector indicators (qualifying/practice), tyre compound and age, tyre history, pit stop count and live pit timer, grid position changes, fastest lap indicator, investigation/penalty status, and sub-1-second interval highlighting
@@ -48,6 +48,8 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 ## F1 TV Broadcast
 
 Watch the session's F1 TV replay inside the app, in step with the timing. Switch the track map to **Broadcast** (top right of the track map): the app finds the session on F1 TV, lines the video up with the timing, and keeps it there as you play, pause, change speed and skip, including **Skip to restart** after a red flag.
+
+**Replays only for now.** Broadcast isn't available in live timing yet.
 
 **Needs:** an F1 TV **Pro or Premium** subscription, signed in on the server (see [F1 TV account](#f1-tv-account)). Self-hosted only. Tablets and larger screens. F1 TV only streams in some countries and decides by your internet address, so a VPN can stop the video; if it won't play, the app says why.
 

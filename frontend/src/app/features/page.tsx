@@ -788,7 +788,7 @@ export default function FeaturesPage() {
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <h2 className="text-lg font-bold text-white">Broadcast</h2>
               <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-f1-red/20 text-f1-red leading-none">F1 TV Pro or Premium</span>
-              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-white/10 text-f1-muted leading-none">Replays</span>
+              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-white/10 text-f1-muted leading-none">Replays only</span>
             </div>
             <SessionChips practice qualifying race />
             <p className="text-f1-text leading-relaxed mb-3">
@@ -857,6 +857,7 @@ export default function FeaturesPage() {
           <section className="bg-f1-card border border-f1-border rounded-xl p-6">
             <h2 className="text-lg font-bold text-white mb-3">Good to Know</h2>
             <ul className="space-y-2 text-sm text-f1-text leading-relaxed">
+              <li><span className="font-bold text-white">Replays only for now.</span> Broadcast isn&apos;t available in live timing yet.</li>
               <li><span className="font-bold text-white">Needs F1 TV Pro or Premium.</span> The Broadcast button appears once you&apos;re signed in with one of these. Self-hosted only.</li>
               <li><span className="font-bold text-white">Tablets and larger screens.</span> On touch screens, tap the video to show its controls.</li>
               <li><span className="font-bold text-white">Where you are matters.</span> F1 TV only streams in some countries and decides by your internet address, so a VPN can stop the video. If it won&apos;t play, the message says why, with a Retry button.</li>

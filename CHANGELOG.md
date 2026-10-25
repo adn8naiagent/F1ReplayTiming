@@ -6,7 +6,7 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 ### Features
 
-- **F1 TV broadcast in replays** — with F1 TV Pro or Premium, switch the track map to **Broadcast** (top right of the track map) to watch the session's F1 TV replay in sync with the timing. The replay is found automatically, and the video follows the replay's play, pause, speed and skips.
+- **F1 TV broadcast in replays** — replays only for now; not yet in live timing. With F1 TV Pro or Premium, switch the track map to **Broadcast** (top right of the track map) to watch the session's F1 TV replay in sync with the timing. The replay is found automatically, and the video follows the replay's play, pause, speed and skips.
 
 - **Automatic broadcast sync** — the server lines the video up with the timing by matching the onboard cameras' engine sound to each driver's RPM, checked with a second driver. It takes about a minute the first time a session is opened, then it's saved. Adjust it by ±0.5s or ±5s from the hover controls; the adjustment shows as a chip whose × goes back to the automatic sync. Where F1 TV's audio is encrypted, the video's own time stamp is used instead.
 
