@@ -26,6 +26,17 @@ interface SessionMenu {
   sizeBytes?: number;
 }
 
+/** A session that failed to download or reprocess (/api/downloads/problems) */
+interface DownloadProblem {
+  year: number;
+  round: number;
+  type: string;
+  message: string;
+  time: number; // epoch seconds
+}
+
+const PROBLEMS_DISMISSED_KEY = "download_problems_dismissed";
+
 interface SessionEntry {
   name: string;
   date_utc: string | null;
@@ -215,6 +226,7 @@ export default function SessionPicker() {
     setReprocessModal({ label: m.label, key: m.key, state: "running", message: "Starting…" });
     const finish = (state: "done" | "error", message: string) => {
       clearReprocessing(m.key);
+      void loadProblems();
       setReprocessModal((prev) => (prev && prev.key === m.key ? { ...prev, state, message } : prev));
     };
     try {
@@ -301,6 +313,42 @@ export default function SessionPicker() {
     if (!showF1TV) return;
     f1tv.status().then(setF1tvStatus).catch(() => {});
   }, [showF1TV]);
+
+  // Sessions that failed to download in the background or reprocess, until
+  // they next download. Dismissing hides them until a newer failure.
+  const [problems, setProblems] = useState<DownloadProblem[]>([]);
+  const [problemsDismissed, setProblemsDismissed] = useState<number>(() => {
+    try { return Number(localStorage.getItem(PROBLEMS_DISMISSED_KEY)) || 0; } catch { return 0; }
+  });
+  async function loadProblems() {
+    try {
+      const res = await authFetch("/api/downloads/problems");
+      if (res.ok) setProblems((await res.json()).problems || []);
+    } catch {}
+  }
+  useEffect(() => {
+    if (!showAdmin) return;
+    void loadProblems();
+    const timer = setInterval(loadProblems, 60_000);
+    return () => clearInterval(timer);
+  }, [showAdmin]); // eslint-disable-line react-hooks/exhaustive-deps
+  const problemFor = (key: string) => problems.find((p) => `${p.year}_${p.round}_${p.type}` === key);
+  const newProblems = problems.filter((p) => p.time > problemsDismissed);
+  const dismissProblems = () => {
+    const latest = Math.max(...problems.map((p) => p.time));
+    setProblemsDismissed(latest);
+    try { localStorage.setItem(PROBLEMS_DISMISSED_KEY, String(latest)); } catch {}
+  };
+  const problemLabel = (p: DownloadProblem) => {
+    const name = Object.keys(SESSION_LABELS).find((n) => SESSION_LABELS[n] === p.type) ?? p.type;
+    const evt = p.year === year ? events.find((e) => e.round_number === p.round) : undefined;
+    return evt ? `${evt.event_name} ${name}` : `${p.year} round ${p.round} ${name}`;
+  };
+  const retryProblem = (p: DownloadProblem) =>
+    reprocess({
+      x: 0, y: 0, href: "", label: problemLabel(p), key: `${p.year}_${p.round}_${p.type}`,
+      year: p.year, round: p.round, code: p.type, precomputed: false,
+    });
   const intro = useIntroVisibility();
   const showOverviewButton = publicMode && intro.show === false;
 
@@ -431,6 +479,7 @@ export default function SessionPicker() {
                 const href = `/replay?year=${year}&round=${evt.round_number}&type=${code}`;
                 const sKey = `${year}_${evt.round_number}_${code}`;
                 const busy = reprocessing.has(sKey);
+                const problem = showAdmin ? problemFor(sKey) : undefined;
                 const openMenu = (x: number, y: number) =>
                   setCtxMenu({ x, y, href, label: session.name, key: sKey, year, round: evt.round_number, code, precomputed: !!session.precomputed, sizeBytes: session.size_bytes });
                 return (
@@ -455,12 +504,14 @@ export default function SessionPicker() {
                       }}
                       onTouchEnd={() => { if (longPressRef.current) clearTimeout(longPressRef.current); }}
                       onTouchMove={() => { if (longPressRef.current) clearTimeout(longPressRef.current); }}
-                      title={tooltip}
+                      title={problem ? `Couldn't download: ${problem.message} Right-click to reprocess.` : tooltip}
                       className="px-3 py-1.5 bg-f1-border text-white text-xs font-bold rounded hover:bg-f1-red transition-colors flex items-center gap-1.5 select-none"
                     >
                       {session.name}
                       {busy ? (
                         <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin flex-shrink-0" aria-label="Reprocessing" />
+                      ) : problem ? (
+                        <TriangleAlert className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" aria-label="Couldn't download" />
                       ) : session.precomputed && showAdmin ? (
                         <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" aria-label="Downloaded" />
                       ) : null}
@@ -772,6 +823,46 @@ export default function SessionPicker() {
             >
               Sign in
             </button>
+          </div>
+        )}
+        {showAdmin && newProblems.length > 0 && (
+          <div className="max-w-3xl mx-auto mb-6 bg-f1-card border border-amber-500/40 rounded-xl px-4 py-3">
+            <div className="flex items-start gap-3">
+              <TriangleAlert className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-bold text-white">
+                  {newProblems.length === 1 ? "A session couldn't download" : `${newProblems.length} sessions couldn't download`}
+                </p>
+                <ul className="mt-2 space-y-2">
+                  {newProblems.map((p) => {
+                    const key = `${p.year}_${p.round}_${p.type}`;
+                    return (
+                      <li key={key} className="flex flex-wrap items-start gap-x-3 gap-y-1">
+                        <div className="flex-1 min-w-[200px]">
+                          <p className="text-xs font-bold text-white">
+                            {problemLabel(p)}
+                            <span className="ml-2 font-normal text-f1-muted">
+                              {new Date(p.time * 1000).toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })}
+                            </span>
+                          </p>
+                          <p className="text-xs text-f1-muted leading-relaxed">{p.message}</p>
+                        </div>
+                        <button
+                          onClick={() => retryProblem(p)}
+                          disabled={reprocessing.has(key)}
+                          className="px-3 py-1 bg-f1-border text-white text-xs font-bold rounded hover:bg-f1-red transition-colors disabled:opacity-50"
+                        >
+                          {reprocessing.has(key) ? "Retrying…" : "Retry"}
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+              <button onClick={dismissProblems} className="text-xs text-f1-muted hover:text-white flex-shrink-0" title="Hide until another session fails">
+                Dismiss
+              </button>
+            </div>
           </div>
         )}
         {publicMode && <PaywallNotice className="max-w-3xl mx-auto mb-6" />}

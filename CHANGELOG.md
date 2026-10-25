@@ -2,7 +2,41 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
-## 2.4.1 (unreleased)
+## 2.5.0
+
+### Features
+
+- **F1 TV broadcast in replays** — replays only for now; not yet in live timing. With F1 TV Pro or Premium, switch the track map to **Broadcast** (top right of the track map) to watch the session's F1 TV replay in sync with the timing. The replay is found automatically, and the video follows the replay's play, pause, speed and skips.
+
+- **Automatic broadcast sync** — the server lines the video up with the timing by matching the onboard cameras' engine sound to each driver's RPM, checked with a second driver. It runs when a session is processed (F1 TV protects some replays' audio later on), or, if that doesn't work, the first time the broadcast is opened, and is then saved. Adjust it by ±0.5s or ±5s from the hover controls; the adjustment shows as a chip whose × goes back to the automatic sync. Where F1 TV's audio is encrypted, the video's own time stamp is used instead.
+
+- **Multi-view** — the broadcast with up to two onboard cameras and the track map beside it. Pick each onboard from a driver menu in the panel; your choices are remembered. Each onboard can show the driver's speed, gear, throttle and brake, and in qualifying and practice their mini-sectors as a coloured strip along the bottom edge, each switched on or off per onboard.
+
+- **Single view** — the broadcast full width with the track map's lines over it.
+
+- **Broadcast settings and controls** — **Settings > Broadcast** sets the view to open in, onboard telemetry and the track map. The hover controls switch the view, track map, race control, team radio and radio audio, and your choices are remembered; on touch screens, tap the video to show them. **Sync manually** lines the video up yourself; its controls only appear when you ask for them, or if the automatic sync fails. Race control shows as one line along the bottom of the broadcast when a message arrives, then fades, and team radio pops up at the top, as on the track map. Other F1 TV feeds (F1 Live, International, Driver Tracker and Data Channel, depending on the session and your account) can be picked from the hover controls, and a mute button sits at the left of the playback controls while the broadcast shows.
+
+### Improvements
+
+- **Team radio audio kept on your server** — processing a session now stores each radio clip's audio, and replays play it from your server instead of F1's. F1's timing server refuses some networks (VPNs and cloud hosts), which left radio silent even when signed in. For sessions processed before this version, add the audio with `python precompute.py 2026 --radio-audio-only`, or `docker compose exec f1timing python precompute.py 2026 --radio-audio-only` with Docker (needs a network F1 accepts); until then they play from F1 as before.
+
+- **Exit in the replay header** — back to the home page, as in live timing.
+
+- **Fewer missing team radio captions** — with **Improve captions with AI** on, a clip where Whisper heard several words keeps Whisper's caption if the AI model decides no one speaks, and a clip where Whisper heard nothing (its silence filters can drop noisy radio) gets a second, unfiltered Whisper attempt for the AI model to check against the audio. Applies to live timing and to sessions processed from now on; reprocess a session to redo its captions.
+
+### Fixes
+
+- **Clearer message when F1 blocks a VPN or cloud server** — when F1 refuses a download or live timing (HTTP 403), the message now says F1 blocks most VPNs and cloud servers and what to do: turn the VPN off, or process the session on another computer. The README has a new [VPNs and cloud servers](README.md#vpns-and-cloud-servers) section.
+
+- **Failed downloads shown on the home page** — when a background download (`AUTO_PRECOMPUTE`) or a reprocess fails, the home page shows a warning with the session, when it happened and why, with a **Retry** button for each. The session also gets a warning icon in the list; hover over it for the reason. Before, background failures only showed in the server's logs, and a reprocess failure was lost if you closed its pop-up. The warning clears when the session next downloads; **Dismiss** hides it until another session fails. Self-hosted only.
+
+> **What sessions and features need reprocessing?** The broadcast doesn't: it works on sessions you've already downloaded. A few things only apply to sessions processed from 2.5.0 on:
+> - **Team radio audio on your server** — add it to downloaded sessions with `python precompute.py 2026 --radio-audio-only` (Docker: `docker compose exec f1timing python precompute.py 2026 --radio-audio-only`; no full reprocess needed), on a network F1 accepts.
+> - **Improved team radio captions** — reprocess a session to redo its captions.
+> - **Broadcast sync at processing time** — new sessions are synced while F1 TV's audio can still be read. Older sessions are synced the first time you open their broadcast, if F1 TV's audio can still be read then; otherwise the video's time stamp is used.
+> - **Onboard sector strips** need mini-sectors, which sessions have if processed from 2.4.0 on (or after `--lap-extras-only`).
+
+## 2.4.1
 
 ### Improvements
 

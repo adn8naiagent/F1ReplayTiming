@@ -37,6 +37,12 @@ export interface ReplaySettings {
   showElevation: boolean;
   highContrast: boolean;
   showAllPanels: boolean;
+  // Broadcast (F1 TV): open in multi-view (broadcast, onboards and map side
+  // by side) or the broadcast with the map over it
+  broadcastMultiView: boolean;
+  broadcastTelemetry: boolean;
+  broadcastMap: boolean;
+  broadcastRaceControl: boolean;
 }
 
 const STORAGE_KEY = "f1replay_settings";
@@ -76,6 +82,10 @@ export const DEFAULTS: ReplaySettings = {
   showElevation: false,
   highContrast: false,
   showAllPanels: false,
+  broadcastMultiView: true,
+  broadcastTelemetry: true,
+  broadcastMap: true,
+  broadcastRaceControl: true,
 };
 
 function loadSettings(): ReplaySettings {

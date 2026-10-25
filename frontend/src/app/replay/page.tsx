@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo, cloneElement } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
 import { useReplaySocket } from "@/hooks/useReplaySocket";
@@ -26,7 +26,7 @@ import LapNotifications from "@/components/LapNotifications";
 import TeamRadio, { type RadioClip } from "@/components/TeamRadio";
 
 // F1 TV video isn't finished: the Broadcast button stays hidden until it is.
-const BROADCAST_ENABLED = false;
+const BROADCAST_ENABLED = true;
 import BroadcastView from "@/components/BroadcastView";
 import { f1tv } from "@/lib/f1tv";
 import type { SectorOverlay } from "@/lib/trackRenderer";
@@ -95,9 +95,41 @@ export default function ReplayPage() {
   const [pipLeaderboardOpen, setPipLeaderboardOpen] = useState(true);
   const [showSectorOverlay, setShowSectorOverlay] = useState(false);
   const [sectorFocusDriver, setSectorFocusDriver] = useState<string | null>(null);
-  const [rcPanelOpen, setRcPanelOpen] = useState(false);
+  // Race control on the track map view, remembered on its own (the
+  // broadcast has its own setting)
+  const [rcPanelOpen, setRcPanelOpenState] = useState(() => {
+    try { return localStorage.getItem("f1replay_rc_open") === "1"; } catch { return false; }
+  });
+  const setRcPanelOpen = (open: boolean) => {
+    setRcPanelOpenState(open);
+    try { localStorage.setItem("f1replay_rc_open", open ? "1" : "0"); } catch {}
+  };
   const [rcPinned, setRcPinned] = useState(false);
   const [broadcastOn, setBroadcastOn] = useState(false);
+  // Touch screens can't hover: a tap on the broadcast shows its controls for a few seconds
+  const [broadcastControls, setBroadcastControls] = useState(false);
+  const broadcastControlsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const revealBroadcastControls = useCallback(() => {
+    setBroadcastControls(true);
+    clearTimeout(broadcastControlsTimer.current);
+    broadcastControlsTimer.current = setTimeout(() => setBroadcastControls(false), 4000);
+  }, []);
+  const [broadcastVolume, setBroadcastVolumeState] = useState(() => {
+    try { const v = Number(localStorage.getItem("f1tv_volume")); return Number.isFinite(v) && localStorage.getItem("f1tv_volume") !== null ? v : 1; } catch { return 1; }
+  });
+  const setBroadcastVolume = (v: number) => {
+    setBroadcastVolumeState(v);
+    try { localStorage.setItem("f1tv_volume", String(v)); } catch {}
+    // Moving the slider up is asking to hear it
+    if (v > 0 && broadcastMuted) toggleBroadcastMute();
+  };
+  const [broadcastMuted, setBroadcastMuted] = useState(() => {
+    try { return localStorage.getItem("f1tv_muted") === "1"; } catch { return false; }
+  });
+  const toggleBroadcastMute = () => setBroadcastMuted((m) => {
+    try { localStorage.setItem("f1tv_muted", m ? "0" : "1"); } catch {}
+    return !m;
+  });
   const [f1tvSignedIn, setF1tvSignedIn] = useState(false);
 
   // Persist panel layout per session type
@@ -116,7 +148,6 @@ export default function ReplayPage() {
         if (layout.showTelemetry != null) setShowTelemetry(layout.showTelemetry);
         if (layout.telemetryPosition != null) setTelemetryPosition(layout.telemetryPosition);
         if (layout.rcPinned != null) setRcPinned(layout.rcPinned);
-        if (layout.rcPanelOpen != null) setRcPanelOpen(layout.rcPanelOpen);
         if (layout.lapAnalysisOpen != null) setLapAnalysisOpen(layout.lapAnalysisOpen);
         if (layout.showSectorOverlay != null) setShowSectorOverlay(layout.showSectorOverlay);
       }
@@ -202,6 +233,9 @@ export default function ReplayPage() {
     });
   }
   const { settings, update: updateSetting } = useSettings();
+  // The telemetry (and pinned race control) side panel; not over the
+  // broadcast, which has its own onboard telemetry and race control line
+  const telemetrySidePanel = !isMobile && showTelemetry && !broadcastOn && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned);
 
   const { data: sessionData, loading: sessionLoading, error: sessionError } = useApi<SessionData>(
     `/api/sessions/${year}/${round}?type=${sessionType}`,
@@ -248,7 +282,8 @@ export default function ReplayPage() {
 
   useEffect(() => {
     if (!appConfig?.f1tv) return;
-    f1tv.status().then((s) => setF1tvSignedIn(s.signed_in)).catch(() => {});
+    // Video needs F1 TV Pro or Premium (Access is timing data only)
+    f1tv.status().then((s) => setF1tvSignedIn(s.signed_in && /\b(pro|premium)\b/i.test(s.product ?? ""))).catch(() => {});
   }, [appConfig?.f1tv]);
 
   const reportProblem = useCallback(() => {
@@ -334,8 +369,10 @@ export default function ReplayPage() {
   // they stay above the early returns below.
   const miniWanted = ["Q", "SQ", "FP1", "FP2", "FP3"].includes(sessionType)
     && settings.showMiniSectors && !isMobile && (settings.showSectors || showSectorOverlay);
+  // The broadcast's onboards can show them too, whatever the leaderboard's setting
+  const miniForOnboards = ["Q", "SQ", "FP1", "FP2", "FP3"].includes(sessionType) && broadcastOn;
   const { data: miniData } = useApi<MiniSectorData>(
-    miniWanted ? `/api/sessions/${year}/${round}/minisectors?type=${sessionType}` : null,
+    miniWanted || miniForOnboards ? `/api/sessions/${year}/${round}/minisectors?type=${sessionType}` : null,
   );
   const miniTime = replay.frame?.timestamp ?? 0;
   const miniFrameDrivers = replay.frame?.drivers;
@@ -492,6 +529,17 @@ export default function ReplayPage() {
       elevationRangeM={trackData?.elevation?.range_m ?? null}
     />
   );
+  // The small map over the broadcast: thinner white lines; no elevation,
+  // or sectors
+  const overlayTrackCanvas = cloneElement(mainTrackCanvas, {
+    trackWidth: 5,
+    lightTrack: true,
+    compact: true,
+    showElevation: false,
+    sectorOverlay: null,
+    segmentOverlay: null,
+    sectorFlags: null,
+  });
   return (
     <div className="h-dvh flex flex-col bg-f1-dark overflow-hidden" style={{ paddingTop: "env(safe-area-inset-top)" }}>
       {/* Connection lost — the socket retries on its own in the background */}
@@ -512,9 +560,18 @@ export default function ReplayPage() {
           year={year}
           settings={settings}
           onSettingChange={updateSetting}
+          broadcastSettings={BROADCAST_ENABLED && f1tvSignedIn}
           weather={weather}
           mobileTeamAbbrHidden={mobileTeamAbbrHidden}
           onReportProblem={reportProblem}
+          extraActions={
+            <a
+              href="/"
+              className="px-2 py-1 sm:px-3 rounded text-[10px] sm:text-xs font-bold text-f1-muted hover:text-white hover:bg-white/10 transition-colors"
+            >
+              Exit
+            </a>
+          }
         />
       )}
 
@@ -555,7 +612,7 @@ export default function ReplayPage() {
         </div>
 
         {/* Track section */}
-        <div className={`sm:flex-1 min-w-0 ${!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) ? `flex ${effectiveTelemetryPosition === "left" ? "flex-row" : "flex-col"} min-h-0` : "relative"}`}>
+        <div className={`sm:flex-1 min-w-0 ${telemetrySidePanel ? `flex ${effectiveTelemetryPosition === "left" ? "flex-row" : "flex-col"} min-h-0` : "relative"}`}>
           {/* Mobile section header */}
           {isMobile && (
             <button
@@ -570,7 +627,9 @@ export default function ReplayPage() {
           )}
 
           {(!isMobile || mobileTrackOpen) && (
-            <div className={`h-[42vh] sm:h-full relative ${!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) ? "flex-1 min-w-0 min-h-0" : ""}`}>
+            <div
+              onPointerDown={(e) => { if (broadcastOn && e.pointerType !== "mouse") revealBroadcastControls(); }}
+              className={`h-[42vh] sm:h-full relative group/view ${telemetrySidePanel ? "flex-1 min-w-0 min-h-0" : ""}`}>
               {/* Flag badge */}
               {trackStatus !== "green" && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
@@ -649,20 +708,26 @@ export default function ReplayPage() {
               )}
 
               {/* Race Control toggle - desktop only, mobile has its own section */}
-              <div className="absolute top-3 right-3 z-10 hidden sm:flex items-center gap-1.5">
+              {/* Over the broadcast, these show on hover like the player's controls */}
+              <div className={`absolute top-3 right-3 z-30 hidden sm:flex items-center gap-1.5 ${broadcastOn ? `transition-opacity ${broadcastControls ? "opacity-100" : "opacity-0 group-hover/view:opacity-100 [@media(hover:none)]:pointer-events-none"}` : ""}`}>
                 {BROADCAST_ENABLED && f1tvSignedIn && (
-                  <button
-                    onClick={() => setBroadcastOn(!broadcastOn)}
-                    className={`flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
-                      broadcastOn
-                        ? "bg-f1-red text-white"
-                        : "bg-f1-card/90 border border-f1-border text-f1-muted hover:text-white backdrop-blur-sm"
-                    }`}
-                    title="Show the F1 TV broadcast"
-                  >
-                    Broadcast
-                  </button>
+                  <div className="flex items-center rounded border border-f1-border bg-f1-card/90 backdrop-blur-sm overflow-hidden">
+                    {([false, true] as const).map((on) => (
+                      <button
+                        key={String(on)}
+                        onClick={() => setBroadcastOn(on)}
+                        className={`px-2 py-1 text-xs font-bold transition-colors ${
+                          broadcastOn === on ? "bg-f1-red text-white" : "text-f1-muted hover:text-white"
+                        }`}
+                        title={on ? "Show the F1 TV broadcast, synced to the timing" : "Show the track map"}
+                      >
+                        {on ? "Broadcast" : "Track map"}
+                      </button>
+                    ))}
+                  </div>
                 )}
+                {/* On the broadcast, race control is in its hover controls */}
+                {!broadcastOn && (
                 <button
                   onClick={() => {
                     if (rcPinned) {
@@ -683,10 +748,12 @@ export default function ReplayPage() {
                   </svg>
                   RC
                 </button>
+                )}
               </div>
 
               {/* Race Control Messages panel (floating, hidden when pinned) */}
-              {rcPanelOpen && !rcPinned && (
+              {/* On the broadcast, race control is just the latest message (BroadcastView) */}
+              {rcPanelOpen && !rcPinned && !broadcastOn && (
                 <div
                   ref={rcPanelRef}
                   className={`z-20 w-80 bg-f1-card/95 border border-f1-border rounded-lg shadow-xl backdrop-blur-sm overflow-hidden flex flex-col ${
@@ -770,17 +837,36 @@ export default function ReplayPage() {
                   timestamp={replay.frame?.timestamp}
                   playing={replay.playing}
                   speed={replay.speed}
-                  selectedDriverNumbers={selectedDrivers
-                    .map((abbr) => sessionData?.drivers.find((d) => d.abbreviation === abbr)?.driver_number)
-                    .filter((n): n is string => !!n)}
-                  trackOverlay={mainTrackCanvas}
+                  multiView={settings.broadcastMultiView}
+                  showTelemetry={settings.broadcastTelemetry}
+                  showMap={settings.broadcastMap}
+                  trackOverlay={overlayTrackCanvas}
+                  miniSectorData={miniForOnboards ? miniData ?? null : null}
+                  onMultiViewChange={(v) => updateSetting("broadcastMultiView", v)}
+                  onToggleMap={() => updateSetting("broadcastMap", !settings.broadcastMap)}
+                  raceControl={settings.broadcastRaceControl ? (replay.frame?.rc_messages || [])[0] ?? null : null}
+                  raceControlOn={settings.broadcastRaceControl}
+                  onToggleRaceControl={() => updateSetting("broadcastRaceControl", !settings.broadcastRaceControl)}
+                  teamRadioOn={settings.showTeamRadio}
+                  onToggleTeamRadio={() => updateSetting("showTeamRadio", !settings.showTeamRadio)}
+                  radioAudioOn={!settings.teamRadioMuted}
+                  onToggleRadioAudio={() => updateSetting("teamRadioMuted", !settings.teamRadioMuted)}
+                  controlsShown={broadcastControls}
+                  muted={broadcastMuted}
+                  volume={broadcastVolume}
+                  driversByNumber={Object.fromEntries(
+                    drivers.flatMap((d) => {
+                      const n = sessionData?.drivers.find((s) => s.abbreviation === d.abbr)?.driver_number;
+                      return n ? [[n, d]] : [];
+                    }),
+                  )}
                 />
               ) : mainTrackCanvas}
 
               {/* Telemetry now in bottom drawer */}
 
               {/* Sector overlay toggle - desktop qualifying only */}
-              {!isMobile && hasSectors && trackData?.sector_boundaries && (
+              {!isMobile && hasSectors && trackData?.sector_boundaries && !broadcastOn && (
                 <div className="absolute bottom-2 right-36 z-20 flex items-center gap-1">
                   {showSectorOverlay && (
                     <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
@@ -817,7 +903,7 @@ export default function ReplayPage() {
               )}
 
               {/* Sector overlay controls - mobile qualifying only */}
-              {isMobile && hasSectors && trackData?.sector_boundaries && (
+              {isMobile && hasSectors && trackData?.sector_boundaries && !broadcastOn && (
                 <div className="absolute bottom-2 left-2 right-2 z-20 flex items-center gap-1">
                   {showSectorOverlay && (
                     <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
@@ -838,7 +924,7 @@ export default function ReplayPage() {
               {/* Fullscreen toggle moved to PlaybackControls */}
 
               {/* Telemetry overlay - desktop only, bottom-left (1-2 drivers) */}
-              {!isMobile && showTelemetry && selectedDrivers.length <= 2 && !settings.showAllPanels && !rcPinned && (
+              {!isMobile && showTelemetry && selectedDrivers.length <= 2 && !settings.showAllPanels && !rcPinned && !broadcastOn && (
                 <div className="absolute bottom-2 left-3 z-10 flex flex-col gap-1">
                   <button
                     onClick={() => setShowTelemetry(false)}
@@ -858,7 +944,8 @@ export default function ReplayPage() {
               )}
 
               {/* Telemetry toggle - desktop only, bottom-left */}
-              {!isMobile && !showTelemetry && !settings.showAllPanels && (
+              {/* Telemetry is on the track map view only; the broadcast's onboards have their own */}
+              {!isMobile && !showTelemetry && !settings.showAllPanels && !broadcastOn && (
                 <button
                   onClick={() => setShowTelemetry(true)}
                   className="absolute bottom-2 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
@@ -887,7 +974,7 @@ export default function ReplayPage() {
           )}
 
           {/* Telemetry panel - desktop only (3+ drivers) */}
-          {!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) && (
+          {telemetrySidePanel && (
             <div
               className={`flex-shrink-0 ${
                 effectiveTelemetryPosition === "left"
@@ -1141,6 +1228,10 @@ export default function ReplayPage() {
         onSyncPhoto={() => setShowSyncPhoto(true)}
         onPiP={!isMobile && !isIOS ? () => setPipActive(true) : undefined}
         pipActive={pipActive}
+        onToggleMute={broadcastOn ? toggleBroadcastMute : undefined}
+        muted={broadcastMuted}
+        volume={broadcastVolume}
+        onVolumeChange={setBroadcastVolume}
         onFullscreen={!isMobile ? () => {
           const next = !fullscreen;
           setFullscreen(next);

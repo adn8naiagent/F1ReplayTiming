@@ -26,6 +26,7 @@ from services.f1_data import (
     _get_driver_positions_by_time_sync,
     _get_driver_telemetry_sync,
     _get_team_radio_sync,
+    replay_start_utc,
     _get_minisectors_sync,
 )
 
@@ -72,6 +73,8 @@ async def start_reprocess(year: int, round_num: int, session_type: str) -> str:
         if cur is not None:
             cur["message"] = msg
 
+    from services import download_problems
+
     async def _run():
         try:
             # skip_existing defaults False, so this overwrites the stored session.
@@ -82,10 +85,15 @@ async def start_reprocess(year: int, round_num: int, session_type: str) -> str:
                 "state": "done" if ok else "error",
                 "message": "Reprocess complete" if ok else "Reprocess failed",
             }
+            if not ok:
+                download_problems.record(year, round_num, session_type,
+                                         "Reprocess failed. The server's logs have the details.")
         except Exception as e:
             logger.error(f"Reprocess failed for {key}: {e}")
             traceback.print_exc()
-            _reprocess_status[key] = {"state": "error", "message": str(e)[:200] or "Reprocess failed"}
+            message = str(e)[:500] or "Reprocess failed"
+            _reprocess_status[key] = {"state": "error", "message": message}
+            download_problems.record(year, round_num, session_type, message)
 
     asyncio.create_task(_run())
     return "running"
@@ -105,8 +113,17 @@ def process_session_sync(
     round_key = (year, round_num)
     with _active_lock:
         _active_rounds[round_key] = _active_rounds.get(round_key, 0) + 1
+    from services import download_problems
+
     try:
-        return _process_session_sync(year, round_num, session_type, skip_existing, on_status)
+        ok = _process_session_sync(year, round_num, session_type, skip_existing, on_status)
+        if ok:
+            download_problems.clear(year, round_num, session_type)
+    except f1_account.F1AccountError as e:
+        # Not signed in, or F1 refused this network: shown on the home page,
+        # since background downloads have no one watching
+        download_problems.record(year, round_num, session_type, str(e))
+        raise
     finally:
         with _active_lock:
             _active_rounds[round_key] -= 1
@@ -117,6 +134,16 @@ def process_session_sync(
         # weekend is being processed, free them; the data is in storage now.
         if last:
             release_sessions(year, round_num)
+
+    # Line F1 TV's replay up with the timing now, while its audio can still be
+    # read: F1 TV protects replays' audio some time after the session. After
+    # the FastF1 data is freed, as it needs memory of its own.
+    if ok and not skip_existing:
+        if on_status:
+            on_status("Syncing the F1 TV broadcast...")
+        from services import broadcast_sync
+        broadcast_sync.refresh_sync(year, round_num, session_type)
+    return ok
 
 
 def _process_session_sync(
@@ -215,6 +242,12 @@ def _process_session_sync(
         raise
     except Exception as e:
         logger.warning(f"[{prefix}] No team radio: {e}")
+
+    # Replay 0:00 in real time, for syncing the F1 TV broadcast
+    start_utc = replay_start_utc(year, round_num, session_type)
+    if start_utc is not None:
+        info["replay_start_utc"] = start_utc
+        storage.put_json(f"{base}/info.json", info)
 
     status("Processing telemetry...")
 
@@ -412,6 +445,9 @@ def delete_session(year: int, round_num: int, session_type: str) -> int:
     downloaded" and reprocesses cleanly, rather than being left present but
     incomplete — the failure mode people hit deleting these files by hand.
     """
+    from services import download_problems
+
+    download_problems.clear(year, round_num, session_type)  # nothing to retry now
     base = f"sessions/{year}/{round_num}/{session_type}"
 
     freed = storage.delete(f"{base}/replay.json")
@@ -484,7 +520,7 @@ def start_prepare(year: int, round_num: int, session_type: str) -> dict:
         try:
             ok = process_session_sync(year, round_num, session_type, False, set_message)
         except f1_account.F1AccountError as e:
-            return {"state": "error", "message": str(e)}
+            return {"state": "error", "message": str(e)}  # recorded by process_session_sync
         if ok and replay_chunks.get_manifest(year, round_num, session_type):
             return {"state": "done", "message": ""}
         return {"state": "error", "message": "Failed to load session data. The session may not be available yet."}
