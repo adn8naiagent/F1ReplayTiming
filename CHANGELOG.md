@@ -14,7 +14,7 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Single view** — the broadcast full width with the track map's lines over it.
 
-- **Broadcast settings and controls** — **Settings > Broadcast** sets the view to open in, onboard telemetry and the track map. The hover controls switch the view, track map, race control, team radio and radio audio without changing your settings; on touch screens, tap the video to show them. Race control shows as one line along the bottom of the broadcast when a message arrives, then fades, and team radio pops up at the top, as on the track map. Other F1 TV feeds (F1 Live, International, Driver Tracker and Data Channel, depending on the session and your account) can be picked from the hover controls, and a mute button sits at the left of the playback controls while the broadcast shows.
+- **Broadcast settings and controls** — **Settings > Broadcast** sets the view to open in, onboard telemetry and the track map. The hover controls switch the view, track map, race control, team radio and radio audio, and your choices are remembered; on touch screens, tap the video to show them. **Sync manually** lines the video up yourself; its controls only appear when you ask for them, or if the automatic sync fails. Race control shows as one line along the bottom of the broadcast when a message arrives, then fades, and team radio pops up at the top, as on the track map. Other F1 TV feeds (F1 Live, International, Driver Tracker and Data Channel, depending on the session and your account) can be picked from the hover controls, and a mute button sits at the left of the playback controls while the broadcast shows.
 
 ### Improvements
 

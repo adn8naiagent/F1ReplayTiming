@@ -42,6 +42,7 @@ export interface ReplaySettings {
   broadcastMultiView: boolean;
   broadcastTelemetry: boolean;
   broadcastMap: boolean;
+  broadcastRaceControl: boolean;
 }
 
 const STORAGE_KEY = "f1replay_settings";
@@ -84,6 +85,7 @@ export const DEFAULTS: ReplaySettings = {
   broadcastMultiView: true,
   broadcastTelemetry: true,
   broadcastMap: true,
+  broadcastRaceControl: true,
 };
 
 function loadSettings(): ReplaySettings {

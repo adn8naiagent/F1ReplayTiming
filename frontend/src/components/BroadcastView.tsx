@@ -17,8 +17,10 @@ interface Props {
    *  onboard telemetry, and the map. The hover controls flip these for now
    *  without changing the settings. */
   multiView: boolean;
+  onMultiViewChange: (multiView: boolean) => void;
   showTelemetry: boolean;
   showMap: boolean;
+  onToggleMap: () => void;
   /** The track map, beside the onboards or over the broadcast. */
   trackOverlay: React.ReactNode;
   /** Drivers in the current frame by racing number, for the onboard's telemetry */
@@ -89,7 +91,7 @@ const onboardsThisPage = new Map<string, [string | null, string | null]>();
 const SIDE_MAX = 0.3;
 const SIDE_MIN = 0.16;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView, onMultiViewChange, showTelemetry, showMap, onToggleMap: toggleMap, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
@@ -101,12 +103,6 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
 
   const [opts, setOpts] = useState<StreamOptions>(() => readJson("f1tv_stream_opts", { licenceViaServer: true, relay: false }));
   const [mainChannel, setMainChannel] = useState<string | null>(null);
-  // The view and map follow Settings, and the hover controls flip them for now
-  const [multiView, setMultiView] = useState(multiViewSetting);
-  useEffect(() => setMultiView(multiViewSetting), [multiViewSetting]);
-  const [showMap, setShowMap] = useState(showMapSetting);
-  useEffect(() => setShowMap(showMapSetting), [showMapSetting]);
-  const toggleMap = () => setShowMap((v) => !v);
   // Telemetry on each onboard, switched one at a time (Settings > Broadcast
   // sets both)
   // (remembered; changing the setting resets both)
@@ -158,9 +154,14 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const [mainNudge, setMainNudge] = useState<number>(() => readJson(nudgeKey("main"), 0));
   const [onboardNudge, setOnboardNudge] = useState<number>(() => readJson(nudgeKey("onboard"), 0));
   const [replayStart, setReplayStart] = useState<number | null>(null);
+  const [replayStartChecked, setReplayStartChecked] = useState(false);
   useEffect(() => {
     const [year, round, type] = sessionKey.split("_");
-    f1tv.replayStart(Number(year), Number(round), type).then((r) => setReplayStart(r.replay_start_utc)).catch(() => setReplayStart(null));
+    setReplayStartChecked(false);
+    f1tv.replayStart(Number(year), Number(round), type)
+      .then((r) => setReplayStart(r.replay_start_utc))
+      .catch(() => setReplayStart(null))
+      .finally(() => setReplayStartChecked(true));
   }, [sessionKey]);
   const [soundSync, setSoundSync] = useState<{ offset: number; content_id: string; drivers?: string[] } | null>(null);
   const [syncing, setSyncing] = useState(false);
@@ -184,6 +185,12 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
         : null;
   // A manual sync wins over the automatic one until it's cleared
   const mainOffset = aligning ? null : manualOffset ?? (autoOffset !== null ? autoOffset + mainNudge : null);
+  // Lining up by hand is offered only when asked for, or once both automatic
+  // ways have failed; never while the automatic sync is still working, when
+  // playing the video by itself would just put it out of step
+  const autoFailed =
+    !syncing && replayStartChecked && main.state === "ready" && autoOffset === null && manualOffset === null;
+  const manualControls = aligning || autoFailed;
   // How this session is synced, for the hover controls
   const soundSynced = !!soundSync && link.includes(soundSync.content_id);
   const syncMethod: { label: string; hint: string; tone: "good" | "rough" | "busy" } | null = aligning
@@ -532,7 +539,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             {([[true, "Multi-view"], [false, "Single view"]] as const).map(([value, label]) => (
               <button
                 key={label}
-                onClick={() => setMultiView(value)}
+                onClick={() => onMultiViewChange(value)}
                 className={`px-2 py-1 text-[10px] font-bold transition-colors ${
                   multiView === value ? "bg-white text-black" : "bg-f1-card/90 text-f1-muted hover:text-white"
                 }`}
@@ -551,7 +558,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          {aligning || mainOffset === null ? (
+          {mainOffset === null && !manualControls ? null : manualControls ? (
             <>
               <button onClick={syncHere} className={`${btnClass} !text-white !bg-f1-red border-f1-red`} title="Line the video up with the timing, then press">
                 Set sync here
@@ -610,7 +617,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             </button>
           ))}
         </div>
-        {(aligning || (mainOffset === null && !syncing)) && (
+        {manualControls && (
           <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
             {aligning ? "" : "This session couldn't be synced automatically. "}Use the video controls to find the moment that matches the timing (lights out or a car crossing the line works well), then press Set sync here.
           </p>
@@ -618,7 +625,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       </div>
 
       {/* Unsynced videos need their own controls to line them up. */}
-      {mainOffset === null && main.state === "ready" && <NativeControls videoRef={mainRef} />}
+      {manualControls && main.state === "ready" && <NativeControls videoRef={mainRef} />}
 
       {showDebug && (
         <DebugPanel

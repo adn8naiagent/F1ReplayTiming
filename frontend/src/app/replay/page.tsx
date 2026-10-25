@@ -832,11 +832,11 @@ export default function ReplayPage() {
                   showTelemetry={settings.broadcastTelemetry}
                   showMap={settings.broadcastMap}
                   trackOverlay={overlayTrackCanvas}
-                  raceControl={rcPanelOpen || rcPinned ? (replay.frame?.rc_messages || [])[0] ?? null : null}
-                  raceControlOn={rcPanelOpen || rcPinned}
-                  onToggleRaceControl={() => {
-                    if (rcPanelOpen || rcPinned) { setRcPanelOpen(false); setRcPinned(false); } else setRcPanelOpen(true);
-                  }}
+                  onMultiViewChange={(v) => updateSetting("broadcastMultiView", v)}
+                  onToggleMap={() => updateSetting("broadcastMap", !settings.broadcastMap)}
+                  raceControl={settings.broadcastRaceControl ? (replay.frame?.rc_messages || [])[0] ?? null : null}
+                  raceControlOn={settings.broadcastRaceControl}
+                  onToggleRaceControl={() => updateSetting("broadcastRaceControl", !settings.broadcastRaceControl)}
                   teamRadioOn={settings.showTeamRadio}
                   onToggleTeamRadio={() => updateSetting("showTeamRadio", !settings.showTeamRadio)}
                   radioAudioOn={!settings.teamRadioMuted}

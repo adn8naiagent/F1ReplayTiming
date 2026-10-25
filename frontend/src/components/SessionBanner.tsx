@@ -404,6 +404,7 @@ export default function SessionBanner({
                     {([
                       ["broadcastTelemetry", "Onboard telemetry", "Speed, gear, throttle and brake along the bottom of each onboard"],
                       ["broadcastMap", "Track map", "Beside the onboards, or over the broadcast"],
+                      ["broadcastRaceControl", "Race control", "The latest message along the bottom of the broadcast"],
                     ] as const).map(([key, label, hint]) => (
                       <button
                         key={key}
@@ -420,7 +421,7 @@ export default function SessionBanner({
                       </button>
                     ))}
                     <p className="px-2 sm:px-6 pt-3 text-xs text-f1-muted leading-relaxed">
-                      The hover controls on the broadcast switch the view and track map for now, without changing these.
+                      The broadcast&apos;s hover controls change these too, and your choices are remembered.
                     </p>
                   </>)}
 
