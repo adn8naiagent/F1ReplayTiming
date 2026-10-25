@@ -542,6 +542,14 @@ export default function ReplayPage() {
           weather={weather}
           mobileTeamAbbrHidden={mobileTeamAbbrHidden}
           onReportProblem={reportProblem}
+          extraActions={
+            <a
+              href="/"
+              className="px-2 py-1 sm:px-3 rounded text-[10px] sm:text-xs font-bold text-f1-muted hover:text-white hover:bg-white/10 transition-colors"
+            >
+              Exit
+            </a>
+          }
         />
       )}
 
