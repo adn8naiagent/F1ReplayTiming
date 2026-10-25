@@ -143,6 +143,62 @@ async def content(content_id: str) -> dict[str, Any]:
     }
 
 
+# Our session types and the names on the season calendar
+_SESSION_NAMES = {
+    "R": ("Race",),
+    "Q": ("Qualifying",),
+    "S": ("Sprint",),
+    "SQ": ("Sprint Qualifying", "Sprint Shootout"),
+    "FP1": ("Practice 1",),
+    "FP2": ("Practice 2",),
+    "FP3": ("Practice 3",),
+}
+
+
+def _session_start(year: int, round_num: int, session_type: str) -> float | None:
+    """The session's scheduled start (epoch seconds), from the stored calendar."""
+    from services.schedule import schedule_path
+    from services.storage import get_json
+
+    names = _SESSION_NAMES.get(session_type, ())
+    for event in (get_json(schedule_path(year)) or {}).get("events", []):
+        if event.get("round_number") != round_num:
+            continue
+        for sess in event.get("sessions", []):
+            if sess.get("name") in names and sess.get("date_utc"):
+                from datetime import datetime
+                return datetime.fromisoformat(sess["date_utc"].replace("Z", "+00:00")).timestamp()
+    return None
+
+
+async def find_replay(year: int, round_num: int, session_type: str) -> dict[str, Any] | None:
+    """The F1 TV replay of a session: F1 TV's replays for that round, the
+    Formula 1 one (with onboards) whose start time is closest to the
+    session's. None if there isn't one (yet)."""
+    start = _session_start(year, round_num, session_type)
+    if start is None:
+        return None
+    body = await _get("PAGE/SEARCH/VOD/F1_TV_Pro_Annual/14", _token(), params={
+        "filter_objectSubtype": "Replay",
+        "filter_season": str(year),
+        "filter_Meeting_Number": str(round_num),
+    })
+    best: tuple[tuple[bool, float], dict] | None = None
+    for c in (body.get("resultObj") or {}).get("containers") or []:
+        meta = c.get("metadata") or {}
+        emf = meta.get("emfAttributes") or {}
+        if emf.get("Series") != "FORMULA 1" or not emf.get("sessionStartDate"):
+            continue
+        gap = abs(float(emf["sessionStartDate"]) / 1000 - start)
+        if gap > 3 * 3600:
+            continue
+        # The session itself has onboards; the shows around it don't
+        rank = (not emf.get("OBC"), gap)
+        if best is None or rank < best[0]:
+            best = (rank, {"content_id": str(meta.get("contentId")), "title": meta.get("title")})
+    return best[1] if best else None
+
+
 def _register(manifest_url: str, license_url: str | None) -> str:
     now = time.time()
     for pid in [p for p, pb in _playbacks.items() if now - pb.created > _PLAYBACK_TTL]:

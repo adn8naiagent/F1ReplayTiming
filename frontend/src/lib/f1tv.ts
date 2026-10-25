@@ -78,6 +78,9 @@ export const f1tv = {
   signInToken: (token: string) => request<F1TVStatus>("POST", "/sign-in", { token }),
   signOut: () => request<F1TVStatus>("DELETE", "/sign-in"),
   content: (q: string) => request<F1TVContent>("GET", `/content?q=${encodeURIComponent(q)}`),
+  /** The F1 TV replay of a session, found from the round and session start */
+  find: (year: number, round: number, type: string) =>
+    request<{ content_id: string; title: string | null }>("GET", `/find?year=${year}&round=${round}&type=${type}`),
   play: (content: string, channelId: string | null) =>
     request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId }),
 };

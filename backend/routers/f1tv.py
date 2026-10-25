@@ -28,6 +28,18 @@ def _error(e: f1tv_video.F1TVError) -> JSONResponse:
     return JSONResponse(status_code=status, content={"detail": str(e), "f1tv_status": e.status, "f1tv_body": e.body})
 
 
+@router.get("/find")
+async def find(year: int, round: int, type: str):
+    """The F1 TV replay of a session, so Broadcast can open it without a link."""
+    try:
+        found = await f1tv_video.find_replay(year, round, type)
+    except f1tv_video.F1TVError as e:
+        raise HTTPException(status_code=e.status or 502, detail=str(e))
+    if not found:
+        raise HTTPException(status_code=404, detail="No F1 TV replay found for this session yet")
+    return found
+
+
 @router.get("/content")
 async def content(q: str):
     try:

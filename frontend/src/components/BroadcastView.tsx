@@ -41,6 +41,10 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
+  // Finding this session on F1 TV automatically; the link box is the fallback
+  const [finding, setFinding] = useState<"searching" | "not_found" | null>(null);
+  const [findError, setFindError] = useState<string | null>(null);
+  const [manual, setManual] = useState(false);
   const [content, setContent] = useState<F1TVContent | null>(null);
   const [contentError, setContentError] = useState<string | null>(null);
 
@@ -65,6 +69,27 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   const onboardDrift = useVideoSync(onboardRef, onboard.state === "ready", clock, playing, speed, onboardOffset);
 
   useEffect(() => writeJson("f1tv_stream_opts", opts), [opts]);
+
+  // No saved link: find this session's replay on F1 TV.
+  useEffect(() => {
+    if (link || manual) return;
+    const [year, round, type] = sessionKey.split("_");
+    let cancelled = false;
+    setFinding("searching");
+    f1tv.find(Number(year), Number(round), type)
+      .then((found) => {
+        if (cancelled) return;
+        setFinding(null);
+        setLink(found.content_id);
+        writeJson(linkKey, found.content_id);
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setFinding("not_found");
+        setFindError(e.message);
+      });
+    return () => { cancelled = true; };
+  }, [link, manual, sessionKey, linkKey]);
 
   // Look up the feeds for the saved link.
   useEffect(() => {
@@ -154,11 +179,22 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  if (!link && finding === "searching") {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-black">
+        <p className="text-xs text-f1-muted">Finding this session on F1 TV…</p>
+      </div>
+    );
+  }
+
   if (!link) {
     return (
       <div className="w-full h-full flex items-center justify-center bg-black">
         <div className="max-w-md w-full px-6 space-y-3">
           <p className="text-sm text-white font-bold">Watch the F1 TV broadcast</p>
+          {finding === "not_found" && !manual && (
+            <p className="text-xs text-yellow-400 leading-relaxed">{findError}</p>
+          )}
           <p className="text-xs text-f1-muted leading-relaxed">
             Open this session on f1tv.formula1.com and paste the link from the address bar.
           </p>
@@ -272,6 +308,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
           <button onClick={() => setShowDebug((v) => !v)} className={btnClass}>Debug</button>
           <button
             onClick={() => {
+              setManual(true);
               setLink("");
               setContent(null);
               writeJson(linkKey, null);
