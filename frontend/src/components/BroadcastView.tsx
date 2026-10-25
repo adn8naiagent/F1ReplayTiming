@@ -96,7 +96,9 @@ type Source = string;
 const BROADCAST = "broadcast";
 // Multi-view's views: slot 0 is the main view, then up to four more
 const SLOT_COUNT = 5;
-type Layout = "focus" | "grid";
+type Layout = "focus" | "strip" | "pair" | "quad" | "grid";
+// How many views each layout shows
+const VIEW_COUNT: Record<"single" | Layout, number> = { single: 1, pair: 2, focus: 3, quad: 4, strip: 5, grid: 5 };
 
 // Multi-view's choices for sessions opened on this page, so they survive
 // switching to the track map and back, but not opening a session
@@ -122,12 +124,17 @@ const PICKER_H = 30;
 /** Where each view goes. Single view: the main view fills it. Main + 2: the
  *  main view on the left; a column on the right with two views (16:9 at the
  *  column's width, shrinking when they and the map don't fit), then the map.
- *  Grid: three across and two down, the map in the bottom-right. Empty slots
+ *  Main + 4: the main view across the top; four views and the map in a
+ *  strip along the bottom. Side by side: two views, the map below. 2×2: four
+ *  views, the map over the middle. Grid: three across and two down, the map
+ *  in the bottom-right. Empty slots
  *  get a placeholder with a picker (the column's second, just its picker). */
 function layoutViews(mode: "single" | Layout, w: number, h: number, share: number, visible: (Source | null)[], showMap: boolean) {
   const rects: (Rect | null)[] = visible.map(() => null);
   const empty: { slot: number; rect: Rect; compact?: boolean }[] = [];
   let map: Rect | null = null;
+  // Main + 4: where the main view ends (race control sits above the strip)
+  let mainBottom: number | null = null;
   const put = (slot: number, rect: Rect) => {
     if (visible[slot]) rects[slot] = rect;
     else empty.push({ slot, rect });
@@ -158,6 +165,33 @@ function layoutViews(mode: "single" | Layout, w: number, h: number, share: numbe
       }
     }
     if (showMap) map = { x: colX, y, w: colW, h: mapH };
+  } else if (mode === "strip") {
+    const cellW = Math.max(0, (w - 2 * EDGE - 4 * GAP) / 5);
+    const cellH = (cellW * 9) / 16;
+    const stripY = h - EDGE - cellH;
+    mainBottom = stripY - GAP;
+    put(0, { x: 0, y: 0, w, h: mainBottom });
+    for (let i = 1; i < SLOT_COUNT; i++) put(i, { x: EDGE + (i - 1) * (cellW + GAP), y: stripY, w: cellW, h: cellH });
+    if (showMap) map = { x: EDGE + 4 * (cellW + GAP), y: stripY, w: cellW, h: cellH };
+  } else if (mode === "pair") {
+    // The map keeps at least this much height below
+    const mapMin = showMap ? 160 + GAP : 0;
+    const tileW = Math.max(0, Math.min((w - 2 * EDGE - GAP) / 2, ((h - TOP - EDGE - mapMin) * 16) / 9));
+    const tileH = (tileW * 9) / 16;
+    const x = (w - 2 * tileW - GAP) / 2;
+    // Centred in the height when there's no map
+    const y = showMap ? TOP : TOP + (h - TOP - EDGE - tileH) / 2;
+    put(0, { x, y, w: tileW, h: tileH });
+    put(1, { x: x + tileW + GAP, y, w: tileW, h: tileH });
+    if (showMap) map = { x: EDGE, y: y + tileH + GAP, w: w - 2 * EDGE, h: h - y - tileH - GAP - EDGE };
+  } else if (mode === "quad") {
+    const tileW = Math.max(0, Math.min((w - 2 * EDGE - GAP) / 2, (((h - TOP - EDGE - GAP) / 2) * 16) / 9));
+    const tileH = (tileW * 9) / 16;
+    const x = (w - 2 * tileW - GAP) / 2;
+    for (let i = 0; i < 4; i++) put(i, { x: x + (i % 2) * (tileW + GAP), y: TOP + Math.floor(i / 2) * (tileH + GAP), w: tileW, h: tileH });
+    // Just the track lines, over where the four meet
+    const size = tileH * 0.7;
+    if (showMap) map = { x: w / 2 - size / 2, y: TOP + tileH + GAP / 2 - size / 2, w: size, h: size };
   } else {
     const cellW = (w - 2 * EDGE - 2 * GAP) / 3;
     const cellH = (h - TOP - EDGE - GAP) / 2;
@@ -170,7 +204,7 @@ function layoutViews(mode: "single" | Layout, w: number, h: number, share: numbe
     }
     if (showMap) map = { ...cell(5), w: cellW, h: cellH };
   }
-  return { rects, empty, map };
+  return { rects, empty, map, mainBottom };
 }
 
 // Multi-view's side panel, as a share of the width
@@ -383,6 +417,11 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             tone: "rough",
           }
         : null;
+  // Fine-tuning keeps how it was synced, and says by how much
+  if (syncMethod && !aligning && manualOffset === null && mainNudge !== 0) {
+    syncMethod.label += ` · fine-tuned ${mainNudge > 0 ? "+" : ""}${mainNudge}s`;
+    syncMethod.hint += " Then fine-tuned by hand.";
+  }
 
   const clock = useReplayClock(timestamp, playing, speed);
   const mainDrift = useVideoSync(mainRef, main.state === "ready", clock, playing, speed, mainOffset);
@@ -474,7 +513,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   // What each view shows: only what this session has (the broadcast, or an
   // onboard F1 TV lists), in the slots this layout has room for
   const visible = slots
-    .slice(0, mode === "single" ? 1 : mode === "focus" ? 3 : SLOT_COUNT)
+    .slice(0, VIEW_COUNT[mode])
     .map((s) => (s === BROADCAST || channelOf(s) ? s : null));
   const shownCount = visible.filter(Boolean).length;
   const audible = audioPick && visible.includes(audioPick) ? audioPick : visible[0];
@@ -626,7 +665,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     onSwap: slot > 0 ? () => assign(0, source) : undefined,
     onClose: slot > 0 ? () => assign(slot, null) : undefined,
     controlsShown,
-    clearOfPageButtons: mode === "single",
+    clearOfPageButtons: slot === 0 && (mode === "single" || mode === "strip"),
   });
   const pickerFor = (slot: number, placeholder: string) => (
     <SourcePicker
@@ -734,7 +773,10 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       ))}
 
       {raceControl && (
-        <div className="absolute bottom-3 left-0 z-20 flex justify-center pointer-events-none" style={{ width: mainWidth }}>
+        <div
+          className="absolute bottom-3 left-0 z-20 flex justify-center pointer-events-none"
+          style={views.mainBottom !== null ? { width: mainWidth, bottom: size.h - views.mainBottom + 12 } : { width: mainWidth }}
+        >
           <RaceControlTicker message={raceControl} />
         </div>
       )}
@@ -796,6 +838,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             <div className="flex rounded border border-f1-border overflow-hidden">
               {([
                 ["focus", "Main view, with two smaller views and the track map beside it"],
+                ["strip", "Main view, with four smaller views and the track map along the bottom"],
+                ["pair", "Two views side by side, with the track map below"],
+                ["quad", "Four views in a square, with the track map in the middle"],
                 ["grid", "Grid: five views and the track map, all the same size"],
               ] as const).map(([value, title]) => (
                 <button
@@ -807,7 +852,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
                     layout === value ? "bg-white text-black" : "bg-f1-card/90 text-f1-muted hover:text-white"
                   }`}
                 >
-                  <LayoutIcon layout={value} />
+                  <LayoutIcon layout={value} active={layout === value} />
                 </button>
               ))}
             </div>
@@ -1108,9 +1153,15 @@ function ViewButtons({ audible, audioTitle, onAudio, onSwap, onClose, controlsSh
 }
 
 /** A layout drawn as boxes: the views filled, the track map outlined. */
-function LayoutIcon({ layout }: { layout: Layout }) {
-  const map = (x: number, y: number, w: number, h: number) => (
-    <rect x={x + 0.5} y={y + 0.5} width={w - 1} height={h - 1} rx={0.8} fill="none" stroke="currentColor" strokeWidth={1} />
+function LayoutIcon({ layout, active }: { layout: Layout; active: boolean }) {
+  // Over the views (2×2), the map is cut out in the button's colour
+  const map = (x: number, y: number, w: number, h: number, over = false) => (
+    <rect
+      x={x + 0.5} y={y + 0.5} width={w - 1} height={h - 1} rx={0.8}
+      className={over ? (active ? "fill-white" : "fill-f1-card") : undefined}
+      fill={over ? undefined : "none"}
+      stroke="currentColor" strokeWidth={1}
+    />
   );
   return (
     <svg width="27" height="15" viewBox="0 0 27 15" fill="currentColor" aria-hidden>
@@ -1120,6 +1171,27 @@ function LayoutIcon({ layout }: { layout: Layout }) {
           <rect x={19.5} y={0} width={7.5} height={4.2} rx={0.8} />
           <rect x={19.5} y={5.2} width={7.5} height={4.2} rx={0.8} />
           {map(19.5, 10.4, 7.5, 4.6)}
+        </>
+      ) : layout === "strip" ? (
+        <>
+          <rect x={0} y={0} width={27} height={10.5} rx={1} />
+          {[0, 1, 2, 3].map((i) => (
+            <rect key={i} x={i * 5.6} y={11.5} width={4.8} height={3.5} rx={0.6} />
+          ))}
+          {map(22.4, 11.5, 4.6, 3.5)}
+        </>
+      ) : layout === "pair" ? (
+        <>
+          <rect x={0} y={0} width={13} height={8} rx={0.8} />
+          <rect x={14} y={0} width={13} height={8} rx={0.8} />
+          {map(8.5, 9, 10, 6)}
+        </>
+      ) : layout === "quad" ? (
+        <>
+          {[0, 1, 2, 3].map((i) => (
+            <rect key={i} x={(i % 2) * 14} y={Math.floor(i / 2) * 8} width={13} height={7} rx={0.8} />
+          ))}
+          {map(10.5, 4.5, 6, 6, true)}
         </>
       ) : (
         <>
