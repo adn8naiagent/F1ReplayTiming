@@ -33,6 +33,8 @@ from services import caption_ai, caption_settings, whisper_models
 logger = logging.getLogger(__name__)
 
 STATIC_URL = "https://livetiming.formula1.com/static/"
+# Whisper captions at least this long are kept when the AI step says no one speaks
+MIN_WORDS_OVER_AI = 4
 # Stored clips' file names, e.g. VER_3_20261024_155650.mp3
 AUDIO_NAME = re.compile(r"[A-Za-z0-9_.-]+\.mp3")
 
@@ -168,10 +170,13 @@ def _is_prompt_echo(text: str, prompt: str) -> bool:
 
 def transcribe(
     audio: bytes, first_name: str | None = None, year: int | None = None, live: bool = False,
+    lenient: bool = False,
 ) -> str | None:
     """Whisper's caption for one clip. None if Whisper isn't available or
     nothing was said. year picks the season's vocabulary; live picks the
-    live timing model."""
+    live timing model. lenient turns off the silence filters, which can
+    drop quiet or noisy speech, but then Whisper also makes things up on
+    silence: only for a draft the AI step checks against the audio."""
     if not whisper_available():
         return None
     prompt = _prompt(first_name, year)
@@ -181,9 +186,9 @@ def transcribe(
             # The VAD filter skips silence, where Whisper otherwise makes
             # things up (often repeating the prompt).
             segments, _info = model.transcribe(
-                io.BytesIO(audio), language="en", beam_size=5, initial_prompt=prompt, vad_filter=True,
+                io.BytesIO(audio), language="en", beam_size=5, initial_prompt=prompt, vad_filter=not lenient,
             )
-            text = " ".join(s.text.strip() for s in segments if s.no_speech_prob < 0.6).strip()
+            text = " ".join(s.text.strip() for s in segments if lenient or s.no_speech_prob < 0.6).strip()
     except Exception as e:
         logger.warning(f"Team radio transcription failed: {e}")
         return None
@@ -206,8 +211,16 @@ def caption(
         return None
     text = transcribe(audio, first_name, year, live)
     if caption_settings.ai_enabled():
-        ok, refined = caption_ai.refine(audio, text, {**(context or {}), "year": year})
+        # Whisper's filters can drop real speech on noisy radio: give the AI
+        # step an unfiltered draft to check against the audio instead
+        draft = text or transcribe(audio, first_name, year, live, lenient=True)
+        ok, refined = caption_ai.refine(audio, draft, {**(context or {}), "year": year})
         if ok:
+            # The AI step sometimes hears no one where Whisper (with its
+            # filters on) heard several words: keep Whisper's then
+            if refined is None and text and len(text.split()) >= MIN_WORDS_OVER_AI:
+                logger.info("AI step heard no speech; keeping Whisper's caption")
+                return text
             return refined
     return text
 

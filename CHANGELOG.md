@@ -22,6 +22,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Exit in the replay header** — back to the home page, as in live timing.
 
+- **Fewer missing team radio captions** — with **Improve captions with AI** on, a clip where Whisper heard several words keeps Whisper's caption if the AI model decides no one speaks, and a clip where Whisper heard nothing (its silence filters can drop noisy radio) gets a second, unfiltered Whisper attempt for the AI model to check against the audio. Applies to sessions processed from now on, and to live timing.
+
 ### Fixes
 
 - **Clearer message when F1 blocks a VPN or cloud server** — when F1 refuses a download or live timing (HTTP 403), the message now says F1 blocks most VPNs and cloud servers and what to do: turn the VPN off, or process the session on another computer. The README has a new [VPNs and cloud servers](README.md#vpns-and-cloud-servers) section.
