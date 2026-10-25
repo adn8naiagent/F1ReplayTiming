@@ -81,6 +81,10 @@ function isOnboard(c: F1TVChannel) {
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
 
+// Multi-view's onboard choices for sessions opened on this page, so they
+// survive switching to the track map and back, but not opening a session
+const onboardsThisPage = new Map<string, [string | null, string | null]>();
+
 // Multi-view's side panel, as a share of the width
 const SIDE_MAX = 0.3;
 // A side slot showing F1 TV's default feed (International), which has no channel id
@@ -119,9 +123,10 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     telemetrySetting.current = showTelemetry;
     setTelemetryOn(() => [showTelemetry, showTelemetry]);
   }, [showTelemetry]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Multi-view's two onboards, picked by driver (remembered across sessions)
-  const [onboardDrivers, setOnboardDriversState] = useState<[string | null, string | null]>(() =>
-    readJson("f1tv_onboard_drivers", [null, null]),
+  // Multi-view's two onboards. Every session opens with none; switching to
+  // the track map and back keeps them.
+  const [onboardDrivers, setOnboardDriversState] = useState<[string | null, string | null]>(
+    () => onboardsThisPage.get(sessionKey) ?? [null, null],
   );
   const setOnboardDriver = (slot: 0 | 1, number: string | null) => {
     setOnboardDriversState((prev) => {
@@ -129,7 +134,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       next[slot] = number;
       // Closing the first moves the second up
       if (!next[0] && next[1]) next.reverse();
-      writeJson("f1tv_onboard_drivers", next);
+      onboardsThisPage.set(sessionKey, next);
       return next;
     });
   };
