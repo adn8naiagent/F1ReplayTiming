@@ -215,7 +215,8 @@ async def find_live(year: int, round_num: int, session_type: str) -> dict[str, A
         nonlocal best
         if isinstance(o, dict):
             meta = o.get("metadata")
-            if isinstance(meta, dict) and (meta.get("contentSubtype") or "").upper() == "LIVE_EVENT":
+            # LIVE_EVENT before it starts, LIVE once it's on
+            if isinstance(meta, dict) and (meta.get("contentSubtype") or "").upper() in ("LIVE_EVENT", "LIVE"):
                 emf = meta.get("emfAttributes") or {}
                 if (emf.get("Series") == "FORMULA 1" and str(emf.get("Meeting_Number")) == str(round_num)
                         and emf.get("sessionStartDate")):

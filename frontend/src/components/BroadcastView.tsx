@@ -461,10 +461,15 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
     f1tv.content(link).then(setContent).catch((e) => {
       setContent(null);
-      // F1 TV only has a live stream's details once it's live: keep trying
+      // F1 TV only has a live stream's details once it's live: look the
+      // session up again in 30 seconds (the stream F1 TV lists can change as
+      // it goes live)
       if (live) {
         setContentError("Waiting for F1 TV's live stream to start. Checking every 30 seconds.");
-        retryTimer = setTimeout(() => setFindAttempt((n) => n + 1), 30_000);
+        retryTimer = setTimeout(() => {
+          writeJson(linkKey, null);
+          setLink("");
+        }, 30_000);
       } else {
         setContentError(e.message);
       }

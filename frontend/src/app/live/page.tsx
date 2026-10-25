@@ -823,24 +823,6 @@ function LiveTiming() {
                 </div>
               )}
 
-              {/* Fullscreen toggle - bottom-right */}
-              {!isMobile && (
-                <button
-                  onClick={() => {
-                    const next = !fullscreen;
-                    setFullscreen(next);
-                    if (next && document.documentElement.requestFullscreen) {
-                      document.documentElement.requestFullscreen();
-                    } else if (!next && document.fullscreenElement) {
-                      document.exitFullscreen();
-                    }
-                  }}
-                  className="absolute bottom-3 right-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
-                  title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-                >
-                  {fullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -1232,6 +1214,24 @@ function LiveTiming() {
                   <rect x="12" y="10" width="10" height="10" rx="1" fill="currentColor" opacity="0.3" />
                 </svg>
                 PiP
+              </button>
+            )}
+            {/* Fullscreen, far right (as in replays) */}
+            {!isMobile && (
+              <button
+                onClick={() => {
+                  const next = !fullscreen;
+                  setFullscreen(next);
+                  if (next && document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen();
+                  } else if (!next && document.fullscreenElement) {
+                    document.exitFullscreen();
+                  }
+                }}
+                className="px-3 py-1.5 rounded border border-f1-border text-f1-muted hover:text-white hover:bg-white/10 transition-colors text-xs font-bold"
+                title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+              >
+                {fullscreen ? <Minimize className="w-4 h-4 inline-block -mt-0.5" /> : <Maximize className="w-4 h-4 inline-block -mt-0.5" />}
               </button>
             )}
           </div>
