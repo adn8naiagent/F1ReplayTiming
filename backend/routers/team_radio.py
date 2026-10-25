@@ -51,7 +51,7 @@ async def caption_settings_put(body: CaptionSettingsUpdate):
     if "live_whisper_model" in sent:
         kwargs["live_whisper"] = sent["live_whisper_model"]
     try:
-        return await asyncio.to_thread(
+        result = await asyncio.to_thread(
             caption_settings.save,
             whisper=sent.get("whisper_model"),
             ai_on=sent.get("ai_enabled"),
@@ -60,3 +60,6 @@ async def caption_settings_put(body: CaptionSettingsUpdate):
         )
     except caption_settings.CaptionSettingsError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    # Start downloading a newly chosen model now, not at the next clip
+    await asyncio.to_thread(caption_settings.download_selected)
+    return await asyncio.to_thread(caption_settings.describe)

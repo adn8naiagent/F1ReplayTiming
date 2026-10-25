@@ -24,12 +24,11 @@ import re
 import threading
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 import requests
 
-from services import caption_ai, caption_settings
+from services import caption_ai, caption_settings, whisper_models
 
 logger = logging.getLogger(__name__)
 
@@ -61,20 +60,25 @@ def whisper_available() -> bool:
     return True
 
 
-def _model_dir() -> Path:
-    data_dir = Path(os.environ.get("DATA_DIR", os.path.join(os.path.dirname(__file__), "..", "data")))
-    return data_dir / "whisper"
-
-
 def _get_model(live: bool = False):
     # Read each time, so a model chosen in the app is used from the next clip
     name = caption_settings.whisper_model(live)
+    if not whisper_models.is_downloaded(name):
+        # Keep captioning with a model that's already here while the chosen
+        # one downloads in the background; with none here, load (and
+        # download) it now, as on first use.
+        here = next(iter(_models), None) or next(
+            (m["id"] for m in caption_settings.WHISPER_MODELS if whisper_models.is_downloaded(m["id"])), None,
+        )
+        if here:
+            whisper_models.ensure(name)
+            name = here
     with _model_lock:
         if name not in _models:
             from faster_whisper import WhisperModel
 
             logger.info(f"Loading Whisper model {name} (downloads on first use)")
-            _models[name] = WhisperModel(name, device="cpu", compute_type="int8", download_root=str(_model_dir()))
+            _models[name] = WhisperModel(name, device="cpu", compute_type="int8", download_root=str(whisper_models.model_dir()))
         return _models[name]
 
 
