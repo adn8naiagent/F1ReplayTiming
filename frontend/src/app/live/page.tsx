@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApi } from "@/hooks/useApi";
 import { useLiveSocket } from "@/hooks/useLiveSocket";
@@ -9,11 +9,15 @@ import { apiFetch } from "@/lib/api";
 import { useAppConfig } from "@/lib/config";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
-import type { SectorOverlay } from "@/lib/trackRenderer";
+import type { SectorOverlay, SegmentOverlay } from "@/lib/trackRenderer";
+import { buildLapData } from "@/lib/lapTiming";
+import LapNotifications from "@/components/LapNotifications";
+import LapAnalysisPanel from "@/components/LapAnalysisPanel";
+import SessionLapAnalysis from "@/components/SessionLapAnalysis";
 import TeamRadio from "@/components/TeamRadio";
 import TelemetryChart from "@/components/TelemetryChart";
 import Leaderboard from "@/components/Leaderboard";
-import { miniMarkersWidth } from "@/lib/miniSectors";
+import { miniMarkersWidth, MINI_HEX } from "@/lib/miniSectors";
 import PiPWindow from "@/components/PiPWindow";
 import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
 
@@ -96,6 +100,8 @@ function LiveTiming() {
   const [isMobile, setIsMobile] = useState(false);
   const [mobileTrackOpen, setMobileTrackOpen] = useState(true);
   const [mobileLeaderboardOpen, setMobileLeaderboardOpen] = useState(true);
+  const [lapAnalysisOpen, setLapAnalysisOpen] = useState(false);
+  const [mobileLapAnalysisOpen, setMobileLapAnalysisOpen] = useState(false);
   const [mobileRcOpen, setMobileRcOpen] = useState(true);
   const [leaderboardScale, setLeaderboardScale] = useState(1);
   const [delayOffset, setDelayOffset] = useState(() => {
@@ -232,6 +238,29 @@ function LiveTiming() {
     lastRcCountRef.current = msgs.length;
   }, [live.rcMessages?.length, settings.rcSound]);
 
+  // Lap history, built up live (services/live_laps.py). Its times are on the
+  // frames' clock; Lap Analysis wants seconds into the session (its practice
+  // chart counts minutes), so shift both by when the session started, or by
+  // the first frame if live timing connected after the start.
+  const firstFrameTs = useRef<number | null>(null);
+  if (live.frame && firstFrameTs.current === null) firstFrameTs.current = live.frame.timestamp;
+  const lapBase = live.sessionStart ?? firstFrameTs.current ?? 0;
+  const liveLaps = useMemo(
+    () => live.laps?.map((l) => ({
+      ...l,
+      time: l.time != null ? l.time - lapBase : null,
+      s1_end: l.s1_end != null ? l.s1_end - lapBase : null,
+      s2_end: l.s2_end != null ? l.s2_end - lapBase : null,
+    })) ?? null,
+    [live.laps, lapBase],
+  );
+  const liveQualiPhases = useMemo(
+    () => live.qualiPhases.map((p) => ({ ...p, timestamp: p.timestamp - lapBase })),
+    [live.qualiPhases, lapBase],
+  );
+  const lapData = useMemo(() => (liveLaps ? buildLapData(liveLaps) : undefined), [liveLaps]);
+  const lapTime = (live.frame?.timestamp ?? 0) - lapBase;
+
   // Show loading only while the WebSocket is connecting
   if (live.loading) {
     return (
@@ -284,8 +313,23 @@ function LiveTiming() {
     const hex = (n: number) => SECTOR_HEX[sectors?.find((s) => s.num === n)?.color ?? ""] ?? DEFAULT_SECTOR;
     return { boundaries: trackData.sector_boundaries, colors: { s1: hex(1), s2: hex(2), s3: hex(3) } };
   })();
+  // Mini-sectors on the map: the focused driver's, once the server has
+  // worked out where each one is on track (after a lap or two)
+  const miniEnds = live.frame?.mini_sector_ends;
+  const miniOverlay: SegmentOverlay | null = (() => {
+    if (!sectorOverlay || isMobile || !settings.showMiniSectors || !miniEnds || !sectorFocusDriver) return null;
+    const states = drivers.find((d) => d.abbr === sectorFocusDriver)?.mini_sectors;
+    if (!states) return null;
+    const segments: SegmentOverlay["segments"] = [];
+    miniEnds.forEach((end, i) => {
+      const color = MINI_HEX[states[i]];
+      if (color) segments.push({ from: i === 0 ? 0 : miniEnds[i - 1], to: end, color });
+    });
+    return { segments };
+  })();
   const trackExtras = {
     sectorOverlay,
+    segmentOverlay: miniOverlay,
     marshalSectors: trackData?.marshal_sectors,
     sectorFlags: live.frame?.sector_flags,
     showElevation: settings.showElevation,
@@ -528,6 +572,35 @@ function LiveTiming() {
                 </div>
               )}
 
+              {/* Qualifying lap-completion bubbles */}
+              <LapNotifications
+                enabled={settings.showLapNotifications}
+                showSectorTimes={settings.showLapNotificationSectors}
+                isQualifying={isQualifying}
+                isRace={isRace}
+                lapData={lapData}
+                currentTime={lapTime}
+                currentLap={live.frame?.lap || 0}
+                drivers={drivers}
+              />
+
+              {/* Lap Analysis button - desktop only, bottom-right */}
+              {!isMobile && liveLaps && (
+                <button
+                  onClick={() => setLapAnalysisOpen(!lapAnalysisOpen)}
+                  className={`absolute bottom-2 right-3 z-20 flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
+                    lapAnalysisOpen
+                      ? "bg-f1-red text-white"
+                      : "bg-f1-card/90 border border-f1-border text-f1-muted hover:text-white backdrop-blur-sm"
+                  }`}
+                >
+                  <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  Laps
+                </button>
+              )}
+
               <TeamRadio
                 enabled={settings.showTeamRadio}
                 audio={!settings.teamRadioMuted}
@@ -598,7 +671,7 @@ function LiveTiming() {
 
               {/* Sector overlay controls - qualifying and practice */}
               {hasSectors && trackData?.sector_boundaries && (
-                <div className={`absolute bottom-2 z-20 flex items-center gap-1 ${isMobile ? "left-2 right-2" : "right-3"}`}>
+                <div className={`absolute bottom-2 z-20 flex items-center gap-1 ${isMobile ? "left-2 right-2" : liveLaps ? "right-24" : "right-3"}`}>
                   {showSectorOverlay && selectedDrivers.length === 0 && (
                     <span className="text-[10px] text-f1-muted mr-1">Select a driver to view sectors</span>
                   )}
@@ -622,6 +695,24 @@ function LiveTiming() {
                           </button>
                         );
                       })}
+                    </div>
+                  )}
+                  {showSectorOverlay && !isMobile && (
+                    <div
+                      className="flex items-center rounded border border-f1-border bg-f1-card overflow-hidden"
+                      title={settings.showMiniSectors && !miniEnds ? "Mini-sectors show on the map once each has been passed a few times, usually within a lap or two" : undefined}
+                    >
+                      {([false, true] as const).map((mini) => (
+                        <button
+                          key={String(mini)}
+                          onClick={() => updateSetting("showMiniSectors", mini)}
+                          className={`px-2 py-1 text-[10px] font-bold transition-colors ${
+                            settings.showMiniSectors === mini ? "bg-purple-500/20 text-purple-300" : "text-f1-muted hover:text-white"
+                          }`}
+                        >
+                          {mini ? "Mini-sectors" : "Sectors"}
+                        </button>
+                      ))}
                     </div>
                   )}
                   <button
@@ -695,7 +786,31 @@ function LiveTiming() {
 
         {/* Leaderboard section */}
         {settings.showLeaderboard && (
-          <div className={`flex-shrink-0 ${isMobile ? "" : "border-l"} border-f1-border`} style={{ width: isMobile ? "100%" : Math.ceil(leaderboardWidth * leaderboardScale) }}>
+          <div className={`${lapAnalysisOpen ? "flex-shrink" : "flex-shrink-0"} flex ${isMobile ? "" : "border-l"} border-f1-border overflow-hidden`} style={{ width: isMobile ? "100%" : undefined }}>
+            {/* Lap Analysis panel - desktop only, left of the leaderboard */}
+            {!isMobile && lapAnalysisOpen && liveLaps && (
+              <div className={`${isRace ? "w-[280px]" : "w-[380px]"} h-full border-r border-f1-border overflow-hidden flex-shrink-0`}>
+                {isRace ? (
+                  <LapAnalysisPanel laps={liveLaps} drivers={drivers} currentLap={Math.max(0, (live.frame?.lap || 0) - 1)} onClose={() => setLapAnalysisOpen(false)} />
+                ) : (
+                  <SessionLapAnalysis
+                    laps={liveLaps}
+                    drivers={drivers}
+                    currentTime={lapTime}
+                    currentLap={live.frame?.lap || 0}
+                    lapData={lapData}
+                    qualiPhases={liveQualiPhases}
+                    isQualifying={isQualifying}
+                    year={year}
+                    round={round}
+                    sessionType={sessionType}
+                    onClose={() => setLapAnalysisOpen(false)}
+                    compare={false}
+                  />
+                )}
+              </div>
+            )}
+          <div className="flex-shrink-0" style={{ width: isMobile ? "100%" : Math.ceil(leaderboardWidth * leaderboardScale) }}>
             {/* Mobile section header */}
             {isMobile && (
               <button
@@ -721,6 +836,43 @@ function LiveTiming() {
                 onScaleChange={setLeaderboardScale}
                 miniSectors={miniSectors}
               />
+            )}
+          </div>
+          </div>
+        )}
+
+        {/* Lap Analysis section - mobile only, below the leaderboard */}
+        {isMobile && liveLaps && (
+          <div className="sm:hidden border-t border-f1-border">
+            <button
+              onClick={() => setMobileLapAnalysisOpen(!mobileLapAnalysisOpen)}
+              className="w-full flex items-center justify-between px-3 py-3 bg-f1-card border-b border-f1-border min-h-[44px]"
+            >
+              <span className="text-[11px] font-bold text-f1-muted uppercase tracking-wider">Lap Analysis</span>
+              <svg className={`w-4 h-4 text-f1-muted transition-transform ${mobileLapAnalysisOpen ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {mobileLapAnalysisOpen && (
+              <div className="bg-f1-card max-h-[60vh] overflow-y-auto">
+                {isRace ? (
+                  <LapAnalysisPanel laps={liveLaps} drivers={drivers} currentLap={Math.max(0, (live.frame?.lap || 0) - 1)} />
+                ) : (
+                  <SessionLapAnalysis
+                    laps={liveLaps}
+                    drivers={drivers}
+                    currentTime={lapTime}
+                    currentLap={live.frame?.lap || 0}
+                    lapData={lapData}
+                    qualiPhases={liveQualiPhases}
+                    isQualifying={isQualifying}
+                    year={year}
+                    round={round}
+                    sessionType={sessionType}
+                    compare={false}
+                  />
+                )}
+              </div>
             )}
           </div>
         )}

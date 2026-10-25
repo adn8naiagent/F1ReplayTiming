@@ -51,6 +51,8 @@ interface Props {
   /** Shows track dominance on the main track map (desktop) */
   onDominanceChange?: (overlay: DominanceOverlay | null) => void;
   onClose?: () => void;
+  /** The Compare tab; off in live timing, which has no lap telemetry to compare */
+  compare?: boolean;
 }
 
 const SECOND_DRIVER_COLOR = "#06B6D4"; // cyan, when both drivers' team colours are too alike
@@ -85,14 +87,15 @@ type Tab = "sectors" | "compare";
 
 export default function SessionLapAnalysis({
   laps, drivers, currentTime, currentLap, lapData, qualiPhases, isQualifying,
-  year, round, sessionType, trackPoints, corners, onDominanceChange, onClose,
+  year, round, sessionType, trackPoints, corners, onDominanceChange, onClose, compare: compareTab = true,
 }: Props) {
   // The desktop panel has a Hide button; the mobile section doesn't. Lap
   // traces and track dominance are desktop only.
   const desktop = !!onClose;
-  const [tab, setTab] = useState<Tab>(() => {
+  const [savedTab, setTab] = useState<Tab>(() => {
     try { return localStorage.getItem("f1replay_lap_tab") === "compare" ? "compare" : "sectors"; } catch { return "sectors"; }
   });
+  const tab: Tab = compareTab ? savedTab : "sectors";
   const [driver, setDriver] = useState<string | null>(null);
   const [compare, setCompare] = useState<[string | null, string | null]>([null, null]);
   const [range, setRange] = useState<string>("All");
@@ -348,7 +351,7 @@ export default function SessionLapAnalysis({
       )}
 
       {/* Tabs */}
-      <div className="flex flex-shrink-0 border-b border-f1-border">
+      {compareTab && <div className="flex flex-shrink-0 border-b border-f1-border">
         {(["sectors", "compare"] as const).map((t) => (
           <button
             key={t}
@@ -360,7 +363,7 @@ export default function SessionLapAnalysis({
             {t === "sectors" ? "Sectors" : "Compare"}
           </button>
         ))}
-      </div>
+      </div>}
 
       <div className="flex-1 overflow-y-auto min-h-0">
         {tab === "sectors" ? (

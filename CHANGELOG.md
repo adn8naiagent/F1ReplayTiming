@@ -18,6 +18,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **More of the replay track map and leaderboard in live timing** — live timing now shows the last lap time (purple for the session's fastest, green for a personal best, as F1 colours them), yellow and red flags at their marshal sector on the track map, and track elevation. In qualifying and practice, **Show Sectors** colours the track map by a selected driver's sectors, as in replays.
 
+- **Lap Analysis, lap notifications and mini-sectors on the map in live timing** — live timing now records each lap as it's completed, with its sectors, tyre and pit stops, so the **Laps** panel works live: the lap chart and list in races, and the Sectors tab in qualifying and practice, with Q1/Q2/Q3 filtering. Laps deleted by the stewards are struck through, from race control's messages. Qualifying lap notifications, with sector times, work live too. With **Show Sectors** on, **Mini-sectors** colours the live track map once each mini-sector's position has been worked out from the cars, usually within a lap or two. Laps completed before live timing connected aren't shown, and the Compare tab stays replays only.
+
 ### Fixes
 
 - **Live timing stuck on "Waiting for session" when F1 refused the connection** — if F1 refuses the server's live timing connection (for example HTTP 403 from a blocked network such as a cloud host or VPN), the live page now says so instead of waiting, and keeps retrying. If it happens mid-session, a banner shows over the track map.

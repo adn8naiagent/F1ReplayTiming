@@ -17,7 +17,7 @@ import SyncPhoto from "@/components/SyncPhoto";
 import PiPWindow from "@/components/PiPWindow";
 import LapAnalysisPanel from "@/components/LapAnalysisPanel";
 import SessionLapAnalysis from "@/components/SessionLapAnalysis";
-import type { LapData } from "@/lib/lapTiming";
+import { buildLapData, type LapData } from "@/lib/lapTiming";
 import type { DominanceOverlay } from "@/lib/lapCompare";
 import { miniStatesAt, miniMarkersWidth, MINI_HEX, type MiniSectorData } from "@/lib/miniSectors";
 import type { SegmentOverlay } from "@/lib/trackRenderer";
@@ -221,24 +221,7 @@ export default function ReplayPage() {
   );
 
   // Build lookup: driver -> lap_number -> lap_time
-  const lapData = useMemo(() => {
-    if (!lapsResponse?.laps) return undefined;
-    const map: LapData = new Map();
-    for (const lap of lapsResponse.laps) {
-      if (!lap.lap_time) continue;
-      let driverMap = map.get(lap.driver);
-      if (!driverMap) {
-        driverMap = new Map();
-        map.set(lap.driver, driverMap);
-      }
-      driverMap.set(lap.lap_number, {
-        time: lap.lap_time,
-        completedAt: lap.time ?? null,
-        sectors: [lap.sector1 ?? null, lap.sector2 ?? null, lap.sector3 ?? null],
-      });
-    }
-    return map;
-  }, [lapsResponse]);
+  const lapData = useMemo(() => (lapsResponse?.laps ? buildLapData(lapsResponse.laps) : undefined), [lapsResponse]);
 
   // Which player: the server setting, a per-tab ?player=old|new override, or
   // the WebSocket player if the static files can't be loaded.

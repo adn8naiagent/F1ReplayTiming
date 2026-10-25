@@ -47,9 +47,9 @@ const AVAILABILITY: [string, string, string, string][] = [
   ["Out-lap indicator", "-", "RL", "RL"],
   ["Last lap time", "RL", "RL", "RL"],
   ["Sectors on the track map", "-", "RL", "RL"],
-  ["Lap Analysis", "R", "R", "R"],
+  ["Lap Analysis", "RL", "RL", "RL"],
   ["Track dominance", "-", "R", "R"],
-  ["Lap notifications", "-", "R", "-"],
+  ["Lap notifications", "-", "RL", "-"],
   ["Telemetry", "RL", "RL", "RL"],
   ["Track elevation, marshal sector flags", "RL", "RL", "RL"],
   ["Picture-in-picture", "RL", "RL", "RL"],
@@ -365,7 +365,7 @@ export default function FeaturesPage() {
             <p className="text-f1-text leading-relaxed">
               When a driver completes a lap, a pop-up shows their lap time, coloured purple for the
               session best or green for a personal best, with each sector&apos;s time beside its marker.
-              Turn them off, or just the sector times, in Settings &gt; Leaderboard. Replays only.
+              Turn them off, or just the sector times, in Settings &gt; Leaderboard.
             </p>
           </section>
 
@@ -519,7 +519,7 @@ export default function FeaturesPage() {
             <p className="text-f1-text leading-relaxed">
               On desktop, switch between <span className="font-bold text-white">Sectors</span> and{" "}
               <span className="font-bold text-white">Mini-sectors</span> beside the button to colour the track
-              mini-sector by mini-sector instead. The three sectors work in replays and live timing; mini-sectors on the map are replays only.
+              mini-sector by mini-sector instead. In live timing, mini-sectors appear on the map once each has been passed a few times, usually within a lap or two.
             </p>
           </section>
           </>
@@ -538,7 +538,8 @@ export default function FeaturesPage() {
             <p className="text-f1-text leading-relaxed mb-3">
               A dedicated panel for analysing driver pace. On desktop, open it via the
               &quot;Laps&quot; button on the track map &mdash; the panel slides out to the left. On mobile,
-              it appears as a collapsible section.
+              it appears as a collapsible section. In live timing, it builds up from the laps completed since
+              live timing connected; the Compare tab is replays only.
             </p>
             <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mb-2">Races</p>
             <p className="text-f1-text leading-relaxed mb-3">

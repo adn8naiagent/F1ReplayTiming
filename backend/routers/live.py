@@ -122,6 +122,16 @@ class LiveSession:
         except Exception as e:
             logger.error(f"Replayer error: {e}")
 
+    def laps_key(self) -> tuple | None:
+        """Changes whenever the lap history does."""
+        sm = self._state_manager
+        if sm is None:
+            return None
+        return (sm.laps.version, len(sm._quali_parts), sm._session_start)
+
+    def laps_message(self) -> dict | None:
+        return self._state_manager.laps_message() if self._state_manager else None
+
     def feed_error(self) -> str | None:
         """Why the connection to F1 is failing, if it is."""
         return self._signalr_client.last_error if self._signalr_client else None
@@ -377,8 +387,18 @@ async def live_websocket(
         command_task = asyncio.create_task(handle_commands())
 
         sent_error: str | None = None
+        sent_laps_key = None
         try:
             while True:
+                # Lap history: the whole list when it changes (a lap completes
+                # every few seconds at most), for Lap Analysis
+                laps_key = session.laps_key()
+                if laps_key is not None and laps_key != sent_laps_key:
+                    message = session.laps_message()
+                    if message is not None:
+                        await websocket.send_json({"type": "laps", **message})
+                    sent_laps_key = laps_key
+
                 # Tell the page when F1 refuses the connection, and when it recovers
                 error = session.feed_error()
                 if error != sent_error:

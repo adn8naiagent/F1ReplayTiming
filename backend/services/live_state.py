@@ -302,6 +302,26 @@ class LiveStateManager:
 
         # Mini-sectors per sector, from the highest segment index seen
         self._mini_counts: list[int] = [0, 0, 0]
+        # Where each mini-sector ends on track (0-1 along the lap, by
+        # distance), worked out from where cars are as each one's colour
+        # changes, as replays do after the session (services/minisectors).
+        self._mini_samples: dict[tuple[int, int], deque[float]] = {}
+        self._mini_ends: list[float] | None = None
+        self._mini_ends_at: float = 0.0  # monotonic time last worked out
+        self._track_frac: np.ndarray | None = None
+        if track_points:
+            from services.minisectors import outline_fractions
+            self._track_frac = outline_fractions(track_points)
+
+        # Each lap as it's completed, for Lap Analysis and lap notifications
+        from services.live_laps import LapRecorder
+        self.laps = LapRecorder(session_type in ("R", "S"))
+        self._timing_seen = False  # the first TimingData is F1's snapshot
+        # Live clock minus UTC, from car positions (which carry UTC). Maps
+        # F1's UTC times (qualifying parts) and positions onto the clock.
+        self._clock_offsets: deque[float] = deque(maxlen=60)
+        self._quali_parts: dict[int, tuple[float | None, float]] = {}  # part -> (UTC epoch, message ts)
+        self._session_start: float | None = None  # live clock, when the session started
 
         # Team radio (F1 TV sign-in only). Clips go out in frames once
         # captioned; "state" is "new", "captioning", "ready" or "skipped".
@@ -388,6 +408,8 @@ class LiveStateManager:
         lines = data.get("Lines")
         if not lines:
             return
+        snapshot = not self._timing_seen
+        self._timing_seen = True
         for number, updates in lines.items():
             if not isinstance(updates, dict):
                 continue
@@ -433,6 +455,8 @@ class LiveStateManager:
                 if "OverallFastest" in llt:
                     last["overall"] = bool(llt["OverallFastest"])
                 drv.last_lap = last if last["time"] else None
+                if "Value" in llt:
+                    self.laps.lap_time(str(number), llt["Value"], _ts)
 
             # Out-lap: set on pit exit, cleared once the lap is completed.
             # A lap completed in the pit lane (crossing the line on the way
@@ -440,6 +464,9 @@ class LiveStateManager:
             if "NumberOfLaps" in updates:
                 try:
                     laps_done = int(updates["NumberOfLaps"])
+                    self.laps.laps_completed(
+                        str(number), laps_done, _ts, drv.compound, drv.tyre_life, baseline=snapshot,
+                    )
                     if (drv._laps_completed is not None
                             and laps_done > drv._laps_completed
                             and not drv.in_pit):
@@ -452,12 +479,15 @@ class LiveStateManager:
                 in_pit = bool(updates["InPit"])
                 if drv.in_pit and not in_pit:
                     drv.out_lap = True
+                    self.laps.pit_out(str(number))
                 elif in_pit:
                     drv.out_lap = False
+                    self.laps.pit_in(str(number))
                 drv.in_pit = in_pit
 
             if updates.get("PitOut"):
                 drv.out_lap = True
+                self.laps.pit_out(str(number))
 
             if "Retired" in updates:
                 if updates["Retired"]:
@@ -474,8 +504,14 @@ class LiveStateManager:
                 if isinstance(sectors_raw, list):
                     sectors_raw = {str(i): v for i, v in enumerate(sectors_raw) if isinstance(v, dict)}
                 if isinstance(sectors_raw, dict):
-                    self._process_mini_sectors(drv, sectors_raw)
+                    self._process_mini_sectors(drv, sectors_raw, _ts)
                     self._process_sectors(drv, sectors_raw)
+                    for idx_str, sec in sectors_raw.items():
+                        if isinstance(sec, dict) and sec.get("Value"):
+                            try:
+                                self.laps.sector(str(number), int(idx_str), str(sec["Value"]), _ts)
+                            except (TypeError, ValueError):
+                                pass
 
             # Status / no_timing detection
             if "Status" in updates:
@@ -566,11 +602,12 @@ class LiveStateManager:
 
         drv.sectors = [existing[k] for k in sorted(existing)] if existing else None
 
-    def _process_mini_sectors(self, drv: _DriverState, sectors: dict) -> None:
+    def _process_mini_sectors(self, drv: _DriverState, sectors: dict, ts: float) -> None:
         """Mini-sector colours as F1 sends them (see services/minisectors.py
         for the statuses). F1 clears them itself at the start of each lap."""
-        from services.minisectors import _items
+        from services.minisectors import PIT_LANE, _items
 
+        changed: list[tuple[int, int]] = []
         for si, sector in sectors.items():
             if not isinstance(sector, dict):
                 continue
@@ -584,7 +621,71 @@ class LiveStateManager:
                 if not 0 <= s <= 2:
                     continue
                 self._mini_counts[s] = max(self._mini_counts[s], g + 1)
+                if status not in (0, PIT_LANE) and drv._mini.get((s, g)) != status:
+                    changed.append((s, g))
                 drv._mini[(s, g)] = status
+        # A car's position as a mini-sector changes colour marks where that
+        # mini-sector ends. A message setting many at once is a snapshot
+        # (connecting mid-session), not cars crossing them, so skip it.
+        if 0 < len(changed) <= 2:
+            frac = self._position_at(drv.racing_number, ts)
+            if frac is not None:
+                for key in changed:
+                    self._mini_samples.setdefault(key, deque(maxlen=40)).append(frac)
+
+    def _position_at(self, number: str, ts: float) -> float | None:
+        """Where a car was (0-1 along the lap, by distance) at live clock ts,
+        from its position samples. None if there's no sample close by."""
+        offset = self._clock_offset()
+        samples = self._pos_samples.get(number)
+        if offset is None or not samples or self._track_frac is None:
+            return None
+        t = ts - offset
+        prev = None
+        for sample in samples:
+            if sample[0] >= t:
+                if prev is None:
+                    chosen = sample
+                else:
+                    chosen = prev if t - prev[0] < sample[0] - t else sample
+                break
+            prev = sample
+        else:
+            chosen = prev
+        if chosen is None or abs(chosen[0] - t) > 1.0:
+            return None
+        n = len(self._track_frac)
+        return float(self._track_frac[int(round(chosen[3] * n)) % n])
+
+    def _clock_offset(self) -> float | None:
+        """Live clock minus UTC. A low percentile, since positions arrive in
+        batches and the freshest sample in each is closest to real time."""
+        if not self._clock_offsets:
+            return None
+        return float(np.percentile(np.array(self._clock_offsets), 10))
+
+    def _mini_sector_ends(self) -> list[float] | None:
+        """Where each mini-sector ends, once every one has been seen a few
+        times. Worked out again every few seconds as more cars go round."""
+        total = sum(self._mini_counts)
+        if not total:
+            return None
+        now = time.monotonic()
+        if now - self._mini_ends_at < 5.0:
+            return self._mini_ends
+        self._mini_ends_at = now
+        from services.minisectors import _circular_median
+
+        ends = []
+        for s in range(3):
+            for g in range(self._mini_counts[s]):
+                vals = self._mini_samples.get((s, g))
+                if not vals or len(vals) < 3:
+                    return self._mini_ends
+                ends.append(round(_circular_median(np.array(vals)), 4))
+        ends[-1] = 1.0  # the last one ends at the line
+        self._mini_ends = ends
+        return ends
 
     def _mini_states(self, drv: _DriverState) -> list[int]:
         """A driver's mini-sector statuses, flat in lap order (0 = not yet)."""
@@ -684,6 +785,10 @@ class LiveStateManager:
             x_min = self._track_norm["x_min"]
             y_min = self._track_norm["y_min"]
             scale = self._track_norm["scale"]
+
+        newest = max((p[4] for p in raw_positions if p[4] is not None), default=None)
+        if newest is not None:
+            self._clock_offsets.append(_ts - newest)
 
         for number, raw_x, raw_y, status, sample_t in raw_positions:
             drv = self._get_driver(number)
@@ -937,6 +1042,9 @@ class LiveStateManager:
                 if len(self._rc_messages) > 50:
                     self._rc_messages = self._rc_messages[-50:]
 
+            if message:
+                self.laps.race_control(message)
+
             # Marshal sector flags, as replays show them (f1_data)
             if msg_data.get("Scope") == "Sector" and msg_data.get("Flag") and msg_data.get("Sector") is not None:
                 try:
@@ -1112,6 +1220,23 @@ class LiveStateManager:
 
     # --- SessionStatus ------------------------------------------------
 
+    def laps_message(self) -> dict[str, Any]:
+        """Lap history for the live page: laps, qualifying part starts and
+        when the session started, all on the live clock."""
+        offset = self._clock_offset()
+        if offset is None and self._last_timestamp > 1e9:
+            offset = 0.0  # SignalR's clock is already epoch seconds
+        parts = []
+        for part in sorted(self._quali_parts):
+            utc_t, ts = self._quali_parts[part]
+            parts.append({"phase": f"Q{part}", "timestamp": utc_t + offset if utc_t is not None and offset is not None else ts})
+        abbr_of = {num: d.abbr for num, d in self._drivers.items() if d.abbr}
+        return {
+            "laps": self.laps.entries(abbr_of),
+            "quali_phases": parts,
+            "session_start": self._session_start,
+        }
+
     def _handle_session_status(self, data: dict, _ts: float) -> None:
         if "Status" in data:
             new_status = data["Status"]
@@ -1120,6 +1245,8 @@ class LiveStateManager:
             # session, which we must not treat as "session ended".
             if new_status == "Started":
                 self._session_was_started = True
+                if self._session_start is None:
+                    self._session_start = _ts
                 # Pit exits before the start (e.g. laps to the grid) aren't out-laps
                 for drv in self._drivers.values():
                     drv.out_lap = False
@@ -1138,14 +1265,21 @@ class LiveStateManager:
             entries = [e for e in series.values() if isinstance(e, dict)]
         else:
             return
-        # Use the last entry (highest qualifying part)
-        for entry in reversed(entries):
-            if "QualifyingPart" in entry:
-                try:
-                    self._quali_phase = int(entry["QualifyingPart"])
-                except (ValueError, TypeError):
-                    pass
-                break
+        from services.team_radio import parse_utc
+
+        # Each part's start, for Lap Analysis's Q1/Q2/Q3 filter; the
+        # highest part is the current one
+        for entry in entries:
+            if "QualifyingPart" not in entry:
+                continue
+            try:
+                part = int(entry["QualifyingPart"])
+            except (ValueError, TypeError):
+                continue
+            utc = parse_utc(entry.get("Utc", ""))
+            utc_t = utc.replace(tzinfo=timezone.utc).timestamp() if utc else None
+            self._quali_parts.setdefault(part, (utc_t, _ts))
+            self._quali_phase = max(self._quali_phase, part)
 
     # ------------------------------------------------------------------
     # Handler dispatch table
@@ -1252,6 +1386,9 @@ class LiveStateManager:
         }
         if show_mini:
             frame["mini_sector_counts"] = list(self._mini_counts)
+            ends = self._mini_sector_ends()
+            if ends:
+                frame["mini_sector_ends"] = ends
 
         # Add pit predictions for race sessions
         if self._is_race and self._pit_loss_green > 0:
