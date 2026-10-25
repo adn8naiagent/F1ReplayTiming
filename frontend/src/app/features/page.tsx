@@ -829,7 +829,7 @@ export default function FeaturesPage() {
             <ul className="space-y-2 mb-4 text-sm text-f1-text leading-relaxed">
               <li><span className="font-bold text-white">Races and sprints</span> use the start, which never repeats.</li>
               <li><span className="font-bold text-white">Qualifying and practice</span> use a flying lap.</li>
-              <li>It takes about a minute the first time, then it&apos;s saved for that session.</li>
+              <li>It runs when the session is processed, while F1 TV&apos;s audio can still be read. If that doesn&apos;t work, it tries again the first time you open the broadcast (about a minute). The result is saved for that session.</li>
               <li>The onboards follow the broadcast: all of F1 TV&apos;s feeds for a session share one timeline.</li>
             </ul>
             <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mb-2">How it&apos;s synced</p>

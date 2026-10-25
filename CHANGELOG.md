@@ -4,11 +4,17 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 ## 2.5.0
 
+> **Do I need to reprocess?** Not for the broadcast: it works on sessions you've already downloaded. A few things only apply to sessions processed from 2.5.0 on:
+> - **Team radio audio on your server** — add it to downloaded sessions with `python precompute.py 2026 --radio-audio-only` (no full reprocess needed), on a network F1 accepts.
+> - **Improved team radio captions** — reprocess a session to redo its captions.
+> - **Broadcast sync at processing time** — new sessions are synced while F1 TV's audio can still be read. Older sessions are synced the first time you open their broadcast, if F1 TV's audio can still be read then; otherwise the video's time stamp is used.
+> - **Onboard sector strips** need mini-sectors, which sessions have if processed from 2.4.0 on (or after `--lap-extras-only`).
+
 ### Features
 
 - **F1 TV broadcast in replays** — replays only for now; not yet in live timing. With F1 TV Pro or Premium, switch the track map to **Broadcast** (top right of the track map) to watch the session's F1 TV replay in sync with the timing. The replay is found automatically, and the video follows the replay's play, pause, speed and skips.
 
-- **Automatic broadcast sync** — the server lines the video up with the timing by matching the onboard cameras' engine sound to each driver's RPM, checked with a second driver. It takes about a minute the first time a session is opened, then it's saved. Adjust it by ±0.5s or ±5s from the hover controls; the adjustment shows as a chip whose × goes back to the automatic sync. Where F1 TV's audio is encrypted, the video's own time stamp is used instead.
+- **Automatic broadcast sync** — the server lines the video up with the timing by matching the onboard cameras' engine sound to each driver's RPM, checked with a second driver. It runs when a session is processed (F1 TV protects some replays' audio later on), or, if that doesn't work, the first time the broadcast is opened, and is then saved. Adjust it by ±0.5s or ±5s from the hover controls; the adjustment shows as a chip whose × goes back to the automatic sync. Where F1 TV's audio is encrypted, the video's own time stamp is used instead.
 
 - **Multi-view** — the broadcast with up to two onboard cameras and the track map beside it. Pick each onboard from a driver menu in the panel; your choices are remembered. Each onboard can show the driver's speed, gear, throttle and brake, and in qualifying and practice their mini-sectors as a coloured strip along the bottom edge, each switched on or off per onboard.
 
@@ -22,7 +28,7 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Exit in the replay header** — back to the home page, as in live timing.
 
-- **Fewer missing team radio captions** — with **Improve captions with AI** on, a clip where Whisper heard several words keeps Whisper's caption if the AI model decides no one speaks, and a clip where Whisper heard nothing (its silence filters can drop noisy radio) gets a second, unfiltered Whisper attempt for the AI model to check against the audio. Applies to sessions processed from now on, and to live timing.
+- **Fewer missing team radio captions** — with **Improve captions with AI** on, a clip where Whisper heard several words keeps Whisper's caption if the AI model decides no one speaks, and a clip where Whisper heard nothing (its silence filters can drop noisy radio) gets a second, unfiltered Whisper attempt for the AI model to check against the audio. Applies to live timing and to sessions processed from now on; reprocess a session to redo its captions.
 
 ### Fixes
 

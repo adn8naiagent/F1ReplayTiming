@@ -76,7 +76,7 @@ Each onboard can show, switched on or off for each one:
 
 ### Automatic sync
 
-The first time you open a session's broadcast, the server works out where the replay starts in F1 TV's video. An onboard camera's sound is mostly its car's engine, and the engine's pitch follows its revs, which are in the timing data. The server slides the two against each other until they line up, and checks the answer with a second driver (they must agree within 0.3 seconds). Races use the start, which never repeats; qualifying and practice use a flying lap. It takes about a minute the first time, then it's saved with the session. All of F1 TV's feeds for a session share one timeline, so the onboards follow the broadcast.
+The first time you open a session's broadcast, the server works out where the replay starts in F1 TV's video. An onboard camera's sound is mostly its car's engine, and the engine's pitch follows its revs, which are in the timing data. The server slides the two against each other until they line up, and checks the answer with a second driver (they must agree within 0.3 seconds). Races use the start, which never repeats; qualifying and practice use a flying lap. It runs when the session is processed, while F1 TV's audio can still be read (F1 TV protects some replays' audio later on); if that doesn't work, it tries again the first time you open the broadcast (about a minute). The result is saved with the session. All of F1 TV's feeds for a session share one timeline, so the onboards follow the broadcast.
 
 The hover controls show how the session is synced:
 

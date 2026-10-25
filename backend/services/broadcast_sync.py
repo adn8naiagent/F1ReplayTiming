@@ -17,6 +17,7 @@ import asyncio
 import io
 import logging
 import re
+import time
 import urllib.parse
 from typing import Any
 
@@ -41,7 +42,10 @@ _MARGIN = 5.0
 _AGREE_S = 0.3
 
 _running: dict[str, asyncio.Task] = {}
-_failed: dict[str, str] = {}  # not retried until the server restarts
+# Failed attempts: (reason, when). Tried again after a while, as F1 TV can
+# make a replay available later
+_failed: dict[str, tuple[str, float]] = {}
+_RETRY_AFTER_S = 30 * 60
 
 
 def _path(year: int, round_num: int, session_type: str) -> str:
@@ -242,6 +246,27 @@ async def _compute(year: int, round_num: int, session_type: str) -> dict[str, An
     raise RuntimeError("Couldn't match the onboard sound to the timing")
 
 
+def refresh_sync(year: int, round_num: int, session_type: str) -> dict[str, Any] | None:
+    """Work out and save the offset now (when a session is processed), so it
+    doesn't wait for the first view, by which time F1 TV may have protected
+    the audio. Keeps a saved result if this one fails. Never raises: the
+    session is processed either way."""
+    path = _path(year, round_num, session_type)
+    try:
+        result = asyncio.run(_compute(year, round_num, session_type))
+    except Exception as e:
+        logger.info("Broadcast sync for %s %s %s not worked out now: %s", year, round_num, session_type, e)
+        return None
+    try:
+        put_json(path, result)
+    except Exception as e:
+        logger.warning("Couldn't save the broadcast sync for %s %s %s: %s", year, round_num, session_type, e)
+        return None
+    _failed.pop(path, None)
+    logger.info("Broadcast sync for %s %s %s: %.2fs (%s)", year, round_num, session_type, result["offset"], ", ".join(result["drivers"]))
+    return result
+
+
 async def offset(year: int, round_num: int, session_type: str) -> dict[str, Any]:
     """{"offset": video time at replay 0:00, ...}, worked out once per
     session (concurrent requests share the work)."""
@@ -250,8 +275,9 @@ async def offset(year: int, round_num: int, session_type: str) -> dict[str, Any]
     if saved and saved.get("offset") is not None:
         return saved
     key = path
-    if key in _failed:
-        raise RuntimeError(_failed[key])
+    failed = _failed.get(key)
+    if failed and time.time() - failed[1] < _RETRY_AFTER_S:
+        raise RuntimeError(failed[0])
     task = _running.get(key)
     if task is None:
         task = asyncio.create_task(_compute(year, round_num, session_type))
@@ -259,7 +285,7 @@ async def offset(year: int, round_num: int, session_type: str) -> dict[str, Any]
     try:
         result = await task
     except Exception as e:
-        _failed[key] = str(e)
+        _failed[key] = (str(e), time.time())
         raise
     finally:
         _running.pop(key, None)

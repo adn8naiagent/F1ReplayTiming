@@ -119,7 +119,6 @@ def process_session_sync(
         ok = _process_session_sync(year, round_num, session_type, skip_existing, on_status)
         if ok:
             download_problems.clear(year, round_num, session_type)
-        return ok
     except f1_account.F1AccountError as e:
         # Not signed in, or F1 refused this network: shown on the home page,
         # since background downloads have no one watching
@@ -135,6 +134,16 @@ def process_session_sync(
         # weekend is being processed, free them; the data is in storage now.
         if last:
             release_sessions(year, round_num)
+
+    # Line F1 TV's replay up with the timing now, while its audio can still be
+    # read: F1 TV protects replays' audio some time after the session. After
+    # the FastF1 data is freed, as it needs memory of its own.
+    if ok and not skip_existing:
+        if on_status:
+            on_status("Syncing the F1 TV broadcast...")
+        from services import broadcast_sync
+        broadcast_sync.refresh_sync(year, round_num, session_type)
+    return ok
 
 
 def _process_session_sync(
