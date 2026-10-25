@@ -267,7 +267,7 @@ async def _video_start_utc(manifest_url: str) -> float | None:
     return float(start) if start and start.isdigit() else None
 
 
-async def play(content_id: str, channel_id: str | None = None) -> dict[str, Any]:
+async def play(content_id: str, channel_id: str | None = None, live: bool = False) -> dict[str, Any]:
     token = _token()
     entitlement = await _entitlement_token(token)
     params = {"contentId": content_id}
@@ -295,7 +295,9 @@ async def play(content_id: str, channel_id: str | None = None) -> dict[str, Any]
         "stream_type": result.get("streamType"),
         "drm_type": result.get("drmType"),
         "entitlement_token_used": entitlement is not None,
-        "video_start_utc": await _video_start_utc(manifest),
+        # Only replays use it (live goes by the video's own clock), and it's
+        # one more wait before the video starts
+        "video_start_utc": None if live else await _video_start_utc(manifest),
         "raw": _redact(result),
     }
 

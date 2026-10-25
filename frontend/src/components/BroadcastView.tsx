@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { f1tv, type F1TVChannel, type F1TVContent } from "@/lib/f1tv";
+import { f1tv, F1TVRequestError, type F1TVChannel, type F1TVContent } from "@/lib/f1tv";
 import type { RCMessage, ReplayDriver } from "@/hooks/useReplaySocket";
 import { useF1TVStream, type StreamDebug, type StreamOptions } from "@/hooks/useF1TVStream";
 import { useReplayClock, useVideoSync } from "@/hooks/useVideoSync";
@@ -213,7 +213,9 @@ const SIDE_MIN = 0.16;
 
 export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView, onMultiViewChange, showTelemetry, showMap, onToggleMap: toggleMap, trackOverlay, driversByNumber, live = null, miniSectorData, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
   const linkKey = live ? `f1tv_content_live_${sessionKey}` : `f1tv_content_${sessionKey}`;
-  const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
+  // Live: looked up fresh each time, as the stream F1 TV lists changes when
+  // it goes live
+  const [link, setLink] = useState<string>(() => (live ? "" : readJson(linkKey, "")));
   const [linkDraft, setLinkDraft] = useState("");
   // Finding this session on F1 TV automatically; the link box is the fallback
   const [finding, setFinding] = useState<"searching" | "not_found" | null>(null);
@@ -336,19 +338,25 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   // by engine sound once there's a couple of minutes of driving (retried
   // every minute until then); the replay-measured gap until it is
   const [liveSound, setLiveSound] = useState<{ stamp_delay: number; drivers: string[] } | null>(null);
+  // F1 TV encrypts the live onboards' sound: no point trying again
+  const [liveSoundProtected, setLiveSoundProtected] = useState(false);
   useEffect(() => {
-    if (!live || main.state !== "ready" || liveSound) return;
+    if (!live || main.state !== "ready" || liveSound || liveSoundProtected) return;
     const [year, round, type] = sessionKey.split("_");
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const attempt = () => {
       f1tv.liveSync(Number(year), Number(round), type)
         .then((r) => { if (!cancelled) setLiveSound(r); })
-        .catch(() => { if (!cancelled) timer = setTimeout(attempt, 60_000); });
+        .catch((e) => {
+          if (cancelled) return;
+          if (e instanceof F1TVRequestError && e.status === 409) setLiveSoundProtected(true);
+          else timer = setTimeout(attempt, 60_000);
+        });
     };
     attempt();
     return () => { cancelled = true; clearTimeout(timer); };
-  }, [live, main.state, liveSound, sessionKey]);
+  }, [live, main.state, liveSound, liveSoundProtected, sessionKey]);
   const stampDelay = liveSound?.stamp_delay ?? STAMP_DELAY_S;
   const sentDelay = useRef<number | null>(null);
   useEffect(() => {
@@ -388,7 +396,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           }
         : {
             label: `Synced by video time stamp (approximate): timing delayed ${liveDelay.toFixed(1)}s`,
-            hint: "The timing is held back to show the same moment as F1 TV's live video, from the time stamps in the video. Matching the engine sound for a more exact sync once there's a couple of minutes of driving.",
+            hint: liveSoundProtected
+              ? "The timing is held back to show the same moment as F1 TV's live video, from the time stamps in the video, usually within a second or two. F1 TV encrypts this stream's onboard sound, so the engine sound can't be matched for a more exact sync. Adjust with the buttons if needed."
+              : "The timing is held back to show the same moment as F1 TV's live video, from the time stamps in the video. Matching the engine sound for a more exact sync once there's a couple of minutes of driving.",
             tone: "rough",
           }
       : main.state === "ready"
@@ -462,14 +472,10 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     f1tv.content(link).then(setContent).catch((e) => {
       setContent(null);
       // F1 TV only has a live stream's details once it's live: look the
-      // session up again in 30 seconds (the stream F1 TV lists can change as
-      // it goes live)
+      // session up again in 30 seconds
       if (live) {
-        setContentError("Waiting for F1 TV's live stream to start. Checking every 30 seconds.");
-        retryTimer = setTimeout(() => {
-          writeJson(linkKey, null);
-          setLink("");
-        }, 30_000);
+        setContentError("F1 TV hasn't started streaming this session yet. Checking every 30 seconds.");
+        retryTimer = setTimeout(() => setLink(""), 30_000);
       } else {
         setContentError(e.message);
       }
@@ -545,7 +551,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   useEffect(() => {
     if (!link || !content) return;
     setManualOffset(readJson<number | null>(offsetKey(mainChannel), null));
-    void main.load(link, mainChannel, opts);
+    void main.load(link, mainChannel, opts, !!live);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link, content, mainChannel, opts]);
 
@@ -607,7 +613,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   if (!link && finding === "searching") {
     return (
       <div className="w-full h-full flex items-center justify-center bg-black">
-        <p className="text-xs text-f1-muted">Finding this session on F1 TV…</p>
+        <p className="text-xs text-f1-muted">{live ? "Loading the live broadcast…" : "Finding this session on F1 TV…"}</p>
       </div>
     );
   }
@@ -707,7 +713,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           </p>
           {main.state === "error" && link && (
             <button
-              onClick={() => void main.load(link, mainChannel, opts)}
+              onClick={() => void main.load(link, mainChannel, opts, !!live)}
               className="px-3 py-1 rounded bg-f1-border text-white text-xs font-bold hover:bg-f1-red transition-colors"
             >
               Retry
@@ -1056,7 +1062,7 @@ function OnboardPane({ rect, link, channel, opts, mainRef, mainUtc, mainReady, p
   }, [mainRef, mainUtc, playheadUtc]);
   useVideoSync(ref, stream.state === "ready" && mainReady, broadcastClock, playing, speed, nudge);
   useEffect(() => {
-    void stream.load(link, channel, opts);
+    void stream.load(link, channel, opts, !!mainUtc);
     return () => { void stream.unload(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link, channel, opts]);
@@ -1081,7 +1087,7 @@ function OnboardPane({ rect, link, channel, opts, mainRef, mainUtc, mainReady, p
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
             <p className="text-[10px] text-white/80 leading-snug">{stream.debug.error?.message}</p>
             <button
-              onClick={() => void stream.load(link, channel, opts)}
+              onClick={() => void stream.load(link, channel, opts, !!mainUtc)}
               className="px-2 py-0.5 rounded bg-f1-border text-white text-[10px] font-bold hover:bg-f1-red transition-colors"
             >
               Retry

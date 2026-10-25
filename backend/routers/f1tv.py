@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/f1tv", tags=["f1tv"])
 class PlayRequest(BaseModel):
     content: str  # content id or F1 TV link
     channel_id: Optional[str] = None
+    live: bool = False  # live streams skip reading the video's start time
 
 
 def _error(e: f1tv_video.F1TVError) -> JSONResponse:
@@ -47,11 +48,15 @@ async def live_sync(year: int, round: int, type: str):
     """How long after the moment on screen F1 TV stamps this session's live
     video (seconds), matched from an onboard's engine sound against live
     timing. 404 until it can be worked out (it needs a couple of minutes of
-    live driving)."""
+    live driving). 409 when F1 TV encrypts the onboards' sound, so it never
+    can be."""
     from services import broadcast_sync
 
     try:
         return await broadcast_sync.live_stamp_delay(year, round, type)
+    except broadcast_sync.AudioProtected as e:
+        logger.info("Live broadcast sync for %s %s %s: %s", year, round, type, e)
+        raise HTTPException(status_code=409, detail=str(e))
     except Exception as e:
         logger.info("Live broadcast sync for %s %s %s: %s", year, round, type, e)
         raise HTTPException(status_code=404, detail=str(e))
@@ -110,7 +115,7 @@ async def content(q: str):
 @router.post("/play")
 async def play(body: PlayRequest):
     try:
-        return await f1tv_video.play(f1tv_video.parse_content_id(body.content), body.channel_id)
+        return await f1tv_video.play(f1tv_video.parse_content_id(body.content), body.channel_id, live=body.live)
     except f1tv_video.F1TVError as e:
         return _error(e)
 

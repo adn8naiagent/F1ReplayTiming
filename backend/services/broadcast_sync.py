@@ -337,7 +337,7 @@ def live_audio_segments(xml: str, manifest_url: str) -> tuple[str, list[tuple[fl
     if audio is None:
         raise RuntimeError("No audio in this feed")
     if "ContentProtection" in audio:
-        raise RuntimeError("This feed's audio is encrypted")
+        raise AudioProtected("This feed's audio is encrypted")
     tpl_tag = re.search(r"<SegmentTemplate[^>]*>", audio)
     rep = re.search(r'<Representation[^>]*id="([^"]+)"[^>]*?(?:bandwidth="(\d+)")?', audio)
     if not tpl_tag or not rep:
@@ -405,6 +405,10 @@ async def _live_audio(manifest_url: str, start: float, end: float) -> tuple[np.n
     return await asyncio.to_thread(decode), wanted[0][0]
 
 
+class AudioProtected(RuntimeError):
+    """F1 TV encrypts the stream's audio, so its engine sound can't be read."""
+
+
 async def _compute_live(year: int, round_num: int, session_type: str) -> dict[str, Any]:
     from routers.live import _live_sessions
 
@@ -431,6 +435,7 @@ async def _compute_live(year: int, round_num: int, session_type: str) -> dict[st
     candidates.sort(key=lambda c: c[0], reverse=True)
 
     results: list[tuple[float, float, str]] = []
+    tried = protected = 0
     for share, number, a in candidates[:4]:
         if share < 0.6:
             break
@@ -447,8 +452,11 @@ async def _compute_live(year: int, round_num: int, session_type: str) -> dict[st
                 continue
             pcm, start = await _live_audio(play["manifest_url"], t0 + _LIVE_LO, t1 + _LIVE_HI)
         except Exception as e:
+            tried += 1
+            protected += isinstance(e, AudioProtected)
             logger.info("Live broadcast sync: no audio for car %s: %s", number, e)
             continue
+        tried += 1
         delay, margin = await asyncio.to_thread(
             _match, pcm, start, a[:, 0], a[:, 1], t0, _LIVE_LO, _LIVE_HI, _LIVE_WINDOW_S,
         )
@@ -460,6 +468,8 @@ async def _compute_live(year: int, round_num: int, session_type: str) -> dict[st
         if len(agreeing) >= 2:
             return {"stamp_delay": round(float(np.median([r[0] for r in agreeing])), 2),
                     "drivers": [r[2] for r in agreeing]}
+    if tried and protected == tried:
+        raise AudioProtected("F1 TV encrypts this live stream's onboard sound, so it can't be matched")
     raise RuntimeError("Couldn't match the onboard sound to the live timing yet")
 
 

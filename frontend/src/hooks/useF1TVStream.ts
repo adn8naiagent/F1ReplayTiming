@@ -115,7 +115,7 @@ export function useF1TVStream(videoRef: React.RefObject<HTMLVideoElement | null>
   useEffect(() => () => { void unload(); }, [unload]);
 
   const load = useCallback(
-    async (content: string, channelId: string | null, opts: StreamOptions) => {
+    async (content: string, channelId: string | null, opts: StreamOptions, live = false) => {
       const video = videoRef.current;
       if (!video) return;
       await unload();
@@ -131,7 +131,7 @@ export function useF1TVStream(videoRef: React.RefObject<HTMLVideoElement | null>
 
       let pb: F1TVPlayback;
       try {
-        pb = await f1tv.play(content, channelId);
+        pb = await f1tv.play(content, channelId, live);
       } catch (e) {
         const err = e as F1TVRequestError;
         return fail(err.message, err.status, err.body);

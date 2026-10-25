@@ -94,6 +94,6 @@ export const f1tv = {
   /** The F1 TV replay of a session, found from the round and session start */
   find: (year: number, round: number, type: string, live = false) =>
     request<{ content_id: string; title: string | null }>("GET", `/find?year=${year}&round=${round}&type=${type}${live ? "&live=true" : ""}`),
-  play: (content: string, channelId: string | null) =>
-    request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId }),
+  play: (content: string, channelId: string | null, live = false) =>
+    request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId, live }),
 };

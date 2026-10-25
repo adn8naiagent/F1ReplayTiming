@@ -959,7 +959,7 @@ function LiveTiming() {
       </div>
 
       {/* Live info bar (replaces playback controls) */}
-      <div className="flex-shrink-0 bg-f1-card border-t border-f1-border px-4 py-2 flex items-center justify-between">
+      <div className="flex-shrink-0 bg-f1-card border-t border-f1-border px-4 py-2 sm:px-6 sm:py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
           {/* The broadcast's sound, far left while it's showing: mute, and a
               volume slider that opens on hover (as in replays) */}
@@ -982,16 +982,6 @@ function LiveTiming() {
                 aria-label="Broadcast volume"
                 title={`Volume ${broadcastMuted ? 0 : Math.round(broadcastVolume * 100)}%`}
               />
-            </div>
-          )}
-          {/* Lap counter */}
-          {isRace && live.frame && (
-            <div className="text-sm">
-              <span className="text-f1-muted">Lap </span>
-              <span className="text-white font-bold">{live.frame.lap}</span>
-              {live.frame.total_laps > 0 && (
-                <span className="text-f1-muted">/{live.frame.total_laps}</span>
-              )}
             </div>
           )}
 
@@ -1199,6 +1189,12 @@ function LiveTiming() {
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
               <span className="text-xs font-bold text-red-400 uppercase">Live</span>
             </div>
+            {/* Lap counter, where replays have it */}
+            {isRace && live.frame && live.frame.lap > 0 && (
+              <span className="text-sm font-extrabold text-white tabular-nums">
+                Lap {live.frame.lap}{live.frame.total_laps > 0 && `/${live.frame.total_laps}`}
+              </span>
+            )}
             {!isMobile && !isIOS && (
               <button
                 onClick={() => setPipActive(!pipActive)}
