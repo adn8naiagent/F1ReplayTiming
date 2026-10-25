@@ -91,9 +91,87 @@ function isOnboard(c: F1TVChannel) {
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
 
-// Multi-view's onboard choices for sessions opened on this page, so they
-// survive switching to the track map and back, but not opening a session
-const onboardsThisPage = new Map<string, [string | null, string | null]>();
+// What a view shows: the broadcast, or a driver's onboard (their number)
+type Source = string;
+const BROADCAST = "broadcast";
+// Multi-view's views: slot 0 is the big view, then up to four more
+const SLOT_COUNT = 5;
+type Layout = "focus" | "grid";
+
+// Multi-view's choices for sessions opened on this page, so they survive
+// switching to the track map and back, but not opening a session
+const slotsThisPage = new Map<string, (Source | null)[]>();
+
+function bySlot(saved: unknown, fallback: boolean): boolean[] {
+  return Array.from({ length: SLOT_COUNT }, (_, i) =>
+    Array.isArray(saved) && typeof saved[i] === "boolean" ? saved[i] : fallback,
+  );
+}
+
+type Rect = { x: number; y: number; w: number; h: number };
+const place = (r: Rect): React.CSSProperties => ({ left: r.x, top: r.y, width: r.w, height: r.h });
+// The broadcast when no view shows it: the timing and onboards follow it, so
+// it keeps playing, tiny and hidden
+const HIDDEN: React.CSSProperties = { left: 0, top: 0, width: 2, height: 2, opacity: 0, pointerEvents: "none" };
+// Multi-view's spacing: views start below the page's hover buttons
+const TOP = 48;
+const EDGE = 12;
+const GAP = 8;
+const PICKER_H = 30;
+
+/** Where each view goes. Single view: the big view fills it. Main + 2: the
+ *  big view on the left; a column on the right with two views (16:9 at the
+ *  column's width, shrinking when they and the map don't fit), then the map.
+ *  Grid: three across and two down, the map in the bottom-right. Empty slots
+ *  get a placeholder with a picker (the column's second, just its picker). */
+function layoutViews(mode: "single" | Layout, w: number, h: number, share: number, visible: (Source | null)[], showMap: boolean) {
+  const rects: (Rect | null)[] = visible.map(() => null);
+  const empty: { slot: number; rect: Rect; compact?: boolean }[] = [];
+  let map: Rect | null = null;
+  const put = (slot: number, rect: Rect) => {
+    if (visible[slot]) rects[slot] = rect;
+    else empty.push({ slot, rect });
+  };
+  if (mode === "single") {
+    put(0, { x: 0, y: 0, w, h });
+  } else if (mode === "focus") {
+    put(0, { x: 0, y: 0, w: w * (1 - share), h });
+    const colX = w * (1 - share) + EDGE;
+    const colW = w * share - 2 * EDGE;
+    const colH = h - TOP - EDGE;
+    const mapH = showMap ? Math.min(300, Math.max(170, colH * 0.38)) : 0;
+    const items: { slot: number; picker?: boolean }[] = [{ slot: 1 }];
+    if (visible[2]) items.push({ slot: 2 });
+    else if (visible[1]) items.push({ slot: 2, picker: true });
+    const boxes = items.filter((i) => !i.picker).length;
+    const gaps = (items.length - 1 + (showMap ? 1 : 0)) * GAP;
+    const boxH = Math.max(0, Math.min((colW * 9) / 16, (colH - mapH - gaps - (items.length - boxes) * PICKER_H) / boxes));
+    const boxW = (boxH * 16) / 9;
+    let y = TOP;
+    for (const item of items) {
+      if (item.picker) {
+        empty.push({ slot: item.slot, rect: { x: colX, y, w: colW, h: PICKER_H }, compact: true });
+        y += PICKER_H + GAP;
+      } else {
+        put(item.slot, { x: colX + (colW - boxW) / 2, y, w: boxW, h: boxH });
+        y += boxH + GAP;
+      }
+    }
+    if (showMap) map = { x: colX, y, w: colW, h: mapH };
+  } else {
+    const cellW = (w - 2 * EDGE - 2 * GAP) / 3;
+    const cellH = (h - TOP - EDGE - GAP) / 2;
+    const tileW = Math.max(0, Math.min(cellW, (cellH * 16) / 9));
+    const tileH = (tileW * 9) / 16;
+    const cell = (i: number) => ({ x: EDGE + (i % 3) * (cellW + GAP), y: TOP + Math.floor(i / 3) * (cellH + GAP) });
+    for (let i = 0; i < SLOT_COUNT; i++) {
+      const c = cell(i);
+      put(i, { x: c.x + (cellW - tileW) / 2, y: c.y + (cellH - tileH) / 2, w: tileW, h: tileH });
+    }
+    if (showMap) map = { ...cell(5), w: cellW, h: cellH };
+  }
+  return { rects, empty, map };
+}
 
 // Multi-view's side panel, as a share of the width
 const SIDE_MAX = 0.3;
@@ -112,43 +190,47 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
 
   const [opts, setOpts] = useState<StreamOptions>(() => readJson("f1tv_stream_opts", { licenceViaServer: true, relay: false }));
   const [mainChannel, setMainChannel] = useState<string | null>(null);
-  // Telemetry on each onboard, switched one at a time (Settings > Broadcast
-  // sets both)
-  // (remembered; changing the setting resets both)
-  // Each onboard's mini-sector strip, switched one at a time (remembered)
-  const [sectorsOn, setSectorsOnState] = useState<[boolean, boolean]>(() => readJson("f1tv_onboard_sectors", [true, true]));
-  const toggleSectors = (slot: 0 | 1) =>
-    setSectorsOnState((v) => {
-      const next: [boolean, boolean] = slot === 0 ? [!v[0], v[1]] : [v[0], !v[1]];
-      writeJson("f1tv_onboard_sectors", next);
+  // Each view's telemetry and mini-sector strip, by slot, switched one at a
+  // time (remembered; Settings > Broadcast's telemetry switch resets them)
+  const [sectorsOn, setSectorsOn] = useState<boolean[]>(() => bySlot(readJson("f1tv_view_sectors", []), true));
+  const toggleSectors = (slot: number) =>
+    setSectorsOn((v) => {
+      const next = v.map((on, i) => (i === slot ? !on : on));
+      writeJson("f1tv_view_sectors", next);
       return next;
     });
-  const [telemetryOn, setTelemetryOnState] = useState<[boolean, boolean]>(() =>
-    readJson("f1tv_onboard_telemetry", [showTelemetry, showTelemetry]),
+  const [telemetryOn, setTelemetryOnState] = useState<boolean[]>(() =>
+    bySlot(readJson("f1tv_view_telemetry", []), showTelemetry),
   );
-  const setTelemetryOn = (update: (v: [boolean, boolean]) => [boolean, boolean]) =>
-    setTelemetryOnState((v) => { const next = update(v); writeJson("f1tv_onboard_telemetry", next); return next; });
+  const setTelemetryOn = (update: (v: boolean[]) => boolean[]) =>
+    setTelemetryOnState((v) => { const next = update(v); writeJson("f1tv_view_telemetry", next); return next; });
+  const toggleTelemetry = (slot: number) => setTelemetryOn((v) => v.map((on, i) => (i === slot ? !on : on)));
   const telemetrySetting = useRef(showTelemetry);
   useEffect(() => {
     if (telemetrySetting.current === showTelemetry) return; // not on first load
     telemetrySetting.current = showTelemetry;
-    setTelemetryOn(() => [showTelemetry, showTelemetry]);
+    setTelemetryOn(() => bySlot([], showTelemetry));
   }, [showTelemetry]); // eslint-disable-line react-hooks/exhaustive-deps
-  // Multi-view's two onboards. Every session opens with none; switching to
-  // the track map and back keeps them.
-  const [onboardDrivers, setOnboardDriversState] = useState<[string | null, string | null]>(
-    () => onboardsThisPage.get(sessionKey) ?? [null, null],
+  // What each view shows. Every session opens with just the broadcast, in
+  // the big view; switching to the track map and back keeps the choices.
+  const [slots, setSlots] = useState<(Source | null)[]>(
+    () => slotsThisPage.get(sessionKey) ?? [BROADCAST, null, null, null, null],
   );
-  const setOnboardDriver = (slot: 0 | 1, number: string | null) => {
-    setOnboardDriversState((prev) => {
-      const next: [string | null, string | null] = [...prev];
-      next[slot] = number;
-      // Closing the first moves the second up
-      if (!next[0] && next[1]) next.reverse();
-      onboardsThisPage.set(sessionKey, next);
+  // Puts a source in a slot; one already showing elsewhere swaps places
+  const assign = (slot: number, source: Source | null) =>
+    setSlots((prev) => {
+      const next = [...prev];
+      const from = source ? prev.indexOf(source) : -1;
+      if (from >= 0) next[from] = prev[slot];
+      next[slot] = source;
+      slotsThisPage.set(sessionKey, next);
       return next;
     });
-  };
+  // Multi-view's layout (remembered): a big view with two beside it, or a grid
+  const [layout, setLayoutState] = useState<Layout>(() => readJson<Layout>("f1tv_layout", "focus"));
+  const setLayout = (value: Layout) => { setLayoutState(value); writeJson("f1tv_layout", value); };
+  // The sound follows the big view, unless a view's speaker picked another
+  const [audioPick, setAudioPick] = useState<Source | null>(null);
   const [showDebug, setShowDebug] = useState(false);
 
   const mainRef = useRef<HTMLVideoElement>(null);
@@ -308,12 +390,6 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const broadcastPlaying = live ? true : mainOffset !== null ? playing : !!mainRef.current && !mainRef.current.paused;
 
   useEffect(() => writeJson("f1tv_stream_opts", opts), [opts]);
-  useEffect(() => {
-    if (mainRef.current) {
-      mainRef.current.muted = muted;
-      mainRef.current.volume = Math.max(0, Math.min(1, volume));
-    }
-  }, [muted, volume, main.state]);
 
   // No saved link: find this session's replay on F1 TV.
   useEffect(() => {
@@ -359,16 +435,24 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
 
   const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
   const onboards = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && isOnboard(c) && c.driver_number), [content]);
-  // A side slot holds a driver's number (their onboard)
+  // An onboard's feed, by driver number
   const channelOf = (value: string | null) => {
     if (!value) return null;
     return onboards.find((c) => String(c.driver_number) === value)?.channel_id ?? null;
   };
-  const sideColumn = multiView;
-  // Multi-view's side panel, as a share of the width: drag its edge to make
+  // Main + 2's side panel, as a share of the width: drag its edge to make
   // it narrower (never wider than the default). Remembered.
   const [sideShare, setSideShareState] = useState<number>(() => readJson("f1tv_side_share", SIDE_MAX));
-  const rootRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const observer = useRef<ResizeObserver | null>(null);
+  const setRoot = useCallback((el: HTMLDivElement | null) => {
+    rootRef.current = el;
+    observer.current?.disconnect();
+    if (!el) return;
+    observer.current = new ResizeObserver(([entry]) => setSize({ w: entry.contentRect.width, h: entry.contentRect.height }));
+    observer.current.observe(el);
+  }, []);
   const [resizing, setResizing] = useState(false);
   const startResize = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -385,10 +469,33 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     setResizing(false);
     setSideShareState((v) => { writeJson("f1tv_side_share", v); return v; });
   };
-  const mainWidth = sideColumn ? `${(1 - sideShare) * 100}%` : "100%";
-  const shownOnboards = sideColumn
-    ? onboardDrivers.filter((n): n is string => !!channelOf(n))
-    : [];
+  const mode: "single" | Layout = multiView ? layout : "single";
+  const mainWidth = mode === "focus" ? `${(1 - sideShare) * 100}%` : "100%";
+  // What each view shows: only what this session has (the broadcast, or an
+  // onboard F1 TV lists), in the slots this layout has room for
+  const visible = slots
+    .slice(0, mode === "single" ? 1 : mode === "focus" ? 3 : SLOT_COUNT)
+    .map((s) => (s === BROADCAST || channelOf(s) ? s : null));
+  const shownCount = visible.filter(Boolean).length;
+  const audible = audioPick && visible.includes(audioPick) ? audioPick : visible[0];
+  const views = layoutViews(mode, size.w, size.h, sideShare, visible, showMap);
+  const broadcastSlot = visible.indexOf(BROADCAST);
+  const broadcastRect = broadcastSlot >= 0 ? views.rects[broadcastSlot] : null;
+  const onboardViews = visible
+    .flatMap((s, slot) => {
+      const rect = views.rects[slot];
+      const channel = channelOf(s);
+      return s && s !== BROADCAST && rect && channel ? [{ number: s, slot, rect, channel }] : [];
+    })
+    // In a fixed order, so swapping views moves them without reloading
+    .sort((a, b) => Number(a.number) - Number(b.number));
+
+  useEffect(() => {
+    const video = mainRef.current;
+    if (!video) return;
+    video.muted = muted || audible !== BROADCAST;
+    video.volume = Math.max(0, Math.min(1, volume));
+  }, [muted, volume, main.state, audible]);
 
   // (Re)load the main feed.
   useEffect(() => {
@@ -508,20 +615,47 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const selectClass = "bg-f1-card/90 border border-f1-border rounded px-1.5 py-1 text-[10px] text-white focus:outline-none";
   const btnClass = "px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white";
 
+  // A view's own buttons: its sound, swapping into the big view, closing
+  const viewButtons = (slot: number, source: Source): ViewButtonProps => ({
+    audible: audible === source,
+    audioTitle: audible === source
+      ? audioPick === source && slot > 0 ? "Playing this view's sound. Click to follow the big view again" : "Playing this view's sound"
+      : "Play this view's sound instead",
+    // Only a choice when more than one view is showing
+    onAudio: shownCount > 1 ? () => setAudioPick(slot === 0 || audioPick === source ? null : source) : undefined,
+    onSwap: slot > 0 ? () => assign(0, source) : undefined,
+    onClose: slot > 0 ? () => assign(slot, null) : undefined,
+    controlsShown,
+    clearOfPageButtons: mode === "single",
+  });
+  const pickerFor = (slot: number, placeholder: string) => (
+    <SourcePicker
+      onboards={onboards}
+      driversByNumber={driversByNumber}
+      value={visible[slot] ?? null}
+      placeholder={placeholder}
+      clearable={slot > 0}
+      onChange={(s) => assign(slot, s)}
+    />
+  );
+  const reveal = controlsShown ? "opacity-100" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:pointer-events-none";
+  const statusRect = broadcastRect ?? (contentError || main.state === "error" ? views.rects[0] ?? { x: 0, y: 0, w: size.w, h: size.h } : null);
+
   return (
-    <div ref={rootRef} className="relative w-full h-full bg-black overflow-hidden group">
+    <div ref={setRoot} className="relative w-full h-full bg-black overflow-hidden group">
       {/* Protected video can be drawn in its own hardware layer that ignores
-          stacking, so nothing overlaps it: in multi-view the broadcast takes
-          the left, and the onboards and map a column on the right. */}
+          stacking, so views never overlap. The broadcast is what the timing
+          and onboards follow, so it keeps playing, hidden, when no view
+          shows it. */}
       <video
         ref={mainRef}
-        className="absolute inset-y-0 left-0 h-full object-contain"
-        style={{ width: mainWidth }}
+        className="absolute object-contain"
+        style={broadcastRect ? place(broadcastRect) : HIDDEN}
         playsInline
       />
 
-      {main.state !== "ready" && (
-        <div className="absolute inset-y-0 left-0 flex flex-col items-center justify-center gap-3 px-6" style={{ width: mainWidth }}>
+      {main.state !== "ready" && statusRect && (
+        <div className="absolute z-10 flex flex-col items-center justify-center gap-3 px-6" style={place(statusRect)}>
           <p className={`text-xs text-center max-w-md leading-relaxed ${contentError || main.state === "error" ? "text-white/80" : "text-f1-muted"}`}>
             {contentError || (main.state === "error" ? main.debug.error?.message : "Loading broadcast…")}
           </p>
@@ -536,19 +670,78 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
         </div>
       )}
 
+      {/* The broadcast's buttons, when it's one of several views. Clicks
+          pass through to the video (for lining up by hand). */}
+      {mode !== "single" && broadcastRect && (
+        <div className="absolute z-20 pointer-events-none" style={place(broadcastRect)}>
+          {broadcastSlot > 0 && (
+            <div className={`absolute top-1.5 left-1.5 z-30 pointer-events-auto transition-opacity ${reveal}`}>
+              {pickerFor(broadcastSlot, "Choose a view")}
+            </div>
+          )}
+          <ViewButtons {...viewButtons(broadcastSlot, BROADCAST)} hover="view" />
+        </div>
+      )}
+
+      {onboardViews.map(({ number, slot, rect, channel }) => (
+        <OnboardPane
+          key={number}
+          rect={rect}
+          link={link}
+          channel={channel}
+          opts={opts}
+          mainRef={mainRef}
+          mainUtc={live ? main.playheadUtc : undefined}
+          mainReady={main.state === "ready"}
+          playing={broadcastPlaying}
+          speed={mainOffset !== null ? speed : 1}
+          replaySpeed={speed}
+          nudge={onboardNudge}
+          driver={driversByNumber[number]}
+          sectors={
+            miniSectorData && driversByNumber[number]
+              ? {
+                  states: miniStatesAt(miniSectorData, driversByNumber[number].abbr, timestamp ?? 0),
+                  counts: miniSectorData.counts,
+                  ends: miniSectorData.ends,
+                }
+              : null
+          }
+          showSectors={sectorsOn[slot]}
+          onToggleSectors={() => toggleSectors(slot)}
+          showTelemetry={telemetryOn[slot]}
+          onToggleTelemetry={() => toggleTelemetry(slot)}
+          picker={slot > 0 ? pickerFor(slot, "Choose a view") : null}
+          buttons={viewButtons(slot, number)}
+          audible={audible === number}
+          muted={muted}
+          volume={volume}
+        />
+      ))}
+
+      {/* Empty views: a placeholder with its picker */}
+      {mode !== "single" && views.empty.map(({ slot, rect, compact }) => (
+        <div key={`empty-${slot}`} className="absolute z-20" style={place(rect)}>
+          {compact ? (
+            pickerFor(slot, "Add another view")
+          ) : (
+            <div className="w-full h-full rounded-lg border border-dashed border-white/20 flex flex-col items-center justify-center gap-2">
+              <span className="text-[10px] text-white/50">{onboards.length ? "Onboard camera" : "No onboards for this session"}</span>
+              {pickerFor(slot, slot === 1 ? "Choose an onboard" : "Add another view")}
+            </div>
+          )}
+        </div>
+      ))}
+
       {raceControl && (
         <div className="absolute bottom-3 left-0 z-20 flex justify-center pointer-events-none" style={{ width: mainWidth }}>
           <RaceControlTicker message={raceControl} />
         </div>
       )}
 
-      {/* Multi-view's column: up to two onboards, one under the other, then
-          the map. Starts below the page's hover buttons (Track map /
-          Broadcast, RC) so they never cover an onboard's ×. */}
-      {sideColumn ? (
-        <>
-        {/* Drag the panel's edge to make it narrower: shown on hover, or
-            after a tap on touch screens */}
+      {mode === "focus" && (
+        // Drag the side panel's edge to make it narrower: shown on hover, or
+        // after a tap on touch screens
         <div
           onPointerDown={startResize}
           onPointerMove={moveResize}
@@ -564,80 +757,15 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
         >
           <div className={`w-1 h-16 rounded-full ${resizing ? "bg-white" : "bg-white/50"}`} />
         </div>
-        <div
-          className="absolute top-12 bottom-3 right-3 z-20 flex flex-col gap-2 [container-type:inline-size]"
-          style={{ width: `calc(${sideShare * 100}% - 1.5rem)` }}
-        >
-          {([0, 1] as const).map((slot) => {
-            const number = onboardDrivers[slot];
-            const channel = channelOf(number);
-            const picker = (
-              <OnboardPicker
-                onboards={onboards}
-                driversByNumber={driversByNumber}
-                value={number}
-                exclude={onboardDrivers[slot === 0 ? 1 : 0]}
-                placeholder={slot === 0 ? "Choose an onboard" : "Add a second onboard"}
-                onChange={(n) => setOnboardDriver(slot, n)}
-              />
-            );
-            if (channel && number) {
-              return (
-                <OnboardPane
-                  key={`${slot}-${channel}`}
-                  link={link}
-                  channel={channel}
-                  opts={opts}
-                  mainRef={mainRef}
-                  mainUtc={live ? main.playheadUtc : undefined}
-                  mainReady={main.state === "ready"}
-                  playing={broadcastPlaying}
-                  speed={mainOffset !== null ? speed : 1}
-                  replaySpeed={speed}
-                  nudge={onboardNudge}
-                  driver={driversByNumber[number]}
-                  sectors={
-                    miniSectorData && driversByNumber[number]
-                      ? {
-                          states: miniStatesAt(miniSectorData, driversByNumber[number].abbr, timestamp ?? 0),
-                          counts: miniSectorData.counts,
-                          ends: miniSectorData.ends,
-                        }
-                      : null
-                  }
-                  showSectors={sectorsOn[slot]}
-                  onToggleSectors={() => toggleSectors(slot)}
-                  showTelemetry={telemetryOn[slot]}
-                  onToggleTelemetry={() => setTelemetryOn((v) => (slot === 0 ? [!v[0], v[1]] : [v[0], !v[1]]))}
-                  picker={picker}
-                  controlsShown={controlsShown}
-                  onClose={() => setOnboardDriver(slot, null)}
-                />
-              );
-            }
-            // An empty first slot is a placeholder the size of an onboard;
-            // the second, just its picker
-            if (slot === 1) return channelOf(onboardDrivers[0]) ? <div key={slot} className="flex-shrink-0">{picker}</div> : null;
-            return (
-              <OnboardBox key={slot}>
-                <div className="w-full h-full rounded-lg border border-dashed border-white/20 flex flex-col items-center justify-center gap-2">
-                  <span className="text-[10px] text-white/50">{onboards.length ? "Onboard camera" : "No onboards for this session"}</span>
-                  {onboards.length > 0 && picker}
-                </div>
-              </OnboardBox>
-            );
-          })}
-          {showMap && (
-            // A fixed height, so it stays readable (the onboards scale around
-            // it), and the column's full width, so wide tracks fill it too,
-            // with a margin so corner numbers aren't cut off
-            <div className="flex-shrink-0 h-[clamp(170px,38%,300px)] px-4 py-3 pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
-              {trackOverlay}
-            </div>
-          )}
+      )}
+
+      {views.map ? (
+        // The map in its own space, with a margin so corner numbers aren't
+        // cut off
+        <div className="absolute z-20 px-4 py-3 pointer-events-none [&_.bg-f1-dark]:!bg-transparent" style={place(views.map)}>
+          {trackOverlay}
         </div>
-        </>
-      ) : showMap && (
+      ) : mode === "single" && showMap && (
         // Just the track lines over the video: the map's own background is
         // made transparent here
         <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
@@ -648,9 +776,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       {/* Controls */}
       {/* Shown on hover, or for a few seconds after a tap on touch screens
           (where hidden controls mustn't catch taps) */}
-      <div className={`absolute top-3 left-3 z-20 flex flex-col items-start gap-1.5 transition-opacity ${
-        controlsShown ? "opacity-100" : "opacity-0 group-hover:opacity-100 [@media(hover:none)]:pointer-events-none"
-      }`}>
+      <div className={`absolute top-3 left-3 z-20 flex flex-col items-start gap-1.5 transition-opacity ${reveal}`}>
         <div className="flex items-center gap-1.5">
           {/* Flips the view for now; Settings > Broadcast sets the default */}
           <div className="flex rounded border border-f1-border overflow-hidden">
@@ -666,7 +792,31 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
               </button>
             ))}
           </div>
-          {mainFeeds.length > 0 && (
+          {multiView && (
+            <div className="flex rounded border border-f1-border overflow-hidden">
+              {([
+                ["focus", "Main + 2", "A big view, with two smaller views and the track map beside it"],
+                ["grid", "Grid", "Five views and the track map, all the same size"],
+              ] as const).map(([value, label, title]) => (
+                <button
+                  key={value}
+                  onClick={() => setLayout(value)}
+                  title={title}
+                  className={`px-2 py-1 text-[10px] font-bold transition-colors ${
+                    layout === value ? "bg-white text-black" : "bg-f1-card/90 text-f1-muted hover:text-white"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {/* What the big view shows, and which broadcast feed */}
+        <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 border border-f1-border">
+          <span className="text-[9px] font-bold text-f1-muted uppercase tracking-wider mr-0.5">{multiView ? "Big view" : "Showing"}</span>
+          {pickerFor(0, "Choose a view")}
+          {broadcastSlot >= 0 && mainFeeds.length > 0 && (
             <select value={mainChannel ?? ""} onChange={(e) => setMainChannel(e.target.value || null)} className={selectClass}>
               <option value="">Main feed</option>
               {mainFeeds.map((c) => (
@@ -804,8 +954,9 @@ function RaceControlTicker({ message }: { message: RCMessage }) {
   );
 }
 
-/** One onboard camera, following the broadcast's position. */
-function OnboardPane({ link, channel, opts, mainRef, mainUtc, mainReady, playing, speed, replaySpeed, nudge, driver, sectors, showSectors, onToggleSectors, showTelemetry, onToggleTelemetry, picker, controlsShown, onClose }: {
+/** One onboard camera in its view, following the broadcast's position. */
+function OnboardPane({ rect, link, channel, opts, mainRef, mainUtc, mainReady, playing, speed, replaySpeed, nudge, driver, sectors, showSectors, onToggleSectors, showTelemetry, onToggleTelemetry, picker, buttons, audible, muted, volume }: {
+  rect: Rect;
   link: string;
   channel: string;
   opts: StreamOptions;
@@ -825,10 +976,14 @@ function OnboardPane({ link, channel, opts, mainRef, mainUtc, mainReady, playing
   sectors: { states: number[] | null; counts: number[]; ends: number[] } | null;
   showSectors: boolean;
   onToggleSectors: () => void;
-  /** Switches this onboard to another driver (on hover) */
-  picker: React.ReactNode;
-  controlsShown: boolean;
-  onClose: () => void;
+  /** Switches this view to another (on hover); none in the big view, whose
+   *  picker is in the main controls */
+  picker: React.ReactNode | null;
+  buttons: ViewButtonProps;
+  /** Whether this view's sound plays, at the player's volume */
+  audible: boolean;
+  muted: boolean;
+  volume: number;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const stream = useF1TVStream(ref);
@@ -852,42 +1007,21 @@ function OnboardPane({ link, channel, opts, mainRef, mainUtc, mainReady, playing
     return () => { void stream.unload(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link, channel, opts]);
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    video.muted = muted || !audible;
+    video.volume = Math.max(0, Math.min(1, volume));
+  }, [audible, muted, volume, stream.state]);
 
   return (
-    <OnboardBox>
-      <div className="relative w-full h-full group/pane">
+    <div className="absolute z-20 group/pane" style={place(rect)}>
       {/* The picker sits outside the rounded frame so its menu isn't cut off */}
-      <div className={`absolute top-1.5 left-1.5 z-30 transition-opacity ${controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 focus-within:opacity-100 [@media(hover:none)]:pointer-events-none"}`}>{picker}</div>
+      {picker && (
+        <div className={`absolute top-1.5 left-1.5 z-30 transition-opacity ${buttons.controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 focus-within:opacity-100 [@media(hover:none)]:pointer-events-none"}`}>{picker}</div>
+      )}
       <div className="relative w-full h-full bg-black rounded-lg overflow-hidden border border-white/10">
         <video ref={ref} className="w-full h-full object-contain" muted playsInline />
-        {driver && (
-          <div className={`absolute top-1.5 right-9 flex flex-col items-end gap-1 transition-opacity ${
-            controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 [@media(hover:none)]:pointer-events-none"
-          }`}>
-            {([
-              ["Telemetry", showTelemetry, onToggleTelemetry, "telemetry on this onboard"],
-              ...(sectors ? ([["Sectors", showSectors, onToggleSectors, "this onboard's mini-sectors along the bottom"]] as const) : []),
-            ] as const).map(([label, on, toggle, what]) => (
-              <button
-                key={label}
-                onClick={toggle}
-                className={`h-6 px-2 rounded-full bg-black/70 text-[10px] font-bold flex items-center gap-1 ${on ? "text-white" : "text-white/60 hover:text-white"}`}
-                title={`${on ? "Hide" : "Show"} ${what}`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${on ? "bg-green-400" : "bg-white/30"}`} />
-                {label}
-              </button>
-            ))}
-          </div>
-        )}
-        <button
-          onClick={onClose}
-          className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white/80 hover:text-white text-sm leading-none flex items-center justify-center"
-          title="Close this onboard"
-          aria-label="Close onboard"
-        >
-          ×
-        </button>
         {sectors && showSectors && <SectorStrip {...sectors} />}
         {showTelemetry && <OnboardTelemetry driver={driver} speed={replaySpeed} raised={!!sectors && showSectors} />}
         {stream.state === "error" && (
@@ -902,31 +1036,87 @@ function OnboardPane({ link, channel, opts, mainRef, mainUtc, mainReady, playing
           </div>
         )}
       </div>
-      </div>
-    </OnboardBox>
-  );
-}
-
-/** An onboard's space in the column: 16:9 at the column's width, shrinking
- *  (still 16:9) when two onboards and the map don't fit. */
-function OnboardBox({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex-1 min-h-0 flex justify-center [container-type:size]" style={{ maxHeight: "calc(100cqw * 9 / 16)" }}>
-      <div className="aspect-video" style={{ width: "min(100cqw, 100cqh * 16 / 9)" }}>{children}</div>
+      <ViewButtons
+        {...buttons}
+        hover="pane"
+        extra={driver && ([
+          ["Telemetry", showTelemetry, onToggleTelemetry, "telemetry on this onboard"],
+          ...(sectors ? ([["Sectors", showSectors, onToggleSectors, "this onboard's mini-sectors along the bottom"]] as const) : []),
+        ] as const).map(([label, on, toggle, what]) => (
+          <button
+            key={label}
+            onClick={toggle}
+            className={`h-6 px-2 rounded-full bg-black/70 text-[10px] font-bold flex items-center gap-1 ${on ? "text-white" : "text-white/60 hover:text-white"}`}
+            title={`${on ? "Hide" : "Show"} ${what}`}
+          >
+            <span className={`w-1.5 h-1.5 rounded-full ${on ? "bg-green-400" : "bg-white/30"}`} />
+            {label}
+          </button>
+        ))}
+      />
     </div>
   );
 }
 
-/** Choose a side slot's driver onboard (styled like Lap Analysis's driver
- *  menus). Drivers are in running order; ones not in the timing still show,
- *  from F1 TV's list. */
-function OnboardPicker({ onboards, driversByNumber, value, exclude, placeholder, onChange }: {
+type ViewButtonProps = {
+  audible: boolean;
+  audioTitle: string;
+  onAudio?: () => void;
+  onSwap?: () => void;
+  onClose?: () => void;
+  controlsShown: boolean;
+  /** Single view: below the page's own buttons in the top-right corner */
+  clearOfPageButtons: boolean;
+};
+
+/** A view's buttons, top right, on hover: any switches of its own, its
+ *  sound, swap into the big view, and close. */
+function ViewButtons({ audible, audioTitle, onAudio, onSwap, onClose, controlsShown, clearOfPageButtons, hover, extra }: ViewButtonProps & {
+  /** Shown on hovering this view, or (over the broadcast, which lets clicks
+   *  through) anywhere on the player */
+  hover: "pane" | "view";
+  extra?: React.ReactNode;
+}) {
+  if (!onAudio && !onSwap && !onClose && !extra) return null;
+  const round = "w-6 h-6 rounded-full bg-black/70 flex items-center justify-center";
+  return (
+    <div className={`absolute ${clearOfPageButtons ? "top-12 right-3" : "top-1.5 right-1.5"} z-30 flex items-start gap-1 pointer-events-auto transition-opacity ${
+      controlsShown ? "opacity-100" : `opacity-0 ${hover === "pane" ? "group-hover/pane:opacity-100" : "group-hover:opacity-100"} [@media(hover:none)]:pointer-events-none`
+    }`}>
+      {extra && <div className="flex flex-col items-end gap-1">{extra}</div>}
+      {onAudio && (
+        <button onClick={onAudio} className={`${round} ${audible ? "text-white" : "text-white/50 hover:text-white"}`} title={audioTitle} aria-label={audioTitle}>
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor" />
+            {audible ? <path d="M15.5 8.5a5 5 0 010 7M19 5a10 10 0 010 14" /> : <path d="M22 9l-6 6M16 9l6 6" />}
+          </svg>
+        </button>
+      )}
+      {onSwap && (
+        <button onClick={onSwap} className={`${round} text-white/80 hover:text-white text-xs`} title="Swap with the big view" aria-label="Swap with the big view">
+          ⇄
+        </button>
+      )}
+      {onClose && (
+        <button onClick={onClose} className={`${round} text-white/80 hover:text-white text-sm leading-none`} title="Close this view" aria-label="Close this view">
+          ×
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Choose what a view shows: the broadcast, or a driver's onboard (styled
+ *  like Lap Analysis's driver menus). Drivers are in running order; ones not
+ *  in the timing still show, from F1 TV's list. Choosing one that another
+ *  view shows swaps the two. */
+function SourcePicker({ onboards, driversByNumber, value, placeholder, clearable, onChange }: {
   onboards: F1TVChannel[];
   driversByNumber: Record<string, ReplayDriver>;
-  value: string | null;
-  exclude: string | null;
+  value: Source | null;
   placeholder: string;
-  onChange: (value: string | null) => void;
+  clearable: boolean;
+  onChange: (value: Source | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -950,11 +1140,10 @@ function OnboardPicker({ onboards, driversByNumber, value, exclude, placeholder,
         number: Number(n),
       };
     })
-    .filter((d) => d.value !== exclude)
     .sort((a, b) => a.position - b.position || a.number - b.number);
 
   const selectedDriver = drivers.find((d) => d.value === value);
-  const pick = (v: string | null) => { onChange(v); setOpen(false); };
+  const pick = (v: Source | null) => { onChange(v); setOpen(false); };
   const row = "w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 transition-colors text-left";
 
   return (
@@ -963,11 +1152,16 @@ function OnboardPicker({ onboards, driversByNumber, value, exclude, placeholder,
         onClick={() => setOpen(!open)}
         className="w-full flex items-center gap-2 bg-f1-dark border border-f1-border rounded px-2 py-1.5 text-left hover:border-f1-muted transition-colors"
       >
-        {selectedDriver ? (
+        {value === BROADCAST ? (
+          <>
+            <span className="w-2 h-2 rounded-sm bg-f1-red flex-shrink-0" />
+            <span className="text-xs font-bold text-white">Broadcast</span>
+          </>
+        ) : selectedDriver ? (
           <>
             <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: selectedDriver.color }} />
             <span className="text-xs font-bold text-white">{selectedDriver.abbr}</span>
-            <span className="text-[10px] text-f1-muted truncate">{selectedDriver.team}</span>
+            <span className="text-[10px] text-f1-muted truncate">onboard</span>
           </>
         ) : (
           <span className="text-xs text-f1-muted">{placeholder}</span>
@@ -978,21 +1172,22 @@ function OnboardPicker({ onboards, driversByNumber, value, exclude, placeholder,
       </button>
       {open && (
         <div className="absolute top-full left-0 right-0 mt-1 bg-f1-dark border border-f1-border rounded shadow-xl z-50 max-h-[260px] overflow-y-auto">
-          {value && (
+          {value && clearable && (
             <button onClick={() => pick(null)} className={`${row} text-xs text-f1-muted`}>Clear</button>
           )}
-          {drivers.length > 0 && (
-            <>
-              {drivers.map((d) => (
-                <button key={d.value} onClick={() => pick(d.value)} className={`${row} ${d.value === value ? "bg-white/10" : ""}`}>
-                  <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
-                  <span className="text-[10px] font-bold text-f1-muted w-4 text-right">{d.position < 99 ? d.position : ""}</span>
-                  <span className="text-xs font-bold text-white">{d.abbr}</span>
-                  <span className="text-[10px] text-f1-muted truncate">{d.team}</span>
-                </button>
-              ))}
-            </>
-          )}
+          <button onClick={() => pick(BROADCAST)} className={`${row} ${value === BROADCAST ? "bg-white/10" : ""}`}>
+            <span className="w-2 h-2 rounded-sm bg-f1-red flex-shrink-0" />
+            <span className="w-4" />
+            <span className="text-xs font-bold text-white">Broadcast</span>
+          </button>
+          {drivers.map((d) => (
+            <button key={d.value} onClick={() => pick(d.value)} className={`${row} ${d.value === value ? "bg-white/10" : ""}`}>
+              <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ backgroundColor: d.color }} />
+              <span className="text-[10px] font-bold text-f1-muted w-4 text-right">{d.position < 99 ? d.position : ""}</span>
+              <span className="text-xs font-bold text-white">{d.abbr}</span>
+              <span className="text-[10px] text-f1-muted truncate">{d.team}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>
