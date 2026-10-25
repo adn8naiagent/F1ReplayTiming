@@ -797,11 +797,18 @@ export default function FeaturesPage() {
               session on F1 TV for you, and the video follows the replay: play, pause, speed changes and skips,
               including Skip to restart after a red flag.
             </p>
-            <p className="text-f1-text leading-relaxed mb-5">
+            <p className="text-f1-text leading-relaxed mb-3">
               <span className="font-bold text-white">Multi-view</span> puts the broadcast beside up to two drivers&apos;
               onboard cameras and the track map. <span className="font-bold text-white">Single view</span> shows the
               broadcast full width with the track map over it. Choose which opens in Settings &gt; Broadcast, along
               with onboard telemetry, the track map and race control.
+            </p>
+            <p className="text-f1-text leading-relaxed mb-5">
+              Each onboard can show the driver&apos;s <span className="font-bold text-white">telemetry</span> (speed,
+              gear, throttle and brake) and, in qualifying and practice, a{" "}
+              <span className="font-bold text-white">sector strip</span>: their mini-sectors as one line along the
+              bottom edge of the video, filling in purple, green or yellow as they complete each one, so you can see
+              how the lap is going while you watch it.
             </p>
             <BroadcastGuide />
           </section>

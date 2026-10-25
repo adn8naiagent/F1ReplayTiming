@@ -41,13 +41,30 @@ function MiniTrack({ className = "" }: { className?: string }) {
 
 function TelemetryPill() {
   return (
-    <div className="absolute bottom-1 inset-x-0 mx-auto w-fit flex items-center gap-1 h-3.5 px-1 rounded-full bg-black/70 border border-white/10">
+    <div className="absolute bottom-2 inset-x-0 mx-auto w-fit flex items-center gap-1 h-3.5 px-1 rounded-full bg-black/70 border border-white/10">
       <span className="w-0.5 h-2 rounded-full" style={{ backgroundColor: NOR }} />
       <span className="text-[6px] font-extrabold text-white">NOR</span>
       <span className="text-[7px] font-extrabold text-white tabular-nums">287</span>
       <span className="w-2.5 h-2.5 rounded-[2px] bg-white text-black text-[6px] font-extrabold flex items-center justify-center">7</span>
       <span className="w-5 h-1 rounded-full bg-white/10 overflow-hidden"><span className="block h-full w-4/5 bg-green-400 rounded-full" /></span>
       <span className="px-0.5 rounded-[2px] bg-white/10 text-white/30 text-[5px] font-extrabold leading-[8px]">BRAKE</span>
+    </div>
+  );
+}
+
+/** A driver's mini-sectors along the onboard's bottom edge: done ones
+ *  coloured, the rest dim, with wider gaps between the three sectors */
+function SectorStrip() {
+  const done = ["#22C55E", "#A855F7", "#22C55E", "#EAB308", "#22C55E", "#22C55E", "#A855F7", "#22C55E", "#22C55E", "#EAB308", "#22C55E"];
+  return (
+    <div className="absolute bottom-0 inset-x-0 h-1 flex bg-black/40">
+      {Array.from({ length: 24 }, (_, i) => (
+        <span
+          key={i}
+          className={`flex-1 h-full ${i === 23 ? "" : i % 8 === 7 ? "border-r-2 border-black" : "border-r border-black/70"}`}
+          style={{ backgroundColor: done[i] ?? "rgba(255,255,255,0.12)" }}
+        />
+      ))}
     </div>
   );
 }
@@ -110,14 +127,20 @@ function MultiView() {
           <span className="absolute top-1 left-1 flex items-center gap-0.5 px-1 py-0.5 rounded bg-f1-dark border border-f1-border text-[6px] font-bold text-white">
             <span className="w-1 h-1 rounded-full" style={{ backgroundColor: NOR }} />NOR <span className="text-f1-muted">▾</span>
           </span>
-          <span className="absolute top-1 right-4 flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-black/70 text-[6px] font-bold text-white">
-            <span className="w-1 h-1 rounded-full bg-green-400" />Telemetry
+          <span className="absolute top-1 right-4 flex flex-col items-end gap-0.5">
+            {["Telemetry", "Sectors"].map((t) => (
+              <span key={t} className="flex items-center gap-0.5 px-1 py-0.5 rounded-full bg-black/70 text-[6px] font-bold text-white">
+                <span className="w-1 h-1 rounded-full bg-green-400" />{t}
+              </span>
+            ))}
           </span>
           <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-black/70 text-white/80 text-[7px] leading-none flex items-center justify-center">×</span>
           <TelemetryPill />
+          <SectorStrip />
         </div>
         <Callout n={4} className="-left-2 -top-2" />
         <Callout n={5} className="-left-2 top-[18%]" />
+        <Callout n={9} className="left-[45%] top-[27%]" />
         <span className="flex items-center justify-between px-1 py-0.5 rounded bg-f1-dark border border-f1-border text-[6px] text-f1-muted">
           Add a second onboard <span>▾</span>
         </span>
@@ -135,7 +158,7 @@ function SingleView() {
     <div className="relative w-full aspect-[16/9] rounded-lg border border-f1-border overflow-hidden bg-black">
       <VideoPlaceholder label="F1 TV broadcast" />
       <div className="absolute right-[3%] top-1/2 -translate-y-1/2 w-[30%] aspect-square">
-        <Callout n={9} className="-left-2 top-0" />
+        <Callout n={10} className="-left-2 top-0" />
         <MiniTrack className="w-full h-full" />
       </div>
     </div>
@@ -145,7 +168,7 @@ function SingleView() {
 function VolumeControl() {
   return (
     <div className="relative flex items-center gap-2 rounded-lg border border-f1-border bg-f1-card px-3 py-2">
-      <Callout n={10} className="-left-2 -top-2" />
+      <Callout n={11} className="-left-2 -top-2" />
       <svg className="w-4 h-4 text-white flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
         <path d="M11 5 6 9H2v6h4l5 4V5z" /><path d="M15.54 8.46a5 5 0 0 1 0 7.07" /><path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
       </svg>
@@ -185,10 +208,11 @@ const MULTI_KEY: { name: string; description: string }[] = [
   { name: "Sync", description: "How the session is synced, with Sync manually beside it to line it up yourself. Underneath, Fine-tune video sync nudges the video ±0.5s or ±5s against the timing." },
   { name: "Overlays", description: "Turn the track map, race control and team radio on or off. Radio audio is separate, as the broadcast often plays the same message. Your choices are remembered." },
   { name: "Onboards", description: "Pick up to two drivers' onboard cameras from the menu. Each has Sectors and Telemetry switches and × to close it." },
-  { name: "Onboard telemetry", description: "Speed, gear, a throttle gauge and a brake light for that driver, from the timing. In qualifying and practice, a strip along the bottom edge fills in with their mini-sectors (purple, green, yellow)." },
+  { name: "Onboard telemetry", description: "Speed, gear, a throttle gauge and a brake light for that driver, from the timing." },
   { name: "Track map", description: "Under the onboards. Drivers selected on the leaderboard are highlighted, with their names." },
   { name: "Panel width", description: "Drag the edge between the broadcast and the panel to make the panel narrower." },
   { name: "Race control", description: "The latest message along the bottom of the broadcast. It fades after a few seconds." },
+  { name: "Sector strip", description: "Qualifying and practice: the driver's mini-sectors as one line along the onboard's bottom edge, filling in purple, green or yellow as they complete each one, with gaps between the three sectors." },
 ];
 
 const OTHER_KEY: { name: string; description: string }[] = [
@@ -225,7 +249,7 @@ export default function BroadcastGuide() {
           <SingleView />
           <VolumeControl />
         </div>
-        <Key items={OTHER_KEY} start={9} />
+        <Key items={OTHER_KEY} start={10} />
       </div>
       <p className="text-xs text-f1-muted">
         Shown with mock video. Controls on the video appear on hover, or for a few seconds after a tap on touch screens.
