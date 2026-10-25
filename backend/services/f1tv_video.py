@@ -200,6 +200,38 @@ async def find_replay(year: int, round_num: int, session_type: str) -> dict[str,
     return best[1] if best else None
 
 
+async def find_live(year: int, round_num: int, session_type: str) -> dict[str, Any] | None:
+    """The F1 TV live stream of a session: the live events on F1 TV's home
+    page for that round, the Formula 1 one whose start time is closest to the
+    session's (not the shows before and after it). None if there isn't one.
+    F1 TV only has the stream's details once it's live."""
+    start = _session_start(year, round_num, session_type)
+    if start is None:
+        return None
+    body = await _get("PAGE/395/F1_TV_Pro_Annual/14", _token())
+    best: tuple[float, dict] | None = None
+
+    def walk(o: Any) -> None:
+        nonlocal best
+        if isinstance(o, dict):
+            meta = o.get("metadata")
+            if isinstance(meta, dict) and (meta.get("contentSubtype") or "").upper() == "LIVE_EVENT":
+                emf = meta.get("emfAttributes") or {}
+                if (emf.get("Series") == "FORMULA 1" and str(emf.get("Meeting_Number")) == str(round_num)
+                        and emf.get("sessionStartDate")):
+                    gap = abs(float(emf["sessionStartDate"]) / 1000 - start)
+                    if gap <= 3 * 3600 and (best is None or gap < best[0]):
+                        best = (gap, {"content_id": str(meta.get("contentId")), "title": meta.get("title")})
+            for v in o.values():
+                walk(v)
+        elif isinstance(o, list):
+            for v in o:
+                walk(v)
+
+    walk(body)
+    return best[1] if best else None
+
+
 def _register(manifest_url: str, license_url: str | None) -> str:
     now = time.time()
     for pid in [p for p, pb in _playbacks.items() if now - pb.created > _PLAYBACK_TTL]:

@@ -44,6 +44,10 @@ export function useLiveSocket(
   const delayRef = useRef(delayOffset);
   delayRef.current = delayOffset;
   const hasShownFirstFrame = useRef(false);
+  const lagsRef = useRef<number[]>([]);
+  const arrivalLagRef = useRef<number | null>(null);
+  /** Seconds between data happening and reaching this page (live only) */
+  const arrivalLag = useCallback(() => arrivalLagRef.current, []);
   const [state, setState] = useState<LiveState>({
     connected: false,
     ready: false,
@@ -139,9 +143,18 @@ export function useLiveSocket(
             mini_sector_counts: msg.mini_sector_counts,
             mini_sector_ends: msg.mini_sector_ends,
             signed_in: msg.signed_in,
+            utc: msg.utc,
             sector_flags: msg.sector_flags,
           };
           const rcMessages: RCMessage[] = msg.rc_messages || [];
+          // How long after it happened each frame reaches us: the lowest of
+          // recent ones (frames come in batches), for the broadcast's delay
+          if (typeof msg.utc === "number") {
+            const lags = lagsRef.current;
+            lags.push(Date.now() / 1000 - msg.utc);
+            if (lags.length > 30) lags.shift();
+            arrivalLagRef.current = Math.min(...lags);
+          }
 
           if (delayRef.current !== 0) {
             // Show first frame immediately so the user sees data right away,
@@ -207,5 +220,5 @@ export function useLiveSocket(
     }
   }, []);
 
-  return { ...state, send };
+  return { ...state, send, arrivalLag };
 }

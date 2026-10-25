@@ -69,14 +69,18 @@ async def replay_start(year: int, round: int, type: str):
 
 
 @router.get("/find")
-async def find(year: int, round: int, type: str):
-    """The F1 TV replay of a session, so Broadcast can open it without a link."""
+async def find(year: int, round: int, type: str, live: bool = False):
+    """The F1 TV replay of a session (or its live stream, with live=true),
+    so Broadcast can open it without a link."""
     try:
-        found = await f1tv_video.find_replay(year, round, type)
+        found = await (f1tv_video.find_live if live else f1tv_video.find_replay)(year, round, type)
     except f1tv_video.F1TVError as e:
         raise HTTPException(status_code=e.status or 502, detail=str(e))
     if not found:
-        raise HTTPException(status_code=404, detail="No F1 TV replay found for this session yet")
+        raise HTTPException(
+            status_code=404,
+            detail="F1 TV isn't streaming this session yet" if live else "No F1 TV replay found for this session yet",
+        )
     return found
 
 

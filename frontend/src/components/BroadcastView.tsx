@@ -28,6 +28,11 @@ interface Props {
   driversByNumber: Record<string, ReplayDriver>;
   /** The latest race control message, when race control is on */
   raceControl?: RCMessage | null;
+  /** Live timing: the broadcast is F1 TV's live stream, which plays at its
+   *  own pace; the timing is delayed to match it instead (onDelay, in
+   *  seconds, or null when unknown). arrivalLag: how long the timing data
+   *  takes to reach the page. */
+  live?: { arrivalLag: () => number | null; onDelay: (seconds: number | null) => void } | null;
   /** Mini-sectors (qualifying and practice), for the onboards' sector strip */
   miniSectorData?: MiniSectorData | null;
   /** Race control and team radio switches in the hover controls */
@@ -94,13 +99,14 @@ const onboardsThisPage = new Map<string, [string | null, string | null]>();
 const SIDE_MAX = 0.3;
 const SIDE_MIN = 0.16;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView, onMultiViewChange, showTelemetry, showMap, onToggleMap: toggleMap, trackOverlay, driversByNumber, miniSectorData, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
-  const linkKey = `f1tv_content_${sessionKey}`;
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView, onMultiViewChange, showTelemetry, showMap, onToggleMap: toggleMap, trackOverlay, driversByNumber, live = null, miniSectorData, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
+  const linkKey = live ? `f1tv_content_live_${sessionKey}` : `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
   // Finding this session on F1 TV automatically; the link box is the fallback
   const [finding, setFinding] = useState<"searching" | "not_found" | null>(null);
   const [findError, setFindError] = useState<string | null>(null);
+  const [findAttempt, setFindAttempt] = useState(0);
   const [content, setContent] = useState<F1TVContent | null>(null);
   const [contentError, setContentError] = useState<string | null>(null);
 
@@ -167,16 +173,18 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const [replayStart, setReplayStart] = useState<number | null>(null);
   const [replayStartChecked, setReplayStartChecked] = useState(false);
   useEffect(() => {
+    if (live) return;
     const [year, round, type] = sessionKey.split("_");
     setReplayStartChecked(false);
     f1tv.replayStart(Number(year), Number(round), type)
       .then((r) => setReplayStart(r.replay_start_utc))
       .catch(() => setReplayStart(null))
       .finally(() => setReplayStartChecked(true));
-  }, [sessionKey]);
+  }, [sessionKey, live]);
   const [soundSync, setSoundSync] = useState<{ offset: number; content_id: string; drivers?: string[] } | null>(null);
   const [syncing, setSyncing] = useState(false);
   useEffect(() => {
+    if (live) return;
     const [year, round, type] = sessionKey.split("_");
     let cancelled = false;
     setSoundSync(null);
@@ -186,7 +194,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
       .catch(() => {})
       .finally(() => { if (!cancelled) setSyncing(false); });
     return () => { cancelled = true; };
-  }, [sessionKey]);
+  }, [sessionKey, live]);
   const videoStart = main.debug.playback?.video_start_utc ?? null;
   const autoOffset =
     soundSync && link.includes(soundSync.content_id)
@@ -195,16 +203,58 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
         ? replayStart - videoStart + STAMP_DELAY_S
         : null;
   // A manual sync wins over the automatic one until it's cleared
-  const mainOffset = aligning ? null : manualOffset ?? (autoOffset !== null ? autoOffset + mainNudge : null);
+  const mainOffset = live || aligning ? null : manualOffset ?? (autoOffset !== null ? autoOffset + mainNudge : null);
   // Lining up by hand is offered only when asked for, or once both automatic
   // ways have failed; never while the automatic sync is still working, when
   // playing the video by itself would just put it out of step
   const autoFailed =
-    !syncing && replayStartChecked && main.state === "ready" && autoOffset === null && manualOffset === null;
+    !live && !syncing && replayStartChecked && main.state === "ready" && autoOffset === null && manualOffset === null;
+
+  // Live: the video plays at F1 TV's live pace, and carries the real time of
+  // what it's showing (sent out a few seconds after it happened, like
+  // replays' time stamps). The timing is held back until it shows the same
+  // moment: delay = now - what the video shows - how late the data arrives.
+  // The fine-tune buttons add to it.
+  const [liveDelay, setLiveDelay] = useState<number | null>(null);
+  const sentDelay = useRef<number | null>(null);
+  useEffect(() => {
+    if (!live || main.state !== "ready") return;
+    const tick = () => {
+      const shown = main.playheadUtc();
+      // Until the data's real time is known, assume it arrives about 2s late
+      const lag = live.arrivalLag() ?? 2;
+      if (shown === null) return;
+      const delay = Math.max(0, Date.now() / 1000 - (shown - STAMP_DELAY_S) - lag + mainNudge);
+      setLiveDelay(delay);
+      // Small changes would only make the timing stutter
+      if (sentDelay.current === null || Math.abs(delay - sentDelay.current) >= 0.3) {
+        sentDelay.current = Math.round(delay * 10) / 10;
+        live.onDelay(sentDelay.current);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [live, main.state, main, mainNudge]);
+  useEffect(() => () => live?.onDelay(null), [live]);
+  // F1 TV's live video starts paused until asked to play
+  useEffect(() => {
+    if (live && main.state === "ready") void mainRef.current?.play().catch(() => {});
+  }, [live, main.state]);
   const manualControls = aligning || autoFailed;
   // How this session is synced, for the hover controls
   const soundSynced = !!soundSync && link.includes(soundSync.content_id);
-  const syncMethod: { label: string; hint: string; tone: "good" | "rough" | "busy" } | null = aligning
+  const syncMethod: { label: string; hint: string; tone: "good" | "rough" | "busy" } | null = live
+    ? liveDelay !== null
+      ? {
+          label: `Timing delayed ${liveDelay.toFixed(1)}s to match the broadcast`,
+          hint: "F1 TV's live video runs behind the timing, so the timing is held back to show the same moment. Fine-tune it with the buttons below.",
+          tone: "good",
+        }
+      : main.state === "ready"
+        ? { label: "Matching the timing to the live broadcast…", hint: "Waiting for the live timing and the video's clock.", tone: "busy" }
+        : null
+    : aligning
     ? { label: "Syncing manually…", hint: "Find the moment in the broadcast that matches the timing, then press Set sync here.", tone: "busy" }
     : manualOffset !== null
     ? { label: "Synced manually", hint: "Lined up with Sync manually. Clear it to go back to the automatic sync.", tone: "rough" }
@@ -231,7 +281,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const clock = useReplayClock(timestamp, playing, speed);
   const mainDrift = useVideoSync(mainRef, main.state === "ready", clock, playing, speed, mainOffset);
   const broadcastClock = useCallback(() => mainRef.current?.currentTime ?? 0, []);
-  const broadcastPlaying = mainOffset !== null ? playing : !!mainRef.current && !mainRef.current.paused;
+  const broadcastPlaying = live ? true : mainOffset !== null ? playing : !!mainRef.current && !mainRef.current.paused;
 
   useEffect(() => writeJson("f1tv_stream_opts", opts), [opts]);
   useEffect(() => {
@@ -247,7 +297,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     const [year, round, type] = sessionKey.split("_");
     let cancelled = false;
     setFinding("searching");
-    f1tv.find(Number(year), Number(round), type)
+    f1tv.find(Number(year), Number(round), type, !!live)
       .then((found) => {
         if (cancelled) return;
         setFinding(null);
@@ -258,19 +308,30 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
         if (cancelled) return;
         setFinding("not_found");
         setFindError(e.message);
+        // The live stream appears once F1 TV goes live: keep looking
+        if (live) retryTimer = setTimeout(() => setFindAttempt((n) => n + 1), 30_000);
       });
-    return () => { cancelled = true; };
-  }, [link, sessionKey, linkKey]);
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    return () => { cancelled = true; clearTimeout(retryTimer); };
+  }, [link, sessionKey, linkKey, findAttempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Look up the feeds for the saved link.
   useEffect(() => {
     if (!link) return;
     setContentError(null);
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
     f1tv.content(link).then(setContent).catch((e) => {
       setContent(null);
-      setContentError(e.message);
+      // F1 TV only has a live stream's details once it's live: keep trying
+      if (live) {
+        setContentError("Waiting for F1 TV's live stream to start. Checking every 30 seconds.");
+        retryTimer = setTimeout(() => setFindAttempt((n) => n + 1), 30_000);
+      } else {
+        setContentError(e.message);
+      }
     });
-  }, [link]);
+    return () => clearTimeout(retryTimer);
+  }, [link, findAttempt]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
   const onboards = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && isOnboard(c) && c.driver_number), [content]);
@@ -337,7 +398,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     } else if (manualOffset !== null) {
       setManualOffset(manualOffset + by);
       writeJson(offsetKey(mainChannel), manualOffset + by);
-    } else if (autoOffset !== null) {
+    } else if (autoOffset !== null || live) {
       const next = mainNudge + by;
       setMainNudge(next);
       writeJson(nudgeKey("main"), next);
@@ -372,6 +433,16 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     return (
       <div className="w-full h-full flex items-center justify-center bg-black">
         <p className="text-xs text-f1-muted">Finding this session on F1 TV…</p>
+      </div>
+    );
+  }
+
+  if (!link && live) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-black px-6 text-center">
+        <p className="text-xs text-f1-muted leading-relaxed max-w-sm">
+          {findError ?? "F1 TV isn't streaming this session yet."} Checking again every 30 seconds.
+        </p>
       </div>
     );
   }
@@ -494,6 +565,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
                   channel={channel}
                   opts={opts}
                   mainRef={mainRef}
+                  mainUtc={live ? main.playheadUtc : undefined}
                   mainReady={main.state === "ready"}
                   playing={broadcastPlaying}
                   speed={mainOffset !== null ? speed : 1}
@@ -604,7 +676,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           )}
         </div>
         {/* Fine-tune: nudge the video against the timing */}
-        {!manualControls && mainOffset !== null && (
+        {!manualControls && (mainOffset !== null || (live && main.state === "ready")) && (
           <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 border border-f1-border">
             <span className="text-[9px] font-bold text-f1-muted uppercase tracking-wider mr-0.5">Fine-tune video sync</span>
             <button onClick={() => nudge("main", -5)} className={btnClass} title="Video earlier against the timing">−5s</button>
@@ -709,11 +781,13 @@ function RaceControlTicker({ message }: { message: RCMessage }) {
 }
 
 /** One onboard camera, following the broadcast's position. */
-function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, sectors, showSectors, onToggleSectors, showTelemetry, onToggleTelemetry, picker, controlsShown, onClose }: {
+function OnboardPane({ link, channel, opts, mainRef, mainUtc, mainReady, playing, speed, replaySpeed, nudge, driver, sectors, showSectors, onToggleSectors, showTelemetry, onToggleTelemetry, picker, controlsShown, onClose }: {
   link: string;
   channel: string;
   opts: StreamOptions;
   mainRef: React.RefObject<HTMLVideoElement | null>;
+  /** Live: the real time the broadcast is showing */
+  mainUtc?: () => number | null;
   mainReady: boolean;
   playing: boolean;
   speed: number;
@@ -734,7 +808,20 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const stream = useF1TVStream(ref);
-  const broadcastClock = useCallback(() => mainRef.current?.currentTime ?? 0, [mainRef]);
+  // Replays: the feeds share one timeline, so follow the broadcast's
+  // position. Live: their timelines can differ, so line them up by the real
+  // time each is showing.
+  const { playheadUtc } = stream;
+  const broadcastClock = useCallback(() => {
+    const video = ref.current;
+    if (mainUtc && video) {
+      const m = mainUtc();
+      const own = playheadUtc();
+      if (m !== null && own !== null) return video.currentTime + (m - own);
+      return video.currentTime;
+    }
+    return mainRef.current?.currentTime ?? 0;
+  }, [mainRef, mainUtc, playheadUtc]);
   useVideoSync(ref, stream.state === "ready" && mainReady, broadcastClock, playing, speed, nudge);
   useEffect(() => {
     void stream.load(link, channel, opts);

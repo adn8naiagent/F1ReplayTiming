@@ -21,6 +21,8 @@ import TelemetryChart from "@/components/TelemetryChart";
 import Leaderboard from "@/components/Leaderboard";
 import { miniMarkersWidth, MINI_HEX } from "@/lib/miniSectors";
 import PiPWindow from "@/components/PiPWindow";
+import BroadcastView from "@/components/BroadcastView";
+import { f1tv } from "@/lib/f1tv";
 import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
 
 interface TrackData {
@@ -199,7 +201,37 @@ function LiveTiming() {
     `/api/sessions/${year}/${round}/track?type=${sessionType}`,
   );
 
-  const live = useLiveSocket(year, round, sessionType, speed, delayOffset);
+  // F1 TV broadcast (Pro or Premium): its live stream runs behind the
+  // timing, so while it shows, the timing is delayed to match it
+  const appConfig = useAppConfig();
+  const [f1tvVideo, setF1tvVideo] = useState(false);
+  useEffect(() => {
+    if (!appConfig?.f1tv) return;
+    f1tv.status().then((st) => setF1tvVideo(st.signed_in && /\b(pro|premium)\b/i.test(st.product ?? ""))).catch(() => {});
+  }, [appConfig?.f1tv]);
+  const [broadcastOn, setBroadcastOn] = useState(false);
+  const [broadcastDelay, setBroadcastDelay] = useState<number | null>(null);
+  const effectiveDelay = broadcastOn && broadcastDelay !== null ? broadcastDelay : delayOffset;
+  // Touch screens can't hover: a tap on the broadcast shows its controls for a few seconds
+  const [broadcastControls, setBroadcastControls] = useState(false);
+  const broadcastControlsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const revealBroadcastControls = useCallback(() => {
+    setBroadcastControls(true);
+    clearTimeout(broadcastControlsTimer.current);
+    broadcastControlsTimer.current = setTimeout(() => setBroadcastControls(false), 4000);
+  }, []);
+  // The broadcast's sound, as last set in a replay
+  const broadcastSound = useMemo(() => {
+    try {
+      const v = localStorage.getItem("f1tv_volume");
+      return { muted: localStorage.getItem("f1tv_muted") === "1", volume: v !== null && Number.isFinite(Number(v)) ? Number(v) : 1 };
+    } catch {
+      return { muted: false, volume: 1 };
+    }
+  }, []);
+
+  const live = useLiveSocket(year, round, sessionType, speed, effectiveDelay);
+  const broadcastLive = useMemo(() => ({ arrivalLag: live.arrivalLag, onDelay: setBroadcastDelay }), [live.arrivalLag]);
 
   // Wake Lock — prevent screen sleep during live sessions
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -386,6 +418,7 @@ function LiveTiming() {
           year={year}
           settings={settings}
           onSettingChange={updateSetting}
+          broadcastSettings={f1tvVideo}
           weather={weather}
           extraActions={
             <a
@@ -416,7 +449,10 @@ function LiveTiming() {
           )}
 
           {(!isMobile || mobileTrackOpen) && (
-            <div className="h-[42vh] sm:h-full relative">
+            <div
+              onPointerDown={(e) => { if (broadcastOn && e.pointerType !== "mouse") revealBroadcastControls(); }}
+              className="h-[42vh] sm:h-full relative group/view"
+            >
               {/* Waiting for session overlay */}
               {waitingForSession && (
                 <div className="absolute inset-0 z-30 flex items-center justify-center">
@@ -476,8 +512,28 @@ function LiveTiming() {
                 </div>
               )}
 
-              {/* LIVE badge + Race Control toggle */}
-              <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+              {/* LIVE badge + Race Control toggle (and, over the broadcast,
+                  shown on hover like the player's controls) */}
+              <div className={`absolute top-3 right-3 z-30 flex items-center gap-2 ${
+                broadcastOn ? `transition-opacity ${broadcastControls ? "opacity-100" : "opacity-0 group-hover/view:opacity-100 [@media(hover:none)]:pointer-events-none"}` : ""
+              }`}>
+                {f1tvVideo && !isMobile && (
+                  <div className="flex items-center rounded border border-f1-border bg-f1-card/90 backdrop-blur-sm overflow-hidden">
+                    {([false, true] as const).map((on) => (
+                      <button
+                        key={String(on)}
+                        onClick={() => { setBroadcastOn(on); if (!on) setBroadcastDelay(null); }}
+                        className={`px-2 py-1 text-xs font-bold transition-colors ${
+                          broadcastOn === on ? "bg-f1-red text-white" : "text-f1-muted hover:text-white"
+                        }`}
+                        title={on ? "Show F1 TV's live broadcast, with the timing delayed to match" : "Show the track map"}
+                      >
+                        {on ? "Broadcast" : "Track map"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!broadcastOn && (
                 <button
                   onClick={() => setRcPanelOpen(!rcPanelOpen)}
                   className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
@@ -492,6 +548,7 @@ function LiveTiming() {
                   </svg>
                   RC
                 </button>
+                )}
                 <div className="flex items-center gap-1.5 px-2 py-1 bg-red-600 rounded text-xs font-extrabold text-white uppercase">
                   <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                   LIVE
@@ -499,7 +556,7 @@ function LiveTiming() {
               </div>
 
               {/* Race Control Messages panel */}
-              {rcPanelOpen && (
+              {rcPanelOpen && !broadcastOn && (
                 <div
                   ref={rcPanelRef}
                   className={`z-20 w-80 bg-f1-card/95 border border-f1-border rounded-lg shadow-xl backdrop-blur-sm overflow-hidden flex flex-col ${
@@ -578,7 +635,7 @@ function LiveTiming() {
               )}
 
               {/* Track dominance legend (from Lap Analysis → Compare) */}
-              {dominance && (
+              {dominance && !broadcastOn && (
                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded bg-f1-card/90 border border-f1-border backdrop-blur-sm text-[10px]">
                   <span className="font-bold text-f1-muted uppercase tracking-wider">Track dominance</span>
                   {dominance.legend.map((l) => (
@@ -604,7 +661,7 @@ function LiveTiming() {
               />
 
               {/* Lap Analysis button - desktop only, bottom-right */}
-              {!isMobile && liveLaps && (
+              {!isMobile && liveLaps && !broadcastOn && (
                 <button
                   onClick={() => setLapAnalysisOpen(!lapAnalysisOpen)}
                   className={`absolute bottom-2 right-3 z-20 flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
@@ -642,7 +699,7 @@ function LiveTiming() {
               )}
 
               {/* Telemetry overlay - desktop only, bottom-left (telemetry arrives with an F1 TV sign-in) */}
-              {hasTelemetry && !isMobile && showTelemetry && (
+              {hasTelemetry && !isMobile && showTelemetry && !broadcastOn && (
                 <div className="absolute bottom-2 left-3 z-10 flex flex-col gap-1">
                   <button
                     onClick={() => setShowTelemetry(false)}
@@ -662,7 +719,7 @@ function LiveTiming() {
               )}
 
               {/* Telemetry toggle - desktop only, bottom-left */}
-              {hasTelemetry && !isMobile && !showTelemetry && (
+              {hasTelemetry && !isMobile && !showTelemetry && !broadcastOn && (
                 <button
                   onClick={() => setShowTelemetry(true)}
                   className="absolute bottom-2 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
@@ -671,7 +728,52 @@ function LiveTiming() {
                 </button>
               )}
 
-              {trackPoints.length > 0 ? (
+              {broadcastOn ? (
+                <BroadcastView
+                  sessionKey={`${year}_${round}_${sessionType}`}
+                  timestamp={live.frame?.timestamp}
+                  playing
+                  speed={1}
+                  live={broadcastLive}
+                  multiView={settings.broadcastMultiView}
+                  onMultiViewChange={(v) => updateSetting("broadcastMultiView", v)}
+                  showTelemetry={settings.broadcastTelemetry}
+                  showMap={settings.broadcastMap}
+                  onToggleMap={() => updateSetting("broadcastMap", !settings.broadcastMap)}
+                  trackOverlay={
+                    <TrackCanvas
+                      trackPoints={trackPoints}
+                      rotation={rotation}
+                      trackStatus={trackStatus}
+                      drivers={trackDrivers}
+                      highlightedDrivers={selectedDrivers}
+                      playbackSpeed={1}
+                      showDriverNames={settings.showDriverNames}
+                      corners={settings.showCorners ? trackData?.corners : null}
+                      marshalSectors={trackData?.marshal_sectors}
+                      trackWidth={5}
+                      lightTrack
+                      compact
+                    />
+                  }
+                  raceControl={settings.broadcastRaceControl ? (live.rcMessages || [])[0] ?? null : null}
+                  raceControlOn={settings.broadcastRaceControl}
+                  onToggleRaceControl={() => updateSetting("broadcastRaceControl", !settings.broadcastRaceControl)}
+                  teamRadioOn={settings.showTeamRadio}
+                  onToggleTeamRadio={() => updateSetting("showTeamRadio", !settings.showTeamRadio)}
+                  radioAudioOn={!settings.teamRadioMuted}
+                  onToggleRadioAudio={() => updateSetting("teamRadioMuted", !settings.teamRadioMuted)}
+                  controlsShown={broadcastControls}
+                  muted={broadcastSound.muted}
+                  volume={broadcastSound.volume}
+                  driversByNumber={Object.fromEntries(
+                    drivers.flatMap((d) => {
+                      const n = sessionData?.drivers.find((sd) => sd.abbreviation === d.abbr)?.driver_number;
+                      return n ? [[n, d]] : [];
+                    }),
+                  )}
+                />
+              ) : trackPoints.length > 0 ? (
                 <TrackCanvas
                   trackPoints={trackPoints}
                   rotation={rotation}
@@ -690,7 +792,7 @@ function LiveTiming() {
               )}
 
               {/* Sector overlay controls - qualifying and practice */}
-              {hasSectors && trackData?.sector_boundaries && (
+              {hasSectors && trackData?.sector_boundaries && !broadcastOn && (
                 <div className={`absolute bottom-2 z-20 flex items-center gap-1 ${isMobile ? "left-2 right-2" : liveLaps ? "right-24" : "right-3"}`}>
                   {showSectorOverlay && (
                     <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
@@ -944,7 +1046,9 @@ function LiveTiming() {
                   : "bg-f1-dark border-f1-border text-f1-muted hover:text-white"
               }`}
             >
-              Delay: {formatDelayShort(delayOffset)}
+              {broadcastOn && broadcastDelay !== null
+                ? `Delay: ${formatDelayShort(broadcastDelay)} (broadcast)`
+                : `Delay: ${formatDelayShort(delayOffset)}`}
             </button>
             {showDelaySlider && (<>
               {/* Modal backdrop */}

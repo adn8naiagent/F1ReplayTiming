@@ -88,8 +88,8 @@ export const f1tv = {
   sync: (year: number, round: number, type: string) =>
     request<{ offset: number; content_id: string; drivers?: string[] }>("GET", `/sync?year=${year}&round=${round}&type=${type}`),
   /** The F1 TV replay of a session, found from the round and session start */
-  find: (year: number, round: number, type: string) =>
-    request<{ content_id: string; title: string | null }>("GET", `/find?year=${year}&round=${round}&type=${type}`),
+  find: (year: number, round: number, type: string, live = false) =>
+    request<{ content_id: string; title: string | null }>("GET", `/find?year=${year}&round=${round}&type=${type}${live ? "&live=true" : ""}`),
   play: (content: string, channelId: string | null) =>
     request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId }),
 };

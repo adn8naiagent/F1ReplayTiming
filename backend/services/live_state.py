@@ -1405,8 +1405,12 @@ class LiveStateManager:
                 "remaining": round(remaining, 1),
             }
 
+        # The real time (UTC, epoch seconds) of the data in this frame, so the
+        # broadcast can delay it to match F1 TV's live video
+        clock_offset = self._clock_offset()
         frame: dict[str, Any] = {
             "timestamp": self._last_timestamp,
+            "utc": round(self._last_timestamp - clock_offset, 2) if clock_offset is not None and self._last_timestamp else None,
             "lap": self._current_lap,
             "total_laps": self._total_laps,
             "session_type": self._session_type,
