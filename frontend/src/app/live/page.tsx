@@ -23,7 +23,7 @@ import { miniMarkersWidth, MINI_HEX } from "@/lib/miniSectors";
 import PiPWindow from "@/components/PiPWindow";
 import BroadcastView from "@/components/BroadcastView";
 import { f1tv } from "@/lib/f1tv";
-import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
+import { Maximize, Minimize, ArrowUpRight, Volume2, VolumeX } from "lucide-react";
 
 interface TrackData {
   track_points: { x: number; y: number }[];
@@ -220,15 +220,23 @@ function LiveTiming() {
     clearTimeout(broadcastControlsTimer.current);
     broadcastControlsTimer.current = setTimeout(() => setBroadcastControls(false), 4000);
   }, []);
-  // The broadcast's sound, as last set in a replay
-  const broadcastSound = useMemo(() => {
-    try {
-      const v = localStorage.getItem("f1tv_volume");
-      return { muted: localStorage.getItem("f1tv_muted") === "1", volume: v !== null && Number.isFinite(Number(v)) ? Number(v) : 1 };
-    } catch {
-      return { muted: false, volume: 1 };
-    }
-  }, []);
+  // The broadcast's sound (shared with replays)
+  const [broadcastMuted, setBroadcastMuted] = useState(() => {
+    try { return localStorage.getItem("f1tv_muted") === "1"; } catch { return false; }
+  });
+  const toggleBroadcastMute = () => setBroadcastMuted((m) => {
+    try { localStorage.setItem("f1tv_muted", m ? "0" : "1"); } catch {}
+    return !m;
+  });
+  const [broadcastVolume, setBroadcastVolumeState] = useState(() => {
+    try { const v = Number(localStorage.getItem("f1tv_volume")); return Number.isFinite(v) && localStorage.getItem("f1tv_volume") !== null ? v : 1; } catch { return 1; }
+  });
+  const setBroadcastVolume = (v: number) => {
+    setBroadcastVolumeState(v);
+    try { localStorage.setItem("f1tv_volume", String(v)); } catch {}
+    // Moving the slider up is asking to hear it
+    if (v > 0 && broadcastMuted) toggleBroadcastMute();
+  };
 
   const live = useLiveSocket(year, round, sessionType, speed, effectiveDelay);
   const broadcastLive = useMemo(() => ({ arrivalLag: live.arrivalLag, onDelay: setBroadcastDelay }), [live.arrivalLag]);
@@ -764,8 +772,8 @@ function LiveTiming() {
                   radioAudioOn={!settings.teamRadioMuted}
                   onToggleRadioAudio={() => updateSetting("teamRadioMuted", !settings.teamRadioMuted)}
                   controlsShown={broadcastControls}
-                  muted={broadcastSound.muted}
-                  volume={broadcastSound.volume}
+                  muted={broadcastMuted}
+                  volume={broadcastVolume}
                   driversByNumber={Object.fromEntries(
                     drivers.flatMap((d) => {
                       const n = sessionData?.drivers.find((sd) => sd.abbreviation === d.abbr)?.driver_number;
@@ -984,6 +992,29 @@ function LiveTiming() {
       {/* Live info bar (replaces playback controls) */}
       <div className="flex-shrink-0 bg-f1-card border-t border-f1-border px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-4">
+          {/* The broadcast's sound, far left while it's showing: mute, and a
+              volume slider that opens on hover (as in replays) */}
+          {broadcastOn && (
+            <div className="group/volume flex items-center">
+              <button
+                onClick={toggleBroadcastMute}
+                className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${broadcastMuted ? "text-f1-red hover:bg-f1-red/10" : "text-f1-muted hover:text-white hover:bg-white/10"}`}
+                title={broadcastMuted ? "Unmute the broadcast" : "Mute the broadcast"}
+              >
+                {broadcastMuted || broadcastVolume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={broadcastMuted ? 0 : Math.round(broadcastVolume * 100)}
+                onChange={(e) => setBroadcastVolume(Number(e.target.value) / 100)}
+                className="w-0 opacity-0 group-hover/volume:w-20 group-hover/volume:opacity-100 focus:w-20 focus:opacity-100 ml-1 transition-all duration-200 accent-white cursor-pointer"
+                aria-label="Broadcast volume"
+                title={`Volume ${broadcastMuted ? 0 : Math.round(broadcastVolume * 100)}%`}
+              />
+            </div>
+          )}
           {/* Lap counter */}
           {isRace && live.frame && (
             <div className="text-sm">
