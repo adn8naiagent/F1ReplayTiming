@@ -790,6 +790,12 @@ export default function ReplayPage() {
                     .map((abbr) => sessionData?.drivers.find((d) => d.abbreviation === abbr)?.driver_number)
                     .filter((n): n is string => !!n)}
                   trackOverlay={overlayTrackCanvas}
+                  driversByNumber={Object.fromEntries(
+                    drivers.flatMap((d) => {
+                      const n = sessionData?.drivers.find((s) => s.abbreviation === d.abbr)?.driver_number;
+                      return n ? [[n, d]] : [];
+                    }),
+                  )}
                 />
               ) : mainTrackCanvas}
 
