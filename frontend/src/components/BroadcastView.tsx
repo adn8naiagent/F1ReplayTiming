@@ -67,6 +67,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
     });
   };
   const [showOverlays, setShowOverlays] = useState(true);
+  // The track map over the broadcast, on its own switch (remembered)
+  const [showMap, setShowMapState] = useState<boolean>(() => readJson("f1tv_show_map", true));
+  const toggleMap = () => setShowMapState((v) => { writeJson("f1tv_show_map", !v); return !v; });
   const [showDebug, setShowDebug] = useState(false);
 
   const mainRef = useRef<HTMLVideoElement>(null);
@@ -202,6 +205,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       if (e.key === "h") setShowOverlays((v) => !v);
+      if (e.key === "m") toggleMap();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -292,11 +296,13 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
               onClose={() => setShowOnboard(false)}
             />
           ))}
-          <div className="flex-1 min-h-0 flex items-center justify-center pointer-events-none">
-            <div className="h-full max-w-full aspect-square [&_.bg-f1-dark]:!bg-transparent">{trackOverlay}</div>
-          </div>
+          {showMap && (
+            <div className="flex-1 min-h-0 flex items-center justify-center pointer-events-none">
+              <div className="h-full max-w-full aspect-square [&_.bg-f1-dark]:!bg-transparent">{trackOverlay}</div>
+            </div>
+          )}
         </div>
-      ) : showOverlays && (
+      ) : showOverlays && showMap && (
         // Just the track lines over the video: the map's own background is
         // made transparent here
         <div className="absolute right-3 top-1/2 -translate-y-1/2 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
@@ -359,7 +365,10 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
           )}
         </div>
         <div className="flex items-center gap-1.5">
-          <button onClick={() => setShowOverlays((v) => !v)} className={btnClass} title="Shortcut: H">
+          <button onClick={toggleMap} className={btnClass} title="Shortcut: M">
+            {showMap ? "Hide" : "Show"} map
+          </button>
+          <button onClick={() => setShowOverlays((v) => !v)} className={btnClass} title="Hide or show the map and onboards. Shortcut: H">
             {showOverlays ? "Hide" : "Show"} overlays
           </button>
           <button onClick={() => setShowDebug((v) => !v)} className={btnClass}>Debug</button>
