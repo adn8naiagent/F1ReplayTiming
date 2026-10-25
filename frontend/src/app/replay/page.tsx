@@ -26,7 +26,7 @@ import LapNotifications from "@/components/LapNotifications";
 import TeamRadio, { type RadioClip } from "@/components/TeamRadio";
 
 // F1 TV video isn't finished: the Broadcast button stays hidden until it is.
-const BROADCAST_ENABLED = false;
+const BROADCAST_ENABLED = true;
 import BroadcastView from "@/components/BroadcastView";
 import { f1tv } from "@/lib/f1tv";
 import type { SectorOverlay } from "@/lib/trackRenderer";
