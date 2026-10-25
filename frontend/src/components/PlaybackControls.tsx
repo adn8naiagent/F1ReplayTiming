@@ -130,12 +130,6 @@ export default function PlaybackControls({
         <div className="mb-2">{progressBar}</div>
         <div className="flex items-center gap-2">
           {playPauseBtn}
-          <span className="text-xs font-extrabold text-white tabular-nums flex-1">
-            {!isRace && qualiPhase ? formatTime(qualiPhase.remaining) : !isRace ? formatTime(Math.max(0, totalTime - currentTime)) : formatTime(currentTime)}
-            {isRace && currentLap > 0 && <span className="text-f1-muted ml-2">L{currentLap}/{totalLaps}</span>}
-            {!isRace && qualiPhase && <span className="text-f1-muted ml-2">{qualiPhase.phase}</span>}
-          </span>
-          <span className="text-[10px] font-bold text-f1-muted">{speed}x</span>
           {onToggleMute && (
             <button
               onClick={onToggleMute}
@@ -145,6 +139,12 @@ export default function PlaybackControls({
               {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
             </button>
           )}
+          <span className="text-xs font-extrabold text-white tabular-nums flex-1">
+            {!isRace && qualiPhase ? formatTime(qualiPhase.remaining) : !isRace ? formatTime(Math.max(0, totalTime - currentTime)) : formatTime(currentTime)}
+            {isRace && currentLap > 0 && <span className="text-f1-muted ml-2">L{currentLap}/{totalLaps}</span>}
+            {!isRace && qualiPhase && <span className="text-f1-muted ml-2">{qualiPhase.phase}</span>}
+          </span>
+          <span className="text-[10px] font-bold text-f1-muted">{speed}x</span>
           {onPiP && (
             <button
               onClick={onPiP}
@@ -277,6 +277,17 @@ export default function PlaybackControls({
         <div className="mb-3">{progressBar}</div>
 
         <div className="flex items-center gap-3">
+          {/* The broadcast's sound, far left while it's showing */}
+          {onToggleMute && (
+            <button
+              onClick={onToggleMute}
+              className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${muted ? "text-f1-red hover:bg-f1-red/10" : "text-f1-muted hover:text-white hover:bg-white/10"}`}
+              title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
+            >
+              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+          )}
+
           {/* Skip back buttons */}
           <div className="flex items-center gap-0.5">
             {[...SKIP_OPTIONS].reverse().map(({ label, seconds }) => (
@@ -380,17 +391,6 @@ export default function PlaybackControls({
                 <span className="text-sm font-extrabold text-white">/{totalLaps}</span>
               </div>
 
-              {onToggleMute && (
-                <button
-                  onClick={onToggleMute}
-                  className={`px-2 py-1.5 rounded border transition-colors ${
-                    muted ? "border-f1-red text-f1-red hover:bg-f1-red/10" : "border-f1-border text-f1-muted hover:text-white hover:bg-white/10"
-                  }`}
-                  title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
-                >
-                  {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                </button>
-              )}
               {onPiP && (
                 <button
                   onClick={onPiP}
@@ -437,17 +437,6 @@ export default function PlaybackControls({
                   <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(Math.max(0, totalTime - currentTime))}</span>
                 </div>
               )}
-              {onToggleMute && (
-                <button
-                  onClick={onToggleMute}
-                  className={`px-2 py-1.5 rounded border transition-colors ${
-                    muted ? "border-f1-red text-f1-red hover:bg-f1-red/10" : "border-f1-border text-f1-muted hover:text-white hover:bg-white/10"
-                  }`}
-                  title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
-                >
-                  {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                </button>
-              )}
               {onPiP && (
                 <button
                   onClick={onPiP}
@@ -485,17 +474,6 @@ export default function PlaybackControls({
                 <span className="text-[10px] font-bold text-f1-muted uppercase block">Elapsed</span>
                 <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(currentTime)}</span>
               </div>
-              {onToggleMute && (
-                <button
-                  onClick={onToggleMute}
-                  className={`px-2 py-1.5 rounded border transition-colors ${
-                    muted ? "border-f1-red text-f1-red hover:bg-f1-red/10" : "border-f1-border text-f1-muted hover:text-white hover:bg-white/10"
-                  }`}
-                  title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
-                >
-                  {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
-                </button>
-              )}
               {onPiP && (
                 <button
                   onClick={onPiP}

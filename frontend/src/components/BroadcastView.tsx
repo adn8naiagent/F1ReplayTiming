@@ -485,7 +485,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
 }
 
 /** A slim telemetry strip along the bottom of an onboard: driver, speed,
- *  gear, a throttle gauge and a brake light, and DRS when open. Replay
+ *  gear, a throttle gauge, a brake tag that lights up, and DRS when open. Replay
  *  frames come every half second of race time, so the gauge glides from one
  *  reading to the next over that time rather than stepping. */
 function OnboardTelemetry({ driver, speed }: { driver?: ReplayDriver; speed: number }) {
@@ -505,17 +505,23 @@ function OnboardTelemetry({ driver, speed }: { driver?: ReplayDriver; speed: num
         {driver.gear || "N"}
       </span>
       <span className="relative w-14 min-w-6 h-1.5 rounded-full bg-white/10 overflow-hidden" title="Throttle">
+        {/* Washed-out green on a light throttle, bright green flat out */}
         <span
-          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-emerald-600 via-green-400 to-lime-300 transition-[width] ease-linear"
-          style={{ width: `${throttle}%`, transitionDuration: `${frameMs}ms` }}
+          className="absolute inset-y-0 left-0 rounded-full transition-[width,background-color] ease-linear"
+          style={{
+            width: `${throttle}%`,
+            backgroundColor: `hsl(${150 - throttle * 0.25} ${25 + throttle * 0.7}% ${62 - throttle * 0.12}%)`,
+            transitionDuration: `${frameMs}ms`,
+          }}
         />
       </span>
       <span
-        className={`w-2.5 h-2.5 flex-shrink-0 rounded-full transition-all duration-100 ${
-          driver.brake ? "bg-red-500 shadow-[0_0_6px_1px_rgba(239,68,68,0.8)]" : "bg-white/15"
+        className={`px-1 rounded-[3px] text-[8px] font-extrabold leading-4 tracking-wide transition-colors duration-100 ${
+          driver.brake ? "bg-red-600 text-white" : "bg-white/10 text-white/30"
         }`}
-        title="Brake"
-      />
+      >
+        BRAKE
+      </span>
       {drsOpen && <span className="px-1 rounded-[3px] bg-green-500 text-black text-[8px] font-extrabold leading-4">DRS</span>}
     </div>
   );
