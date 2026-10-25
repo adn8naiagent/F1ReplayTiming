@@ -160,7 +160,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
     const [year, round, type] = sessionKey.split("_");
     f1tv.replayStart(Number(year), Number(round), type).then((r) => setReplayStart(r.replay_start_utc)).catch(() => setReplayStart(null));
   }, [sessionKey]);
-  const [soundSync, setSoundSync] = useState<{ offset: number; content_id: string } | null>(null);
+  const [soundSync, setSoundSync] = useState<{ offset: number; content_id: string; drivers?: string[] } | null>(null);
   const [syncing, setSyncing] = useState(false);
   useEffect(() => {
     const [year, round, type] = sessionKey.split("_");
@@ -181,6 +181,29 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
         ? replayStart - videoStart + STAMP_DELAY_S
         : null;
   const mainOffset = autoOffset !== null ? autoOffset + mainNudge : manualOffset;
+  // How this session is synced, for the hover controls
+  const soundSynced = !!soundSync && link.includes(soundSync.content_id);
+  const syncMethod: { label: string; hint: string; tone: "good" | "rough" | "busy" } | null = soundSynced
+    ? {
+        label: `Synced by engine sound${soundSync!.drivers?.length ? ` (${soundSync!.drivers.join(", ")})` : ""}`,
+        hint: "Lined up by matching onboard engine sound to the drivers' revs in the timing. Accurate to a fraction of a second.",
+        tone: "good",
+      }
+    : syncing
+      ? {
+          label: "Lining up with the timing…",
+          hint: "Matching onboard engine sound to the timing. The first time for a session takes about a minute.",
+          tone: "busy",
+        }
+      : autoOffset !== null
+        ? {
+            label: "Synced by video time stamp (approximate)",
+            hint: "F1 TV's audio for this session is protected, so the engine sound couldn't be matched. Lined up from the time stamp in F1 TV's video instead, usually within a second or two. Adjust with the buttons if needed.",
+            tone: "rough",
+          }
+        : manualOffset !== null
+          ? { label: "Synced by hand", hint: "Lined up with Sync broadcast here.", tone: "rough" }
+          : null;
 
   const clock = useReplayClock(timestamp, playing, speed);
   const mainDrift = useVideoSync(mainRef, main.state === "ready", clock, playing, speed, mainOffset);
@@ -548,6 +571,14 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             </>
           )}
         </div>
+        {syncMethod && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/80 border border-f1-border text-[10px] text-white/80" title={syncMethod.hint}>
+            <span className={`w-1.5 h-1.5 rounded-full ${
+              syncMethod.tone === "good" ? "bg-green-400" : syncMethod.tone === "busy" ? "bg-white/50 animate-pulse" : "bg-amber-400"
+            }`} />
+            {syncMethod.label}
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           {([
             ["Track map", showMap, toggleMap, "Shortcut: M"],
