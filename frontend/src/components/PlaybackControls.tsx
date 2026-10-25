@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { SPEED_OPTIONS } from "@/lib/constants";
 import { QualiPhase, QualiPhaseInfo } from "@/hooks/useReplaySocket";
-import { Maximize, Minimize } from "lucide-react";
+import { Maximize, Minimize, Volume2, VolumeX } from "lucide-react";
 
 const SKIP_OPTIONS = [
   { label: "5s", seconds: 5 },
@@ -31,6 +31,9 @@ interface Props {
   onSyncPhoto?: () => void;
   onPiP?: () => void;
   pipActive?: boolean;
+  /** The broadcast's sound, while it's showing */
+  onToggleMute?: () => void;
+  muted?: boolean;
   onFullscreen?: () => void;
   fullscreen?: boolean;
   qualiPhase?: QualiPhase | null;
@@ -56,6 +59,8 @@ export default function PlaybackControls({
   onSyncPhoto,
   onPiP,
   pipActive,
+  onToggleMute,
+  muted,
   onFullscreen,
   fullscreen,
   qualiPhase,
@@ -131,6 +136,15 @@ export default function PlaybackControls({
             {!isRace && qualiPhase && <span className="text-f1-muted ml-2">{qualiPhase.phase}</span>}
           </span>
           <span className="text-[10px] font-bold text-f1-muted">{speed}x</span>
+          {onToggleMute && (
+            <button
+              onClick={onToggleMute}
+              className="w-8 h-8 flex items-center justify-center rounded transition-colors text-f1-muted hover:text-white hover:bg-white/10"
+              title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
+            >
+              {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+            </button>
+          )}
           {onPiP && (
             <button
               onClick={onPiP}
@@ -366,6 +380,17 @@ export default function PlaybackControls({
                 <span className="text-sm font-extrabold text-white">/{totalLaps}</span>
               </div>
 
+              {onToggleMute && (
+                <button
+                  onClick={onToggleMute}
+                  className={`px-2 py-1.5 rounded border transition-colors ${
+                    muted ? "border-f1-red text-f1-red hover:bg-f1-red/10" : "border-f1-border text-f1-muted hover:text-white hover:bg-white/10"
+                  }`}
+                  title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
+                >
+                  {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </button>
+              )}
               {onPiP && (
                 <button
                   onClick={onPiP}
@@ -412,6 +437,17 @@ export default function PlaybackControls({
                   <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(Math.max(0, totalTime - currentTime))}</span>
                 </div>
               )}
+              {onToggleMute && (
+                <button
+                  onClick={onToggleMute}
+                  className={`px-2 py-1.5 rounded border transition-colors ${
+                    muted ? "border-f1-red text-f1-red hover:bg-f1-red/10" : "border-f1-border text-f1-muted hover:text-white hover:bg-white/10"
+                  }`}
+                  title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
+                >
+                  {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </button>
+              )}
               {onPiP && (
                 <button
                   onClick={onPiP}
@@ -449,6 +485,17 @@ export default function PlaybackControls({
                 <span className="text-[10px] font-bold text-f1-muted uppercase block">Elapsed</span>
                 <span className="text-sm font-extrabold text-f1-muted tabular-nums">{formatTime(currentTime)}</span>
               </div>
+              {onToggleMute && (
+                <button
+                  onClick={onToggleMute}
+                  className={`px-2 py-1.5 rounded border transition-colors ${
+                    muted ? "border-f1-red text-f1-red hover:bg-f1-red/10" : "border-f1-border text-f1-muted hover:text-white hover:bg-white/10"
+                  }`}
+                  title={muted ? "Unmute the broadcast" : "Mute the broadcast"}
+                >
+                  {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                </button>
+              )}
               {onPiP && (
                 <button
                   onClick={onPiP}

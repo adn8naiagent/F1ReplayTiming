@@ -101,6 +101,13 @@ export default function ReplayPage() {
   // Onboards in the broadcast show their own telemetry, so the panel hides
   const [broadcastOnboards, setBroadcastOnboards] = useState(false);
   const onboardTelemetry = broadcastOn && broadcastOnboards;
+  const [broadcastMuted, setBroadcastMuted] = useState(() => {
+    try { return localStorage.getItem("f1tv_muted") === "1"; } catch { return false; }
+  });
+  const toggleBroadcastMute = () => setBroadcastMuted((m) => {
+    try { localStorage.setItem("f1tv_muted", m ? "0" : "1"); } catch {}
+    return !m;
+  });
   const [f1tvSignedIn, setF1tvSignedIn] = useState(false);
 
   // Persist panel layout per session type
@@ -794,6 +801,7 @@ export default function ReplayPage() {
                     .filter((n): n is string => !!n)}
                   trackOverlay={overlayTrackCanvas}
                   onOnboardsChange={setBroadcastOnboards}
+                  muted={broadcastMuted}
                   driversByNumber={Object.fromEntries(
                     drivers.flatMap((d) => {
                       const n = sessionData?.drivers.find((s) => s.abbreviation === d.abbr)?.driver_number;
@@ -1167,6 +1175,8 @@ export default function ReplayPage() {
         onSyncPhoto={() => setShowSyncPhoto(true)}
         onPiP={!isMobile && !isIOS ? () => setPipActive(true) : undefined}
         pipActive={pipActive}
+        onToggleMute={broadcastOn ? toggleBroadcastMute : undefined}
+        muted={broadcastMuted}
         onFullscreen={!isMobile ? () => {
           const next = !fullscreen;
           setFullscreen(next);

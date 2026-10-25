@@ -20,6 +20,8 @@ interface Props {
   driversByNumber: Record<string, ReplayDriver>;
   /** Told whether onboards (with their own telemetry) are showing */
   onOnboardsChange?: (showing: boolean) => void;
+  /** The broadcast's sound (onboards are always muted) */
+  muted?: boolean;
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -42,7 +44,7 @@ function isOnboard(c: F1TVChannel) {
   return (c.type || "").toLowerCase() === "obc" || c.driver_number != null;
 }
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, selectedDriverNumbers, trackOverlay, driversByNumber, onOnboardsChange }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, selectedDriverNumbers, trackOverlay, driversByNumber, onOnboardsChange, muted = false }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
@@ -55,8 +57,12 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
 
   const [opts, setOpts] = useState<StreamOptions>(() => readJson("f1tv_stream_opts", { licenceViaServer: true, relay: false }));
   const [mainChannel, setMainChannel] = useState<string | null>(null);
-  // Up to two onboards, following the first two drivers selected on the leaderboard
+  // Up to two onboards, following the first two drivers selected on the
+  // leaderboard. × closes one; selecting that driver again, or picking it
+  // in the onboard menu, brings it back.
   const [onboardChannels, setOnboardChannels] = useState<[string | null, string | null]>([null, null]);
+  const [closedOnboards, setClosedOnboards] = useState<Set<string>>(() => new Set());
+  const prevSelected = useRef<string[]>(selectedDriverNumbers);
   // Onboards can be turned off; then selecting drivers only highlights them
   const [showOnboard, setShowOnboardState] = useState<boolean>(() => readJson("f1tv_show_onboard", true));
   const setShowOnboard = (update: boolean | ((v: boolean) => boolean)) => {
@@ -100,6 +106,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   const broadcastPlaying = mainOffset !== null ? playing : !!mainRef.current && !mainRef.current.paused;
 
   useEffect(() => writeJson("f1tv_stream_opts", opts), [opts]);
+  useEffect(() => {
+    if (mainRef.current) mainRef.current.muted = muted;
+  }, [muted, main.state]);
 
   // No saved link: find this session's replay on F1 TV.
   useEffect(() => {
@@ -146,13 +155,27 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
 
   // Follow the leaderboard selection: an onboard for each of the first two
+  // selected drivers that hasn't been closed. Selecting a driver reopens theirs.
   useEffect(() => {
+    const channelOf = (n: string) => onboards.find((c) => String(c.driver_number) === n)?.channel_id ?? null;
+    const added = selectedDriverNumbers.filter((n) => !prevSelected.current.includes(n));
+    prevSelected.current = selectedDriverNumbers;
+    const closed = new Set(closedOnboards);
+    added.forEach((n) => { const c = channelOf(n); if (c) closed.delete(c); });
+    if (closed.size !== closedOnboards.size) setClosedOnboards(closed);
+    if (added.length) setShowOnboard(true);
     const matches = selectedDriverNumbers
-      .map((n) => onboards.find((c) => String(c.driver_number) === n)?.channel_id ?? null)
-      .filter((c): c is string => !!c)
+      .map(channelOf)
+      .filter((c): c is string => !!c && !closed.has(c))
       .slice(0, 2);
-    if (matches.length) setOnboardChannels([matches[0], matches[1] ?? null]);
+    if (matches.length || selectedDriverNumbers.length) setOnboardChannels([matches[0] ?? null, matches[1] ?? null]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDriverNumbers, onboards]);
+
+  const closeOnboard = (channel: string) => {
+    setClosedOnboards((s) => new Set(s).add(channel));
+    setOnboardChannels(([a, b]) => (a === channel ? [b, null] : [a, b === channel ? null : b]));
+  };
 
   // (Re)load the main feed.
   useEffect(() => {
@@ -291,13 +314,15 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
               mainReady={main.state === "ready"}
               playing={broadcastPlaying}
               speed={mainOffset !== null ? speed : 1}
+              replaySpeed={speed}
               nudge={onboardNudge}
               driver={driverOf(channel)}
-              onClose={() => setShowOnboard(false)}
+              onClose={() => closeOnboard(channel)}
             />
           ))}
           {showMap && (
-            <div className="flex-1 min-h-0 flex items-center justify-center pointer-events-none">
+            // A fixed size, so it stays readable; the onboards scale around it
+            <div className="flex-shrink-0 h-[clamp(170px,38%,300px)] flex justify-center pointer-events-none">
               <div className="h-full max-w-full aspect-square [&_.bg-f1-dark]:!bg-transparent">{trackOverlay}</div>
             </div>
           )}
@@ -342,6 +367,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
                 const next: [string | null, string | null] = [...onboardChannels];
                 next[slot] = e.target.value || null;
                 setOnboardChannels(next);
+                if (e.target.value) setClosedOnboards((s) => { const n = new Set(s); n.delete(e.target.value); return n; });
                 // Picking one here is asking to see it, even if onboards were hidden
                 if (e.target.value) setShowOnboard(true);
               }}
@@ -411,7 +437,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
 }
 
 /** One onboard camera, following the broadcast's position. */
-function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, nudge, driver, onClose }: {
+function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, replaySpeed, nudge, driver, onClose }: {
   link: string;
   channel: string;
   opts: StreamOptions;
@@ -419,6 +445,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   mainReady: boolean;
   playing: boolean;
   speed: number;
+  replaySpeed: number;
   nudge: number;
   driver?: ReplayDriver;
   onClose: () => void;
@@ -434,51 +461,61 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   }, [link, channel, opts]);
 
   return (
-    <div className="relative w-full aspect-video flex-shrink-0 bg-black rounded-lg overflow-hidden border border-white/10">
+    // Fills the space the map leaves, as large as fits at 16:9
+    <div className="flex-1 min-h-0 flex justify-center [container-type:size]">
+    <div className="relative aspect-video bg-black rounded-lg overflow-hidden border border-white/10" style={{ width: "min(100cqw, 100cqh * 16 / 9)" }}>
       <video ref={ref} className="w-full h-full object-contain" muted playsInline />
       <button
         onClick={onClose}
         className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white/80 hover:text-white text-sm leading-none flex items-center justify-center"
-        title="Hide onboards (turn them back on with Show onboards)"
-        aria-label="Hide onboards"
+        title="Close this onboard (select the driver again to bring it back)"
+        aria-label="Close onboard"
       >
         ×
       </button>
-      <OnboardTelemetry driver={driver} />
+      <OnboardTelemetry driver={driver} speed={replaySpeed} />
       {stream.state === "error" && (
         <p className="absolute inset-0 flex items-center justify-center text-[10px] text-f1-muted p-2 text-center">
           {stream.debug.error?.message}
         </p>
       )}
     </div>
+    </div>
   );
 }
 
 /** A slim telemetry strip along the bottom of an onboard: driver, speed,
- *  gear, throttle and brake bars, and DRS when open. */
-function OnboardTelemetry({ driver }: { driver?: ReplayDriver }) {
+ *  gear, a throttle gauge and a brake light, and DRS when open. Replay
+ *  frames come every half second of race time, so the gauge glides from one
+ *  reading to the next over that time rather than stepping. */
+function OnboardTelemetry({ driver, speed }: { driver?: ReplayDriver; speed: number }) {
   if (!driver || driver.speed == null) return null;
   const throttle = Math.max(0, Math.min(100, driver.throttle ?? 0));
   const drsOpen = (driver.drs ?? 0) >= 10;
+  const frameMs = Math.round(500 / Math.max(speed, 0.25));
   return (
-    <div className="absolute bottom-1.5 inset-x-1.5 flex items-center gap-2 h-6 px-2 rounded-md bg-black/60 backdrop-blur-sm border border-white/10 text-white tabular-nums">
-      <span className="w-0.5 h-3.5 rounded-full" style={{ backgroundColor: driver.color }} />
+    <div className="absolute bottom-1.5 inset-x-0 mx-auto w-fit max-w-[calc(100%-0.75rem)] flex items-center gap-2 h-6 pl-1.5 pr-2 rounded-full bg-black/65 backdrop-blur-sm border border-white/10 text-white tabular-nums">
+      <span className="w-1 h-3.5 rounded-full flex-shrink-0" style={{ backgroundColor: driver.color }} />
       <span className="text-[10px] font-extrabold tracking-wide">{driver.abbr}</span>
-      <span className="flex items-baseline gap-0.5">
+      <span className="flex items-baseline gap-0.5 w-11 justify-end">
         <span className="text-[13px] font-extrabold leading-none">{Math.round(driver.speed)}</span>
-        <span className="text-[8px] font-bold text-white/50">KM/H</span>
+        <span className="text-[7px] font-bold text-white/45">KM/H</span>
       </span>
-      <span className="w-4 h-4 rounded-[3px] bg-white text-black text-[10px] font-extrabold flex items-center justify-center leading-none">
-        {driver.gear ?? "N"}
+      <span className="w-4 h-4 flex-shrink-0 rounded-[4px] bg-white text-black text-[10px] font-extrabold flex items-center justify-center leading-none">
+        {driver.gear || "N"}
       </span>
-      <span className="flex-1 flex flex-col gap-[3px]" title="Throttle and brake">
-        <span className="block h-[3px] rounded-full bg-white/10 overflow-hidden">
-          <span className="block h-full rounded-full bg-gradient-to-r from-emerald-500 to-green-300 transition-[width] duration-200" style={{ width: `${throttle}%` }} />
-        </span>
-        <span className="block h-[3px] rounded-full bg-white/10 overflow-hidden">
-          <span className={`block h-full rounded-full bg-gradient-to-r from-red-600 to-red-400 transition-[width] duration-150 ${driver.brake ? "w-full" : "w-0"}`} />
-        </span>
+      <span className="relative w-14 min-w-6 h-1.5 rounded-full bg-white/10 overflow-hidden" title="Throttle">
+        <span
+          className="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-emerald-600 via-green-400 to-lime-300 transition-[width] ease-linear"
+          style={{ width: `${throttle}%`, transitionDuration: `${frameMs}ms` }}
+        />
       </span>
+      <span
+        className={`w-2.5 h-2.5 flex-shrink-0 rounded-full transition-all duration-100 ${
+          driver.brake ? "bg-red-500 shadow-[0_0_6px_1px_rgba(239,68,68,0.8)]" : "bg-white/15"
+        }`}
+        title="Brake"
+      />
       {drsOpen && <span className="px-1 rounded-[3px] bg-green-500 text-black text-[8px] font-extrabold leading-4">DRS</span>}
     </div>
   );
