@@ -103,8 +103,10 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const [showMap, setShowMap] = useState(showMapSetting);
   useEffect(() => setShowMap(showMapSetting), [showMapSetting]);
   const toggleMap = () => setShowMap((v) => !v);
-  const [telemetryOn, setTelemetryOn] = useState(showTelemetry);
-  useEffect(() => setTelemetryOn(showTelemetry), [showTelemetry]);
+  // Telemetry on each onboard, switched one at a time (Settings > Broadcast
+  // sets both)
+  const [telemetryOn, setTelemetryOn] = useState<[boolean, boolean]>([showTelemetry, showTelemetry]);
+  useEffect(() => setTelemetryOn([showTelemetry, showTelemetry]), [showTelemetry]);
   // Multi-view's two onboards, picked by driver (remembered across sessions)
   const [onboardDrivers, setOnboardDriversState] = useState<[string | null, string | null]>(() =>
     readJson("f1tv_onboard_drivers", [null, null]),
@@ -432,8 +434,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
                   replaySpeed={speed}
                   nudge={onboardNudge}
                   driver={number.startsWith("feed:") ? undefined : driversByNumber[number]}
-                  showTelemetry={telemetryOn}
-                  onToggleTelemetry={() => setTelemetryOn((v) => !v)}
+                  showTelemetry={telemetryOn[slot]}
+                  onToggleTelemetry={() => setTelemetryOn((v) => (slot === 0 ? [!v[0], v[1]] : [v[0], !v[1]]))}
                   picker={picker}
                   controlsShown={controlsShown}
                   onClose={() => setOnboardDriver(slot, null)}
@@ -626,7 +628,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   nudge: number;
   driver?: ReplayDriver;
   showTelemetry: boolean;
-  /** Shows or hides telemetry on the onboards for now (Settings > Broadcast sets the default) */
+  /** Shows or hides this onboard's telemetry for now (Settings > Broadcast sets the default) */
   onToggleTelemetry: () => void;
   /** Switches this onboard to another driver (on hover) */
   picker: React.ReactNode;
@@ -656,7 +658,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
             className={`absolute top-1.5 right-9 h-6 px-2 rounded-full bg-black/70 text-[10px] font-bold flex items-center gap-1 transition-opacity ${
               showTelemetry ? "text-white" : "text-white/60 hover:text-white"
             } ${controlsShown ? "opacity-100" : "opacity-0 group-hover/pane:opacity-100 [@media(hover:none)]:pointer-events-none"}`}
-            title={showTelemetry ? "Hide telemetry on the onboards" : "Show telemetry on the onboards"}
+            title={showTelemetry ? "Hide telemetry on this onboard" : "Show telemetry on this onboard"}
           >
             <span className={`w-1.5 h-1.5 rounded-full ${showTelemetry ? "bg-green-400" : "bg-white/30"}`} />
             Telemetry
