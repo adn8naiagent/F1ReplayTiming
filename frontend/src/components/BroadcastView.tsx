@@ -1243,12 +1243,20 @@ function SourcePicker({ onboards, driversByNumber, value, placeholder, clearable
 
   const selectedDriver = drivers.find((d) => d.value === value);
   const pick = (v: Source | null) => { onChange(v); setOpen(false); };
+  // Opens upwards when there isn't room below (views along the bottom, above
+  // the playback controls)
+  const [up, setUp] = useState(false);
+  const toggle = () => {
+    const rect = ref.current?.getBoundingClientRect();
+    if (!open && rect) setUp(window.innerHeight - rect.bottom < 280 && rect.top > window.innerHeight - rect.bottom);
+    setOpen(!open);
+  };
   const row = "w-full flex items-center gap-2 px-2 py-1.5 hover:bg-white/5 transition-colors text-left";
 
   return (
     <div ref={ref} className="relative w-44 pointer-events-auto">
       <button
-        onClick={() => setOpen(!open)}
+        onClick={toggle}
         className="w-full flex items-center gap-2 bg-f1-dark border border-f1-border rounded px-2 py-1.5 text-left hover:border-f1-muted transition-colors"
       >
         {value === BROADCAST ? (
@@ -1270,7 +1278,7 @@ function SourcePicker({ onboards, driversByNumber, value, placeholder, clearable
         </svg>
       </button>
       {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-f1-dark border border-f1-border rounded shadow-xl z-50 max-h-[260px] overflow-y-auto">
+        <div className={`absolute ${up ? "bottom-full mb-1" : "top-full mt-1"} left-0 right-0 bg-f1-dark border border-f1-border rounded shadow-xl z-50 max-h-[260px] overflow-y-auto`}>
           {value && clearable && (
             <button onClick={() => pick(null)} className={`${row} text-xs text-f1-muted`}>Clear</button>
           )}
