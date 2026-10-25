@@ -693,19 +693,6 @@ function LiveTiming() {
                 drivers={drivers}
               />
 
-              {/* Live positions unavailable: only when the server's live
-                  connection isn't signed in to F1 TV */}
-              {live.frame?.signed_in === false && !hasTelemetry && !drivers.some((d) => d.x !== 0 || d.y !== 0) && (
-              <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
-                <div className="bg-f1-card/90 border border-f1-border rounded-lg px-4 py-2.5 backdrop-blur-sm text-center max-w-sm">
-                  <p className="text-f1-muted text-xs leading-relaxed">
-                    Car positions and telemetry in live timing need an F1 TV sign-in on this server.
-                    They&apos;ll be in the replay once the session is processed.
-                  </p>
-                </div>
-              </div>
-              )}
-
               {/* Telemetry overlay - desktop only, bottom-left (telemetry arrives with an F1 TV sign-in) */}
               {hasTelemetry && !isMobile && showTelemetry && !broadcastOn && (
                 <div className="absolute bottom-2 left-3 z-10 flex flex-col gap-1">
@@ -836,7 +823,7 @@ function LiveTiming() {
                 </div>
               )}
 
-              {/* Fullscreen toggle - top-left */}
+              {/* Fullscreen toggle - bottom-right */}
               {!isMobile && (
                 <button
                   onClick={() => {
@@ -848,7 +835,7 @@ function LiveTiming() {
                       document.exitFullscreen();
                     }
                   }}
-                  className="absolute top-3 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
+                  className="absolute bottom-3 right-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
                   title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
                 >
                   {fullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
