@@ -226,6 +226,9 @@ export default function ReplayPage() {
     });
   }
   const { settings, update: updateSetting } = useSettings();
+  // The telemetry (and pinned race control) side panel; not over the
+  // broadcast, which has its own onboard telemetry and race control line
+  const telemetrySidePanel = !isMobile && showTelemetry && !broadcastOn && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned);
 
   const { data: sessionData, loading: sessionLoading, error: sessionError } = useApi<SessionData>(
     `/api/sessions/${year}/${round}?type=${sessionType}`,
@@ -600,7 +603,7 @@ export default function ReplayPage() {
         </div>
 
         {/* Track section */}
-        <div className={`sm:flex-1 min-w-0 ${!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) ? `flex ${effectiveTelemetryPosition === "left" ? "flex-row" : "flex-col"} min-h-0` : "relative"}`}>
+        <div className={`sm:flex-1 min-w-0 ${telemetrySidePanel ? `flex ${effectiveTelemetryPosition === "left" ? "flex-row" : "flex-col"} min-h-0` : "relative"}`}>
           {/* Mobile section header */}
           {isMobile && (
             <button
@@ -617,7 +620,7 @@ export default function ReplayPage() {
           {(!isMobile || mobileTrackOpen) && (
             <div
               onPointerDown={(e) => { if (broadcastOn && e.pointerType !== "mouse") revealBroadcastControls(); }}
-              className={`h-[42vh] sm:h-full relative group/view ${!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) ? "flex-1 min-w-0 min-h-0" : ""}`}>
+              className={`h-[42vh] sm:h-full relative group/view ${telemetrySidePanel ? "flex-1 min-w-0 min-h-0" : ""}`}>
               {/* Flag badge */}
               {trackStatus !== "green" && (
                 <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10">
@@ -961,7 +964,7 @@ export default function ReplayPage() {
           )}
 
           {/* Telemetry panel - desktop only (3+ drivers) */}
-          {!isMobile && showTelemetry && (selectedDrivers.length > 2 || settings.showAllPanels || rcPinned) && (
+          {telemetrySidePanel && (
             <div
               className={`flex-shrink-0 ${
                 effectiveTelemetryPosition === "left"

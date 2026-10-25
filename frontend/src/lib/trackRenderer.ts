@@ -503,8 +503,9 @@ export function drawDrivers(
 
     ctx.restore();
 
-    // Driver label
-    if (showNames) {
+    // Driver label: drivers selected on the leaderboard keep theirs when
+    // names are hidden, so they're easy to pick out
+    if (showNames || isHighlighted) {
       ctx.font = isHighlighted ? "800 12px system-ui, -apple-system, sans-serif" : "800 10px system-ui, -apple-system, sans-serif";
       ctx.fillStyle = "#FFFFFF";
       ctx.textAlign = "center";
