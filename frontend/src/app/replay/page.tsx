@@ -98,9 +98,6 @@ export default function ReplayPage() {
   const [rcPanelOpen, setRcPanelOpen] = useState(false);
   const [rcPinned, setRcPinned] = useState(false);
   const [broadcastOn, setBroadcastOn] = useState(false);
-  // Onboards in the broadcast show their own telemetry, so the panel hides
-  const [broadcastOnboards, setBroadcastOnboards] = useState(false);
-  const onboardTelemetry = broadcastOn && broadcastOnboards;
   const [broadcastMuted, setBroadcastMuted] = useState(() => {
     try { return localStorage.getItem("f1tv_muted") === "1"; } catch { return false; }
   });
@@ -712,7 +709,8 @@ export default function ReplayPage() {
               </div>
 
               {/* Race Control Messages panel (floating, hidden when pinned) */}
-              {rcPanelOpen && !rcPinned && (
+              {/* On the broadcast, race control is just the latest message (BroadcastView) */}
+              {rcPanelOpen && !rcPinned && !broadcastOn && (
                 <div
                   ref={rcPanelRef}
                   className={`z-20 w-80 bg-f1-card/95 border border-f1-border rounded-lg shadow-xl backdrop-blur-sm overflow-hidden flex flex-col ${
@@ -800,7 +798,7 @@ export default function ReplayPage() {
                   showTelemetry={settings.broadcastTelemetry}
                   showMap={settings.broadcastMap}
                   trackOverlay={overlayTrackCanvas}
-                  onOnboardsChange={setBroadcastOnboards}
+                  raceControl={rcPanelOpen || rcPinned ? (replay.frame?.rc_messages || [])[0] ?? null : null}
                   muted={broadcastMuted}
                   driversByNumber={Object.fromEntries(
                     drivers.flatMap((d) => {
@@ -872,7 +870,7 @@ export default function ReplayPage() {
               {/* Fullscreen toggle moved to PlaybackControls */}
 
               {/* Telemetry overlay - desktop only, bottom-left (1-2 drivers) */}
-              {!isMobile && showTelemetry && selectedDrivers.length <= 2 && !settings.showAllPanels && !rcPinned && !onboardTelemetry && (
+              {!isMobile && showTelemetry && selectedDrivers.length <= 2 && !settings.showAllPanels && !rcPinned && !broadcastOn && (
                 <div className="absolute bottom-2 left-3 z-10 flex flex-col gap-1">
                   <button
                     onClick={() => setShowTelemetry(false)}
@@ -892,7 +890,8 @@ export default function ReplayPage() {
               )}
 
               {/* Telemetry toggle - desktop only, bottom-left */}
-              {!isMobile && !showTelemetry && !settings.showAllPanels && !onboardTelemetry && (
+              {/* Telemetry is on the track map view only; the broadcast's onboards have their own */}
+              {!isMobile && !showTelemetry && !settings.showAllPanels && !broadcastOn && (
                 <button
                   onClick={() => setShowTelemetry(true)}
                   className="absolute bottom-2 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"

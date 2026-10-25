@@ -569,6 +569,27 @@ export default function FeaturesPage() {
             </div>
             <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mt-6 mb-3">Qualifying and practice</p>
             <LapAnalysisGuide />
+
+            <div className="mt-6 pt-5 border-t border-f1-border">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-base font-bold text-white">Track dominance</h3>
+                <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-white/10 text-f1-muted leading-none">Desktop</span>
+              </div>
+              <SessionChips practice qualifying />
+              <p className="text-f1-text leading-relaxed mb-3">
+                See where on the track one driver beats another. In Lap Analysis &gt; Compare, pick two drivers and
+                press Track dominance: the track map is coloured by who was faster through each part of their best
+                laps, with a count of the parts each one won. Works in replays and live timing.
+              </p>
+              <img
+                src="/track-dominance.png"
+                alt="Track dominance: Antonelli and Leclerc's best laps in qualifying at the 2026 United States Grand Prix, with the track coloured by who was faster in each part"
+                className="w-full max-w-2xl rounded-lg border border-f1-border"
+              />
+              <p className="text-xs text-f1-muted mt-2">
+                Antonelli (16 parts) and Leclerc (9) in qualifying at the 2026 United States Grand Prix.
+              </p>
+            </div>
           </section>
 
           {/* Telemetry */}

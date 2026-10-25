@@ -29,7 +29,11 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 - **Race control messages** - steward decisions, investigations, penalties, track limits, and flag changes displayed in a draggable overlay on the track map with optional sound notifications
 - **Pit position prediction** estimates where a driver would rejoin if they pitted now, with predicted gap ahead and behind, using precomputed pit loss times per circuit with Safety Car and Virtual Safety Car adjustments
 - **Telemetry** for unlimited drivers showing speed, throttle, brake, gear, and DRS (2025 and earlier) plotted against track distance, with a moveable side panel for 3+ driver comparisons
-- **Lap Analysis** (Beta) compare lap times for up to two drivers with a line chart and lap-by-lap history, with pit stop and safety car periods highlighted. Race replay only
+- **Lap Analysis** (Beta) - in races, compare lap times for up to two drivers with a line chart and lap-by-lap history, with pit stop and safety car periods highlighted. In qualifying and practice, every driver's laps sector by sector, and two drivers' best laps compared with the running gap and speed, throttle, brake and gear traces. In replays and live timing
+- **Track dominance** - colours the track map by which of two drivers was faster through each part of the lap, from their best laps, with a count of the parts each one won. Qualifying and practice, in replays and live timing (desktop). Open it from Lap Analysis > Compare
+
+  ![Track dominance: Antonelli and Leclerc's best laps in qualifying at the 2026 United States Grand Prix](frontend/public/track-dominance.png)
+
 - **Picture-in-Picture** mode for a compact floating window with track map, race control, leaderboard, and telemetry
 - **Broadcast sync** - match the replay to a recording of a session, either by uploading a screenshot of the timing tower (using AI vision) or by manually entering gap times
 - **Weather data** including air and track temperature, humidity, wind, and rainfall status

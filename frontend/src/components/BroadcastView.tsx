@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { f1tv, type F1TVChannel, type F1TVContent } from "@/lib/f1tv";
-import type { ReplayDriver } from "@/hooks/useReplaySocket";
+import type { RCMessage, ReplayDriver } from "@/hooks/useReplaySocket";
 import { useF1TVStream, type StreamDebug, type StreamOptions } from "@/hooks/useF1TVStream";
 import { useReplayClock, useVideoSync } from "@/hooks/useVideoSync";
 
@@ -23,8 +23,8 @@ interface Props {
   trackOverlay: React.ReactNode;
   /** Drivers in the current frame by racing number, for the onboard's telemetry */
   driversByNumber: Record<string, ReplayDriver>;
-  /** Told whether onboard telemetry is showing (the page's own is hidden then) */
-  onOnboardsChange?: (showing: boolean) => void;
+  /** The latest race control message, when race control is on */
+  raceControl?: RCMessage | null;
   /** The broadcast's sound (onboards are always muted) */
   muted?: boolean;
 }
@@ -53,7 +53,7 @@ function isOnboard(c: F1TVChannel) {
 // against the engine-sound match)
 const STAMP_DELAY_S = 7.7;
 
-export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, onOnboardsChange, muted = false }: Props) {
+export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, muted = false }: Props) {
   const linkKey = `f1tv_content_${sessionKey}`;
   const [link, setLink] = useState<string>(() => readJson(linkKey, ""));
   const [linkDraft, setLinkDraft] = useState("");
@@ -177,11 +177,6 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const shownOnboards = sideColumn
     ? onboardDrivers.filter((n): n is string => !!channelOf(n))
     : [];
-  const telemetryShowing = shownOnboards.length > 0 && showTelemetry;
-  useEffect(() => {
-    onOnboardsChange?.(telemetryShowing);
-    return () => onOnboardsChange?.(false);
-  }, [telemetryShowing, onOnboardsChange]);
   const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
 
   // (Re)load the main feed.
@@ -302,6 +297,12 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           <p className="text-xs text-f1-muted">
             {contentError || (main.state === "error" ? main.debug.error?.message : "Loading broadcast…")}
           </p>
+        </div>
+      )}
+
+      {raceControl && (
+        <div className={`absolute bottom-3 left-0 z-20 flex justify-center pointer-events-none ${sideColumn ? "w-[70%]" : "w-full"}`}>
+          <RaceControlTicker message={raceControl} />
         </div>
       )}
 
@@ -449,6 +450,44 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
           content={content}
         />
       )}
+    </div>
+  );
+}
+
+/** The latest race control message over the broadcast: one line that
+ *  appears when a message arrives and fades after a few seconds, so it
+ *  doesn't sit over the pictures. */
+function RaceControlTicker({ message }: { message: RCMessage }) {
+  const key = `${message.timestamp}|${message.message}`;
+  const [visible, setVisible] = useState(false);
+  const seen = useRef<string | null>(null);
+  useEffect(() => {
+    // The message already showing when race control is turned on, too
+    if (seen.current === key) return;
+    seen.current = key;
+    setVisible(true);
+    const timer = setTimeout(() => setVisible(false), 8000);
+    return () => clearTimeout(timer);
+  }, [key]);
+  const upper = message.message.toUpperCase();
+  const dot = upper.includes("PENALTY") && !upper.includes("NO FURTHER")
+    ? "bg-red-500"
+    : upper.includes("INVESTIGATION") || upper.includes("NOTED")
+      ? "bg-orange-400"
+      : upper.includes("NO FURTHER") || upper.includes("NO INVESTIGATION")
+        ? "bg-green-500"
+        : upper.includes("YELLOW") || upper.includes("SAFETY CAR")
+          ? "bg-yellow-400"
+          : "bg-white/50";
+  return (
+    <div
+      className={`flex items-center gap-2 max-w-[min(40rem,calc(100%-1.5rem))] px-3 py-1.5 rounded-md bg-black/70 backdrop-blur-sm border border-white/10 transition-opacity duration-700 ${
+        visible ? "opacity-100" : "opacity-0"
+      }`}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dot}`} />
+      <span className="text-[9px] font-bold text-orange-300 uppercase tracking-wider flex-shrink-0">Race control</span>
+      <span className="text-[11px] text-white truncate">{message.message}</span>
     </div>
   );
 }
