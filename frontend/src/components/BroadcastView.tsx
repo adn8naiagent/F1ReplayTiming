@@ -83,6 +83,8 @@ const STAMP_DELAY_S = 7.7;
 
 // Multi-view's side panel, as a share of the width
 const SIDE_MAX = 0.3;
+// A side slot showing F1 TV's default feed (International), which has no channel id
+const DEFAULT_FEED = "default";
 const SIDE_MIN = 0.16;
 
 export default function BroadcastView({ sessionKey, timestamp, playing, speed, multiView: multiViewSetting, showTelemetry, showMap: showMapSetting, trackOverlay, driversByNumber, raceControl, raceControlOn, onToggleRaceControl, teamRadioOn, onToggleTeamRadio, radioAudioOn, onToggleRadioAudio, controlsShown, muted = false, volume = 1 }: Props) {
@@ -105,8 +107,18 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   const toggleMap = () => setShowMap((v) => !v);
   // Telemetry on each onboard, switched one at a time (Settings > Broadcast
   // sets both)
-  const [telemetryOn, setTelemetryOn] = useState<[boolean, boolean]>([showTelemetry, showTelemetry]);
-  useEffect(() => setTelemetryOn([showTelemetry, showTelemetry]), [showTelemetry]);
+  // (remembered; changing the setting resets both)
+  const [telemetryOn, setTelemetryOnState] = useState<[boolean, boolean]>(() =>
+    readJson("f1tv_onboard_telemetry", [showTelemetry, showTelemetry]),
+  );
+  const setTelemetryOn = (update: (v: [boolean, boolean]) => [boolean, boolean]) =>
+    setTelemetryOnState((v) => { const next = update(v); writeJson("f1tv_onboard_telemetry", next); return next; });
+  const telemetrySetting = useRef(showTelemetry);
+  useEffect(() => {
+    if (telemetrySetting.current === showTelemetry) return; // not on first load
+    telemetrySetting.current = showTelemetry;
+    setTelemetryOn(() => [showTelemetry, showTelemetry]);
+  }, [showTelemetry]); // eslint-disable-line react-hooks/exhaustive-deps
   // Multi-view's two onboards, picked by driver (remembered across sessions)
   const [onboardDrivers, setOnboardDriversState] = useState<[string | null, string | null]>(() =>
     readJson("f1tv_onboard_drivers", [null, null]),
@@ -210,12 +222,18 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
   }, [link]);
 
   const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
+  // Every extra feed for the side slots, including the default one
+  // (International), which F1 TV gives no channel id
+  const sideFeeds = useMemo(() => (content?.channels || []).filter((c) => !isOnboard(c) && (c.channel_id || c.title)), [content]);
   const onboards = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && isOnboard(c) && c.driver_number), [content]);
   // A side slot holds a driver's number (their onboard) or "feed:<title>"
   // (another of F1 TV's feeds, such as the Driver Tracker)
   const channelOf = (value: string | null) => {
     if (!value) return null;
-    if (value.startsWith("feed:")) return mainFeeds.find((c) => feedKey(c) === value)?.channel_id ?? null;
+    if (value.startsWith("feed:")) {
+      const feed = sideFeeds.find((c) => feedKey(c) === value);
+      return feed ? feed.channel_id ?? DEFAULT_FEED : null;
+    }
     return onboards.find((c) => String(c.driver_number) === value)?.channel_id ?? null;
   };
   const sideColumn = multiView;
@@ -412,7 +430,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             const picker = (
               <OnboardPicker
                 onboards={onboards}
-                feeds={mainFeeds}
+                feeds={sideFeeds}
                 driversByNumber={driversByNumber}
                 value={number}
                 exclude={onboardDrivers[slot === 0 ? 1 : 0]}
@@ -448,8 +466,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, m
             return (
               <OnboardBox key={slot}>
                 <div className="w-full h-full rounded-lg border border-dashed border-white/20 flex flex-col items-center justify-center gap-2">
-                  <span className="text-[10px] text-white/50">{onboards.length + mainFeeds.length ? "Onboard camera or feed" : "No other feeds for this session"}</span>
-                  {onboards.length + mainFeeds.length > 0 && picker}
+                  <span className="text-[10px] text-white/50">{onboards.length + sideFeeds.length ? "Onboard camera or feed" : "No other feeds for this session"}</span>
+                  {onboards.length + sideFeeds.length > 0 && picker}
                 </div>
               </OnboardBox>
             );
@@ -640,7 +658,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
   const broadcastClock = useCallback(() => mainRef.current?.currentTime ?? 0, [mainRef]);
   useVideoSync(ref, stream.state === "ready" && mainReady, broadcastClock, playing, speed, nudge);
   useEffect(() => {
-    void stream.load(link, channel, opts);
+    void stream.load(link, channel === DEFAULT_FEED ? null : channel, opts);
     return () => { void stream.unload(); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [link, channel, opts]);
@@ -677,7 +695,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-3 text-center">
             <p className="text-[10px] text-white/80 leading-snug">{stream.debug.error?.message}</p>
             <button
-              onClick={() => void stream.load(link, channel, opts)}
+              onClick={() => void stream.load(link, channel === DEFAULT_FEED ? null : channel, opts)}
               className="px-2 py-0.5 rounded bg-f1-border text-white text-[10px] font-bold hover:bg-f1-red transition-colors"
             >
               Retry
@@ -773,16 +791,6 @@ function OnboardPicker({ onboards, feeds, driversByNumber, value, exclude, place
           {value && (
             <button onClick={() => pick(null)} className={`${row} text-xs text-f1-muted`}>Clear</button>
           )}
-          {otherFeeds.length > 0 && (
-            <>
-              <p className="px-2 pt-1.5 pb-0.5 text-[9px] font-bold text-f1-muted uppercase tracking-wider">Feeds</p>
-              {otherFeeds.map((f) => (
-                <button key={f.value} onClick={() => pick(f.value)} className={`${row} ${f.value === value ? "bg-white/10" : ""}`}>
-                  <span className="text-xs font-bold text-white">{f.label}</span>
-                </button>
-              ))}
-            </>
-          )}
           {drivers.length > 0 && (
             <>
               <p className="px-2 pt-1.5 pb-0.5 text-[9px] font-bold text-f1-muted uppercase tracking-wider">Onboards</p>
@@ -792,6 +800,16 @@ function OnboardPicker({ onboards, feeds, driversByNumber, value, exclude, place
                   <span className="text-[10px] font-bold text-f1-muted w-4 text-right">{d.position < 99 ? d.position : ""}</span>
                   <span className="text-xs font-bold text-white">{d.abbr}</span>
                   <span className="text-[10px] text-f1-muted truncate">{d.team}</span>
+                </button>
+              ))}
+            </>
+          )}
+          {otherFeeds.length > 0 && (
+            <>
+              <p className="px-2 pt-1.5 pb-0.5 text-[9px] font-bold text-f1-muted uppercase tracking-wider">Feeds</p>
+              {otherFeeds.map((f) => (
+                <button key={f.value} onClick={() => pick(f.value)} className={`${row} ${f.value === value ? "bg-white/10" : ""}`}>
+                  <span className="text-xs font-bold text-white">{f.label}</span>
                 </button>
               ))}
             </>
