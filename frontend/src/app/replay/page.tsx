@@ -509,7 +509,6 @@ export default function ReplayPage() {
     trackWidth: 5,
     lightTrack: true,
     showElevation: false,
-    corners: null,
     sectorOverlay: null,
     segmentOverlay: null,
     sectorFlags: null,
