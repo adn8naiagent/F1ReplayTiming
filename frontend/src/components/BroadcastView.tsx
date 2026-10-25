@@ -133,6 +133,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   }, [link]);
 
   const onboards = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && isOnboard(c)), [content]);
+  const onboardVisible = showOnboard && !!onboardChannel && showOverlays;
   const onboardDriverNumber = (() => {
     const c = onboards.find((o) => o.channel_id === onboardChannel);
     return c?.driver_number != null ? String(c.driver_number) : null;
@@ -260,7 +261,15 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
 
   return (
     <div className="relative w-full h-full bg-black overflow-hidden group">
-      <video ref={mainRef} className="w-full h-full object-contain" playsInline />
+      {/* Protected video can be drawn in its own hardware layer that ignores
+          stacking, so the onboard never overlaps the broadcast: with an
+          onboard showing, the broadcast takes the left and the onboard and
+          map a column on the right. */}
+      <video
+        ref={mainRef}
+        className={`absolute inset-y-0 left-0 h-full object-contain ${onboardVisible ? "w-[70%]" : "w-full"}`}
+        playsInline
+      />
 
       {main.state !== "ready" && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -273,15 +282,17 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
       {showOverlays && (
         // Just the track lines over the video: the map's own background is
         // made transparent here
-        <div className="absolute top-1/2 -translate-y-1/2 right-3 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
+        <div className={`absolute right-3 z-10 aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent ${
+          onboardVisible ? "bottom-3 w-[calc(30%-1.5rem)] max-h-[55%]" : "top-1/2 -translate-y-1/2 w-[26%] max-w-[340px]"
+        }`}>
           {trackOverlay}
         </div>
       )}
 
       {/* Kept mounted while hidden so the player stays attached. */}
       {showOnboard && onboardChannel && (
-        // Top right, above the broadcast and the map
-        <div className={`absolute top-3 right-3 z-20 w-[28%] max-w-[420px] aspect-video bg-black rounded-lg overflow-hidden border border-white/10 shadow-lg ${showOverlays ? "" : "hidden"}`}>
+        // Top of the right-hand column, beside the broadcast
+        <div className={`absolute top-3 right-3 z-20 w-[calc(30%-1.5rem)] aspect-video bg-black rounded-lg overflow-hidden border border-white/10 ${showOverlays ? "" : "hidden"}`}>
           <video ref={onboardRef} className="w-full h-full object-contain" muted playsInline />
           <button
             onClick={() => setShowOnboard(false)}
