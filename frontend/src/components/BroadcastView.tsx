@@ -58,8 +58,8 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   const [opts, setOpts] = useState<StreamOptions>(() => readJson("f1tv_stream_opts", { licenceViaServer: true, relay: false }));
   const [mainChannel, setMainChannel] = useState<string | null>(null);
   // Up to two onboards, following the first two drivers selected on the
-  // leaderboard. × closes one; selecting that driver again, or picking it
-  // in the onboard menu, brings it back.
+  // leaderboard. × closes one until the next leaderboard click, or until
+  // it's picked in the onboard menu.
   const [onboardChannels, setOnboardChannels] = useState<[string | null, string | null]>([null, null]);
   const [closedOnboards, setClosedOnboards] = useState<Set<string>>(() => new Set());
   const prevSelected = useRef<string[]>(selectedDriverNumbers);
@@ -155,17 +155,17 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
   const mainFeeds = useMemo(() => (content?.channels || []).filter((c) => c.channel_id && !isOnboard(c)), [content]);
 
   // Follow the leaderboard selection: an onboard for each of the first two
-  // selected drivers that hasn't been closed. Selecting a driver reopens theirs.
+  // selected drivers. Any leaderboard click reopens closed onboards.
   useEffect(() => {
-    const channelOf = (n: string) => onboards.find((c) => String(c.driver_number) === n)?.channel_id ?? null;
-    const added = selectedDriverNumbers.filter((n) => !prevSelected.current.includes(n));
+    const changed = selectedDriverNumbers.join() !== prevSelected.current.join();
     prevSelected.current = selectedDriverNumbers;
-    const closed = new Set(closedOnboards);
-    added.forEach((n) => { const c = channelOf(n); if (c) closed.delete(c); });
-    if (closed.size !== closedOnboards.size) setClosedOnboards(closed);
-    if (added.length) setShowOnboard(true);
+    const closed = changed ? new Set<string>() : closedOnboards;
+    if (changed) {
+      setClosedOnboards(closed);
+      if (selectedDriverNumbers.length) setShowOnboard(true);
+    }
     const matches = selectedDriverNumbers
-      .map(channelOf)
+      .map((n) => onboards.find((c) => String(c.driver_number) === n)?.channel_id ?? null)
       .filter((c): c is string => !!c && !closed.has(c))
       .slice(0, 2);
     if (matches.length || selectedDriverNumbers.length) setOnboardChannels([matches[0] ?? null, matches[1] ?? null]);
@@ -352,8 +352,11 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
             </button>
           ) : (
             <>
+              <button onClick={() => nudge("main", -5)} className={btnClass} title="Video earlier against the timing">−5s</button>
               <button onClick={() => nudge("main", -0.5)} className={btnClass} title="Video earlier against the timing">−0.5s</button>
               <button onClick={() => nudge("main", 0.5)} className={btnClass} title="Video later against the timing">+0.5s</button>
+              <button onClick={() => nudge("main", 5)} className={btnClass} title="Video later against the timing">+5s</button>
+              {mainNudge !== 0 && <span className="text-[10px] font-bold text-white/80 bg-black/60 rounded px-1.5 py-1 tabular-nums">{mainNudge > 0 ? "+" : ""}{mainNudge}s</span>}
               <button onClick={() => resetSync("main")} className={btnClass}>{autoOffset !== null ? "Reset sync" : "Re-sync"}</button>
             </>
           )}
@@ -468,7 +471,7 @@ function OnboardPane({ link, channel, opts, mainRef, mainReady, playing, speed, 
       <button
         onClick={onClose}
         className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white/80 hover:text-white text-sm leading-none flex items-center justify-center"
-        title="Close this onboard (select the driver again to bring it back)"
+        title="Close this onboard (a leaderboard click brings it back)"
         aria-label="Close onboard"
       >
         ×
