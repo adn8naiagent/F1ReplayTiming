@@ -504,7 +504,7 @@ export default function ReplayPage() {
     />
   );
   // The small map over the broadcast: thinner white lines; no elevation,
-  // sectors or corner numbers
+  // or sectors
   const overlayTrackCanvas = cloneElement(mainTrackCanvas, {
     trackWidth: 5,
     lightTrack: true,
