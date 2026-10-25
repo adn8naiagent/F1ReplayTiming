@@ -73,6 +73,8 @@ async def start_reprocess(year: int, round_num: int, session_type: str) -> str:
         if cur is not None:
             cur["message"] = msg
 
+    from services import download_problems
+
     async def _run():
         try:
             # skip_existing defaults False, so this overwrites the stored session.
@@ -83,10 +85,15 @@ async def start_reprocess(year: int, round_num: int, session_type: str) -> str:
                 "state": "done" if ok else "error",
                 "message": "Reprocess complete" if ok else "Reprocess failed",
             }
+            if not ok:
+                download_problems.record(year, round_num, session_type,
+                                         "Reprocess failed. The server's logs have the details.")
         except Exception as e:
             logger.error(f"Reprocess failed for {key}: {e}")
             traceback.print_exc()
-            _reprocess_status[key] = {"state": "error", "message": str(e)[:200] or "Reprocess failed"}
+            message = str(e)[:500] or "Reprocess failed"
+            _reprocess_status[key] = {"state": "error", "message": message}
+            download_problems.record(year, round_num, session_type, message)
 
     asyncio.create_task(_run())
     return "running"
@@ -106,8 +113,18 @@ def process_session_sync(
     round_key = (year, round_num)
     with _active_lock:
         _active_rounds[round_key] = _active_rounds.get(round_key, 0) + 1
+    from services import download_problems
+
     try:
-        return _process_session_sync(year, round_num, session_type, skip_existing, on_status)
+        ok = _process_session_sync(year, round_num, session_type, skip_existing, on_status)
+        if ok:
+            download_problems.clear(year, round_num, session_type)
+        return ok
+    except f1_account.F1AccountError as e:
+        # Not signed in, or F1 refused this network: shown on the home page,
+        # since background downloads have no one watching
+        download_problems.record(year, round_num, session_type, str(e))
+        raise
     finally:
         with _active_lock:
             _active_rounds[round_key] -= 1
@@ -419,6 +436,9 @@ def delete_session(year: int, round_num: int, session_type: str) -> int:
     downloaded" and reprocesses cleanly, rather than being left present but
     incomplete — the failure mode people hit deleting these files by hand.
     """
+    from services import download_problems
+
+    download_problems.clear(year, round_num, session_type)  # nothing to retry now
     base = f"sessions/{year}/{round_num}/{session_type}"
 
     freed = storage.delete(f"{base}/replay.json")
@@ -491,7 +511,7 @@ def start_prepare(year: int, round_num: int, session_type: str) -> dict:
         try:
             ok = process_session_sync(year, round_num, session_type, False, set_message)
         except f1_account.F1AccountError as e:
-            return {"state": "error", "message": str(e)}
+            return {"state": "error", "message": str(e)}  # recorded by process_session_sync
         if ok and replay_chunks.get_manifest(year, round_num, session_type):
             return {"state": "done", "message": ""}
         return {"state": "error", "message": "Failed to load session data. The session may not be available yet."}

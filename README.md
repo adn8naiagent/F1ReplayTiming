@@ -153,7 +153,7 @@ F1's timing servers refuse requests (HTTP 403) from internet addresses they reco
 | Replaying the timing data of sessions already in your storage (track map, leaderboard, telemetry, team radio captions and stored radio audio) | Works: it comes from your storage, not F1 |
 
 > [!WARNING]
-> **Background downloads fail without any message in the app.** If the server's machine is on a VPN during a race weekend, `AUTO_PRECOMPUTE` can't download new sessions, and you'll only see it in the server's logs (`F1 refused … HTTP 403`). The sessions download on a later check once the VPN is off. If you use a VPN on that machine, exclude `livetiming.formula1.com` from it (split tunnelling), or turn it off.
+> **Background downloads fail if the server's machine is on a VPN.** During a race weekend, `AUTO_PRECOMPUTE` then can't download new sessions. The home page shows a warning for each session that failed, with a Retry button, and the sessions also download on a later check once the VPN is off. If you use a VPN on that machine, exclude `livetiming.formula1.com` from it (split tunnelling), or turn it off.
 
 With Docker, the container uses the host computer's internet connection, so a VPN on the host affects it too.
 

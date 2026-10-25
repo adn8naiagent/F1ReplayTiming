@@ -21,7 +21,9 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 ### Fixes
 
-- **Clearer message when F1 blocks a VPN or cloud server** — when F1 refuses a download or live timing (HTTP 403), the message now says F1 blocks most VPNs and cloud servers and what to do: turn the VPN off, or process the session on another computer. The README has a new [VPNs and cloud servers](README.md#vpns-and-cloud-servers) section. Background downloads (`AUTO_PRECOMPUTE`) that fail this way still only show in the server's logs.
+- **Clearer message when F1 blocks a VPN or cloud server** — when F1 refuses a download or live timing (HTTP 403), the message now says F1 blocks most VPNs and cloud servers and what to do: turn the VPN off, or process the session on another computer. The README has a new [VPNs and cloud servers](README.md#vpns-and-cloud-servers) section.
+
+- **Failed downloads shown on the home page** — when a background download (`AUTO_PRECOMPUTE`) or a reprocess fails, the home page shows a warning with the session, when it happened and why, with a **Retry** button for each. The session also gets a warning icon in the list; hover over it for the reason. Before, background failures only showed in the server's logs, and a reprocess failure was lost if you closed its pop-up. The warning clears when the session next downloads; **Dismiss** hides it until another session fails. Self-hosted only.
 
 ## 2.4.1
 
