@@ -237,7 +237,9 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
       )}
 
       {showOverlays && (
-        <div className="absolute top-3 left-3 w-[26%] max-w-[340px] aspect-square bg-black/55 rounded-lg overflow-hidden border border-white/10">
+        // Just the track lines over the video: the map's own background is
+        // made transparent here
+        <div className="absolute top-12 right-3 z-10 w-[26%] max-w-[340px] aspect-square pointer-events-none [&_.bg-f1-dark]:!bg-transparent">
           {trackOverlay}
         </div>
       )}
@@ -255,7 +257,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
       )}
 
       {/* Controls */}
-      <div className="absolute top-12 right-3 z-20 flex flex-col items-end gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="absolute top-3 left-3 z-20 flex flex-col items-start gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
         <div className="flex items-center gap-1.5">
           {mainFeeds.length > 0 && (
             <select value={mainChannel ?? ""} onChange={(e) => setMainChannel(e.target.value || null)} className={selectClass}>
@@ -321,7 +323,7 @@ export default function BroadcastView({ sessionKey, timestamp, playing, speed, s
           </button>
         </div>
         {(mainOffset === null || (onboardChannel && onboardOffset === null)) && (
-          <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px] text-right">
+          <p className="text-[10px] text-white/80 bg-black/60 rounded px-2 py-1 max-w-[280px]">
             Until synced, use the video controls to find the moment that matches the timing (lights out works well), then press Sync.
           </p>
         )}

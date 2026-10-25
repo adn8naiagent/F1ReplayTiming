@@ -2,7 +2,7 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
-## 2.4.1 (unreleased)
+## 2.4.1
 
 ### Improvements
 
