@@ -33,6 +33,8 @@ from services import caption_ai, caption_settings, whisper_models
 logger = logging.getLogger(__name__)
 
 STATIC_URL = "https://livetiming.formula1.com/static/"
+# Stored clips' file names, e.g. VER_3_20261024_155650.mp3
+AUDIO_NAME = re.compile(r"[A-Za-z0-9_.-]+\.mp3")
 
 _models: dict[str, Any] = {}  # model name -> loaded WhisperModel
 _model_lock = threading.Lock()
@@ -108,8 +110,12 @@ def audio_url(session_path: str, clip_path: str) -> str:
 
 
 def fetch_audio(url: str) -> bytes | None:
+    from services import f1_account
+
+    token = f1_account.get_token()
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
     try:
-        r = requests.get(url, timeout=(10, 30))
+        r = requests.get(url, headers=headers, timeout=(10, 30))
     except requests.RequestException as e:
         logger.warning(f"Team radio download failed: {e}")
         return None
@@ -248,12 +254,16 @@ def build_clips(
     on_progress=None,
     year: int | None = None,
     session: str | None = None,
+    store_prefix: str | None = None,
 ) -> list[dict]:
     """Replay clips with captions, timed in replay seconds from start_date.
 
     drivers maps racing number -> {"abbr", "first_name"}, and optionally
     "name" and "team" for the AI caption step. session names the session,
-    e.g. "2026 United States Grand Prix, Qualifying".
+    e.g. "2026 United States Grand Prix, Qualifying". With store_prefix,
+    each clip's audio is kept in storage there and the clip names it as
+    "audio", so replays play it from this server rather than F1's (which
+    refuses some networks).
     """
     roster = [_driver_label(d) for d in drivers.values() if d.get("abbr")]
     seen: set[str] = set()
@@ -268,11 +278,14 @@ def build_clips(
         drv = drivers.get(number, {})
         url = audio_url(session_path, path)
         transcript = None
-        if captions_enabled():
+        stored = None
+        if captions_enabled() or store_prefix:
             if on_progress:
                 on_progress(i + 1, len(ordered))
             audio = fetch_audio(url)
-            if audio:
+            if audio and store_prefix:
+                stored = store_audio(store_prefix, path, audio)
+            if audio and captions_enabled():
                 transcript = caption(audio, drv.get("first_name"), year, {
                     "speaker": _driver_label(drv) if drv else None,
                     "drivers": roster,
@@ -285,6 +298,47 @@ def build_clips(
             "racing_number": number,
             "driver": drv.get("abbr", ""),
             "url": url,
+            **({"audio": stored} if stored else {}),
             "transcript": transcript,
         })
     return clips
+
+
+def store_audio(prefix: str, clip_path: str, audio: bytes) -> str | None:
+    """Keep a clip's MP3 in storage under prefix; its file name, or None."""
+    from services.storage import put_bytes
+
+    name = clip_path.rsplit("/", 1)[-1]
+    if not AUDIO_NAME.fullmatch(name):
+        return None
+    try:
+        put_bytes(f"{prefix}/{name}", audio, "audio/mpeg")
+    except Exception as e:
+        logger.warning(f"Couldn't store team radio audio {name}: {e}")
+        return None
+    return name
+
+
+def backfill_audio(year: int, round_num: int, session_type: str) -> tuple[int, int]:
+    """Store the audio of an already-processed session's clips (sessions
+    processed before audio was kept). Returns (stored, clips)."""
+    from services.storage import get_json, put_json
+
+    base = f"sessions/{year}/{round_num}/{session_type}"
+    data = get_json(f"{base}/team_radio.json")
+    clips = (data or {}).get("clips") or []
+    stored = 0
+    for clip in clips:
+        if clip.get("audio") or not clip.get("url"):
+            stored += bool(clip.get("audio"))
+            continue
+        audio = fetch_audio(clip["url"])
+        if audio:
+            name = store_audio(f"{base}/team_radio", clip["url"], audio)
+            if name:
+                clip["audio"] = name
+                stored += 1
+        time.sleep(0.2)  # be gentle with F1's servers
+    if clips:
+        put_json(f"{base}/team_radio.json", data)
+    return stored, len(clips)

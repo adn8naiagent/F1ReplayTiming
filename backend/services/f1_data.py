@@ -1968,7 +1968,8 @@ def _get_team_radio_sync(year: int, round_num: int, session_type: str, on_progre
     path = session.api_path.removeprefix("/static/")
     label = f"{year} {session.event.get('EventName', '')}, {session.name}".strip(", ")
     try:
-        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress, year, label)
+        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress, year, label,
+                                      store_prefix=f"sessions/{year}/{round_num}/{session_type}/team_radio")
     finally:
         team_radio.release_model()
 

@@ -15,6 +15,8 @@ All notable changes to F1 Replay Timing will be documented in this file.
   - **Other F1 TV feeds** — F1 Live, International, Driver Tracker and Data Channel, depending on the session and your account.
   - **Mute** — a mute button at the left of the playback controls while the broadcast shows.
 
+- **Team radio audio kept on your server** — processing a session now stores each radio clip's audio, and replays play it from your server instead of F1's. F1's timing server refuses some networks (VPNs and cloud hosts), which left radio silent even when signed in. For sessions processed before this version, add the audio with `python precompute.py 2026 --radio-audio-only` (needs a network F1 accepts); until then they play from F1 as before.
+
 - **Exit in the replay header** — back to the home page, as in live timing.
 
 ## 2.4.1

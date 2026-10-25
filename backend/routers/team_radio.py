@@ -3,11 +3,13 @@ import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Response
+
+from services.team_radio import AUDIO_NAME
 from pydantic import BaseModel
 
 from app_config import set_cache, validate_session
 from services import caption_settings
-from services.storage import aget_json
+from services.storage import aget_json, get_bytes
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["team_radio"])
@@ -25,7 +27,29 @@ async def team_radio(
     set_cache(response, 300)
     # Sessions processed before team radio existed have none: an empty list,
     # not an error, so the replay page doesn't log a failed request.
-    return {"clips": (data or {}).get("clips", [])}
+    clips = (data or {}).get("clips", [])
+    # Audio kept on this server plays from here (F1 refuses some networks)
+    for clip in clips:
+        if clip.get("audio"):
+            clip["url"] = f"/api/sessions/{year}/{round_num}/team-radio/audio/{clip['audio']}?type={type}"
+    return {"clips": clips}
+
+
+@router.get("/sessions/{year}/{round_num}/team-radio/audio/{name}")
+async def team_radio_audio(
+    year: int,
+    round_num: int,
+    name: str,
+    type: str = Query("R", description="Session type"),
+):
+    """A team radio clip's audio, stored when the session was processed."""
+    validate_session(year, round_num, type)
+    if not AUDIO_NAME.fullmatch(name):
+        raise HTTPException(status_code=404, detail="No such clip")
+    found = await asyncio.to_thread(get_bytes, f"sessions/{year}/{round_num}/{type}/team_radio/{name}")
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such clip")
+    return Response(content=found[0], media_type="audio/mpeg", headers={"Cache-Control": "private, max-age=86400"})
 
 
 # Caption settings for this server (Settings > Team Radio). Self-hosted only:
