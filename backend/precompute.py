@@ -27,6 +27,10 @@ Usage:
     # and practice sessions (loads laps only, not telemetry)
     python precompute.py 2024 2025 2026 --lap-extras-only
 
+    # Keep team radio audio on this server for sessions processed before it
+    # was kept, so replays play it from here (F1 refuses some networks)
+    python precompute.py 2026 --radio-audio-only
+
     # Sign in to F1 TV (needed since 15 October 2026), then process
     python precompute.py --sign-in
     python precompute.py 2026 --round 18
@@ -196,6 +200,27 @@ def backfill_lap_extras(year: int, target_round: int | None = None, target_sessi
             release_sessions(year, rnd)
 
 
+def backfill_radio_audio(year: int, target_round: int | None = None, target_session: str | None = None) -> None:
+    """Store team radio audio for processed sessions that don't have it."""
+    from services import team_radio
+
+    keys = storage.list_keys(f"sessions/{year}/")
+    sessions = sorted({
+        (int(k.split("/")[2]), k.split("/")[3]) for k in keys
+        if k.endswith("/team_radio.json") and len(k.split("/")) == 5
+    })
+    for rnd, st in sessions:
+        if target_round is not None and rnd != target_round:
+            continue
+        if target_session is not None and st != target_session:
+            continue
+        stored, total = team_radio.backfill_audio(year, rnd, st)
+        logger.info(f"{year} R{rnd} {st}: team radio audio for {stored} of {total} clips")
+        if total and not stored:
+            logger.error("No audio downloaded: F1 may be refusing this network (a VPN or cloud host). Stopping.")
+            return
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pre-compute F1 data and upload to storage")
     parser.add_argument("years", type=int, nargs="*", help="Year(s) to process")
@@ -206,6 +231,8 @@ def main():
     parser.add_argument("--lap-extras-only", action="store_true",
                         help="Add deleted laps, sector end times and mini-sectors to stored qualifying and practice sessions")
     parser.add_argument("--redo", action="store_true", help="With --lap-extras-only: redo sessions that already have them")
+    parser.add_argument("--radio-audio-only", action="store_true",
+                        help="Keep team radio audio on this server for processed sessions that don't have it")
     parser.add_argument("--sign-in", action="store_true", help="Sign in to your F1 TV account (prompts for email and password)")
     parser.add_argument("--gap", type=float, default=60, help="Seconds to wait between session downloads (default 60)")
     args = parser.parse_args()
@@ -224,6 +251,9 @@ def main():
     for year in args.years:
         if args.chunks_only:
             backfill_chunks(year, target_round=args.round, target_session=args.session)
+            continue
+        if args.radio_audio_only:
+            backfill_radio_audio(year, target_round=args.round, target_session=args.session)
             continue
         if args.lap_extras_only:
             backfill_lap_extras(year, target_round=args.round, target_session=args.session,

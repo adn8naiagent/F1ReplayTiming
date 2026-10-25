@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AudioLines } from "lucide-react";
 import type { ReplayDriver } from "@/hooks/useReplaySocket";
+import { apiUrl } from "@/lib/api";
+import { authHeaders } from "@/lib/f1tv";
 
 // Team radio pop-ups over the track map (or the broadcast): the driver, the
 // caption, and the clip playing. Clips are the ones F1 picks for the world
@@ -43,6 +45,24 @@ interface Props {
   playing?: boolean;
   speed?: number;
   drivers: ReplayDriver[];
+}
+
+/** Where to play a clip from. Audio kept on this server (an /api/ path)
+ *  needs the app's sign-in, which an audio element can't send, so it's
+ *  fetched and played from memory. F1's own links play directly. */
+async function audioSource(url: string): Promise<string | null> {
+  if (!url.startsWith("/api/")) return url;
+  try {
+    const res = await fetch(apiUrl(url), { headers: authHeaders() });
+    if (!res.ok) return null;
+    return URL.createObjectURL(await res.blob());
+  } catch {
+    return null;
+  }
+}
+
+function releaseSource(src: string | null) {
+  if (src?.startsWith("blob:")) URL.revokeObjectURL(src);
 }
 
 export default function TeamRadio({ enabled, audio, clips, mode, currentTime = 0, playing = true, speed = 1, drivers }: Props) {
@@ -131,14 +151,20 @@ export default function TeamRadio({ enabled, audio, clips, mode, currentTime = 0
     };
 
     if (playAudio && next.url) {
-      const el = new Audio(next.url);
+      const el = new Audio();
       audioRef.current = el;
-      el.onended = done;
-      el.onerror = () => {
+      const fail = () => {
         setAudioPlaying(false);
         timerRef.current = setTimeout(() => setCurrent(null), readingMs(next.transcript));
       };
-      el.play().then(() => setAudioPlaying(true)).catch(() => el.onerror?.(new Event("error")));
+      el.onended = () => { releaseSource(el.src); done(); };
+      el.onerror = () => { releaseSource(el.src); fail(); };
+      void audioSource(next.url).then((src) => {
+        if (audioRef.current !== el) { releaseSource(src); return; } // moved on meanwhile
+        if (!src) { fail(); return; }
+        el.src = src;
+        el.play().then(() => setAudioPlaying(true)).catch(() => el.onerror?.(new Event("error")));
+      });
     } else {
       timerRef.current = setTimeout(() => setCurrent(null), readingMs(next.transcript));
     }

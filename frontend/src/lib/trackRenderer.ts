@@ -96,6 +96,16 @@ const TRACK_STATUS_COLORS: Record<string, string> = {
   red: "#E10600",
 };
 
+/** Space around the track: room for the track map's overlays (flag, legend,
+ *  controls), or just enough for corner numbers when compact. */
+function margins(width: number, height: number, compact: boolean) {
+  if (compact) {
+    const m = Math.max(10, Math.round(Math.min(width, height) * 0.06));
+    return { padX: m, padTop: m, padBottom: m };
+  }
+  return { padX: 40, padTop: 60, padBottom: 90 };
+}
+
 export function drawTrack(
   ctx: CanvasRenderingContext2D,
   points: TrackPoint[],
@@ -109,6 +119,12 @@ export function drawTrack(
   sectorFlags?: SectorFlag[] | null,
   showElevation: boolean = false,
   segmentOverlay?: SegmentOverlay | null,
+  /** Track line width in pixels (thinner for small maps) */
+  trackWidth: number = 12,
+  /** A white track, for drawing over video */
+  lightTrack: boolean = false,
+  /** Small margins, for a small map with nothing around it */
+  compact: boolean = false,
 ) {
   if (points.length === 0) return;
 
@@ -116,9 +132,7 @@ export function drawTrack(
   // and the data is present.
   const elevationActive = showElevation && points.some((p) => typeof p.z === "number");
 
-  const padX = 40;
-  const padTop = 60;
-  const padBottom = 90;
+  const { padX, padTop, padBottom } = margins(width, height, compact);
   const w = width - padX * 2;
   const h = height - padTop - padBottom;
 
@@ -166,7 +180,7 @@ export function drawTrack(
   // Draw track outline. Priority: segments > elevation > sector overlay > plain.
   if (segmentOverlay && segmentOverlay.segments.length > 0) {
     const frac = lapFractions(points);
-    ctx.lineWidth = 12;
+    ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.beginPath();
@@ -211,7 +225,7 @@ export function drawTrack(
       buckets[level].moveTo(x1, y1);
       buckets[level].lineTo(x2, y2);
     }
-    ctx.lineWidth = 12;
+    ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     for (let level = 0; level < STOPS; level++) {
@@ -252,7 +266,7 @@ export function drawTrack(
     // Draw base track first (so gaps between segments aren't visible)
     ctx.beginPath();
     ctx.strokeStyle = "#3A3A4A";
-    ctx.lineWidth = 12;
+    ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     const [bx, by] = toScreen(rotated[0]);
@@ -268,7 +282,7 @@ export function drawTrack(
     for (const seg of segments) {
       ctx.beginPath();
       ctx.strokeStyle = seg.color;
-      ctx.lineWidth = 12;
+      ctx.lineWidth = trackWidth;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
       const [sx2, sy2] = toScreen(rotated[seg.start]);
@@ -282,8 +296,10 @@ export function drawTrack(
   } else {
     ctx.beginPath();
     const effectiveStatus = (sectorFlags && sectorFlags.length > 0 && (trackStatus === "yellow")) ? "green" : trackStatus;
-    ctx.strokeStyle = TRACK_STATUS_COLORS[effectiveStatus] || "#3A3A4A";
-    ctx.lineWidth = 12;
+    ctx.strokeStyle = lightTrack && effectiveStatus === "green"
+      ? "rgba(255, 255, 255, 0.9)"
+      : TRACK_STATUS_COLORS[effectiveStatus] || "#3A3A4A";
+    ctx.lineWidth = trackWidth;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
@@ -297,10 +313,11 @@ export function drawTrack(
     ctx.stroke();
   }
 
-  // Draw track center line
+  // Draw track center line: on a white track, a dark core like the
+  // broadcast's track map
   ctx.beginPath();
-  ctx.strokeStyle = "#4A4A5A";
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = lightTrack ? "#15151E" : "#4A4A5A";
+  ctx.lineWidth = lightTrack ? Math.max(1.5, trackWidth * 0.35) : 2;
   const [sx, sy] = toScreen(rotated[0]);
   ctx.moveTo(sx, sy);
   for (let i = 1; i < rotated.length; i++) {
@@ -418,12 +435,11 @@ export function drawDrivers(
   rotation: number,
   highlightedDrivers: string[],
   showNames: boolean = true,
+  compact: boolean = false,
 ) {
   if (trackPoints.length === 0) return;
 
-  const padX = 40;
-  const padTop = 60;
-  const padBottom = 90;
+  const { padX, padTop, padBottom } = margins(width, height, compact);
   const w = width - padX * 2;
   const h = height - padTop - padBottom;
 
@@ -453,7 +469,13 @@ export function drawDrivers(
   const offsetX = padX + (w - rangeX * scale) / 2;
   const offsetY = padTop + (h - rangeY * scale) / 2;
 
-  for (const drv of drivers) {
+  // Selected drivers drawn last, and their names after every dot, so
+  // nothing covers them
+  const ordered = [...drivers].sort(
+    (a, b) => Number(highlightedDrivers.includes(a.abbr)) - Number(highlightedDrivers.includes(b.abbr)),
+  );
+  const highlightedLabels: { abbr: string; x: number; y: number }[] = [];
+  for (const drv of ordered) {
     // Rotate driver position
     const dx = drv.x - cx;
     const dy = drv.y - cy;
@@ -487,12 +509,27 @@ export function drawDrivers(
 
     ctx.restore();
 
-    // Driver label
-    if (showNames) {
-      ctx.font = isHighlighted ? "800 12px system-ui, -apple-system, sans-serif" : "800 10px system-ui, -apple-system, sans-serif";
+    // Driver label: drivers selected on the leaderboard keep theirs when
+    // names are hidden, so they're easy to pick out (drawn below)
+    if (isHighlighted) {
+      highlightedLabels.push({ abbr: drv.abbr, x: sx, y: sy - radius - 4 });
+    } else if (showNames) {
+      ctx.font = "800 10px system-ui, -apple-system, sans-serif";
       ctx.fillStyle = "#FFFFFF";
       ctx.textAlign = "center";
       ctx.fillText(drv.abbr, sx, sy - radius - 4);
     }
+  }
+
+  ctx.font = "800 12px system-ui, -apple-system, sans-serif";
+  ctx.textAlign = "center";
+  ctx.lineJoin = "round";
+  for (const l of highlightedLabels) {
+    // A dark outline keeps the name readable over other cars and the track
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.strokeText(l.abbr, l.x, l.y);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText(l.abbr, l.x, l.y);
   }
 }

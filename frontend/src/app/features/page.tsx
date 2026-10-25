@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import SiteFooter from "@/components/SiteFooter";
 import LeaderboardGuide from "@/components/LeaderboardGuide";
 import LapAnalysisGuide from "@/components/LapAnalysisGuide";
+import BroadcastGuide, { SyncDiagram } from "@/components/BroadcastGuide";
 
 // Which sessions a feature works in, shown under each section's heading.
 function SessionChips({ practice, qualifying, race }: { practice?: boolean; qualifying?: boolean; race?: boolean }) {
@@ -31,6 +32,7 @@ const FEATURE_CATEGORIES: [string, string][] = [
   ["analysis", "Analysis"],
   ["session-feed", "Session feed"],
   ["watching", "Watching"],
+  ["broadcast", "Broadcast"],
   ["availability", "Availability"],
 ];
 
@@ -53,7 +55,8 @@ const AVAILABILITY: [string, string, string, string][] = [
   ["Telemetry", "RL", "RL", "RL"],
   ["Track elevation, marshal sector flags", "RL", "RL", "RL"],
   ["Picture-in-picture", "RL", "RL", "RL"],
-  ["Playback controls, broadcast sync", "R", "R", "R"],
+  ["Playback controls, sync to a recording", "R", "R", "R"],
+  ["F1 TV broadcast and onboards (F1 TV Pro or Premium)", "R", "R", "R"],
   ["Broadcast delay", "L", "L", "L"],
 ];
 
@@ -569,6 +572,27 @@ export default function FeaturesPage() {
             </div>
             <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mt-6 mb-3">Qualifying and practice</p>
             <LapAnalysisGuide />
+
+            <div className="mt-6 pt-5 border-t border-f1-border">
+              <div className="flex items-center gap-2 mb-1">
+                <h3 className="text-base font-bold text-white">Track dominance</h3>
+                <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-white/10 text-f1-muted leading-none">Desktop</span>
+              </div>
+              <SessionChips practice qualifying />
+              <p className="text-f1-text leading-relaxed mb-3">
+                See where on the track one driver beats another. In Lap Analysis &gt; Compare, pick two drivers and
+                press Track dominance: the track map is coloured by who was faster through each part of their best
+                laps, with a count of the parts each one won. Works in replays and live timing.
+              </p>
+              <img
+                src="/track-dominance.png"
+                alt="Track dominance: Antonelli and Leclerc's best laps in qualifying at the 2026 United States Grand Prix, with the track coloured by who was faster in each part"
+                className="w-full max-w-2xl rounded-lg border border-f1-border"
+              />
+              <p className="text-xs text-f1-muted mt-2">
+                Antonelli (16 parts) and Leclerc (9) in qualifying at the 2026 United States Grand Prix.
+              </p>
+            </div>
           </section>
 
           {/* Telemetry */}
@@ -716,12 +740,14 @@ export default function FeaturesPage() {
             </p>
           </section>
 
-          {/* Broadcast Sync */}
+          {/* Sync to a recording */}
           <section className="bg-f1-card border border-f1-border rounded-xl p-6">
-            <h2 className="text-lg font-bold text-white mb-1">Broadcast Sync</h2>
+            <h2 className="text-lg font-bold text-white mb-1">Sync to a Recording</h2>
             <SessionChips practice qualifying race />
             <p className="text-f1-text leading-relaxed mb-3">
-              Sync the replay to a live broadcast or recording so the timing data matches what&apos;s on screen.
+              Watching a recording somewhere else? Sync the replay to it so the timing data matches what&apos;s on
+              screen. (To watch F1 TV inside the app, see{" "}
+              <a href="#broadcast" className="text-f1-red hover:underline font-semibold">Broadcast</a>.)
               There are two sync methods:
             </p>
             <div className="space-y-4">
@@ -751,6 +777,93 @@ export default function FeaturesPage() {
               Pop the track map and leaderboard out into their own small window, so you can place them
               beside a broadcast. Use the Picture-in-Picture button, in replays and live timing. Desktop only.
             </p>
+          </section>
+          </>
+        )}
+
+        {tab === "broadcast" && (
+          <>
+          {/* Broadcast */}
+          <section className="bg-f1-card border border-f1-border rounded-xl p-6">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <h2 className="text-lg font-bold text-white">Broadcast</h2>
+              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-f1-red/20 text-f1-red leading-none">F1 TV Pro or Premium</span>
+              <span className="px-1.5 py-0.5 text-[9px] font-bold uppercase rounded bg-white/10 text-f1-muted leading-none">Replays only</span>
+            </div>
+            <SessionChips practice qualifying race />
+            <p className="text-f1-text leading-relaxed mb-3">
+              Watch the session&apos;s F1 TV replay inside the app, in step with the timing. Switch the track map to{" "}
+              <span className="font-bold text-white">Broadcast</span> (top right of the track map). The app finds the
+              session on F1 TV for you, and the video follows the replay: play, pause, speed changes and skips,
+              including Skip to restart after a red flag.
+            </p>
+            <p className="text-f1-text leading-relaxed mb-3">
+              <span className="font-bold text-white">Multi-view</span> puts the broadcast beside up to two drivers&apos;
+              onboard cameras and the track map. <span className="font-bold text-white">Single view</span> shows the
+              broadcast full width with the track map over it. Choose which opens in Settings &gt; Broadcast, along
+              with onboard telemetry, the track map and race control.
+            </p>
+            <p className="text-f1-text leading-relaxed mb-5">
+              Each onboard can show the driver&apos;s <span className="font-bold text-white">telemetry</span> (speed,
+              gear, throttle and brake) and, in qualifying and practice, a{" "}
+              <span className="font-bold text-white">sector strip</span>: their mini-sectors as one line along the
+              bottom edge of the video, filling in purple, green or yellow as they complete each one, so you can see
+              how the lap is going while you watch it.
+            </p>
+            <BroadcastGuide />
+          </section>
+
+          {/* Automatic sync */}
+          <section className="bg-f1-card border border-f1-border rounded-xl p-6">
+            <h2 className="text-lg font-bold text-white mb-1">Automatic Sync</h2>
+            <SessionChips practice qualifying race />
+            <p className="text-f1-text leading-relaxed mb-3">
+              The first time you open a session&apos;s broadcast, the server works out where the replay starts in
+              F1 TV&apos;s video. An onboard camera&apos;s sound is mostly its car&apos;s engine, and the engine&apos;s
+              pitch rises and falls with its revs, which are in the timing data. The server slides the two against
+              each other until they line up, then checks the answer with a second driver.
+            </p>
+            <div className="mb-4">
+              <SyncDiagram />
+            </div>
+            <ul className="space-y-2 mb-4 text-sm text-f1-text leading-relaxed">
+              <li><span className="font-bold text-white">Races and sprints</span> use the start, which never repeats.</li>
+              <li><span className="font-bold text-white">Qualifying and practice</span> use a flying lap.</li>
+              <li>It runs when the session is processed, while F1 TV&apos;s audio can still be read. If that doesn&apos;t work, it tries again the first time you open the broadcast (about a minute). The result is saved for that session.</li>
+              <li>The onboards follow the broadcast: all of F1 TV&apos;s feeds for a session share one timeline.</li>
+            </ul>
+            <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mb-2">How it&apos;s synced</p>
+            <p className="text-sm text-f1-text leading-relaxed mb-3">
+              The hover controls show a line saying how the session is synced:
+            </p>
+            <ul className="space-y-2 mb-4 text-sm text-f1-text leading-relaxed">
+              <li className="flex items-start gap-2"><span className="mt-1.5 w-2 h-2 rounded-full bg-green-400 flex-shrink-0" /><span><span className="font-bold text-white">Synced by engine sound</span> — matched as above, with the drivers it used. Accurate to a fraction of a second.</span></li>
+              <li className="flex items-start gap-2"><span className="mt-1.5 w-2 h-2 rounded-full bg-white/50 flex-shrink-0" /><span><span className="font-bold text-white">Lining up with the timing</span> — the first match is running.</span></li>
+              <li className="flex items-start gap-2"><span className="mt-1.5 w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" /><span><span className="font-bold text-white">Synced by video time stamp</span> — F1 TV protects some sessions&apos; audio, so the engine sound can&apos;t be matched. The time stamp in F1 TV&apos;s video is used instead, usually within a second or two.</span></li>
+              <li className="flex items-start gap-2"><span className="mt-1.5 w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" /><span><span className="font-bold text-white">Synced manually</span> — you lined it up yourself.</span></li>
+            </ul>
+            <p className="text-xs font-bold text-f1-muted uppercase tracking-wider mb-2">Adjusting it</p>
+            <p className="text-sm text-f1-text leading-relaxed">
+              Use <span className="font-bold text-white">Fine-tune video sync</span> to nudge the video ±0.5s or ±5s;
+              the adjustment shows as a chip, and its × goes back to the automatic sync. For full control, press{" "}
+              <span className="font-bold text-white">Sync manually</span>, beside the sync status:
+              the video gets its own play bar, you find the moment that matches the timing (lights out or a car
+              crossing the line works well), and press <span className="font-bold text-white">Set sync here</span>.
+              Pausing the replay first makes this easier. A manual sync is kept until you clear it.
+            </p>
+          </section>
+
+          {/* Good to know */}
+          <section className="bg-f1-card border border-f1-border rounded-xl p-6">
+            <h2 className="text-lg font-bold text-white mb-3">Good to Know</h2>
+            <ul className="space-y-2 text-sm text-f1-text leading-relaxed">
+              <li><span className="font-bold text-white">Replays only for now.</span> Broadcast isn&apos;t available in live timing yet.</li>
+              <li><span className="font-bold text-white">Needs F1 TV Pro or Premium.</span> The Broadcast button appears once you&apos;re signed in with one of these. Self-hosted only.</li>
+              <li><span className="font-bold text-white">Tablets and larger screens.</span> On touch screens, tap the video to show its controls.</li>
+              <li><span className="font-bold text-white">Where you are matters.</span> F1 TV only streams in some countries and decides by your internet address, so a VPN can stop the video. If it won&apos;t play, the message says why, with a Retry button.</li>
+              <li><span className="font-bold text-white">Picture quality adjusts to your connection.</span> It starts lower and improves after a few seconds, and drops briefly after a skip.</li>
+              <li><span className="font-bold text-white">Team radio plays twice?</span> The broadcast often plays the same message: turn off Radio audio in the hover controls and keep the captions.</li>
+            </ul>
           </section>
           </>
         )}

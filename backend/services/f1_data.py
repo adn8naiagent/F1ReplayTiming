@@ -1928,6 +1928,15 @@ def _get_driver_positions_by_time_sync(
     return frames
 
 
+def replay_start_utc(year: int, round_num: int, session_type: str) -> float | None:
+    """The real time (epoch seconds) at replay 0:00, once the replay frames
+    have been built in this process."""
+    start = _replay_start_dates.get(_cache_key(year, round_num, session_type))
+    if start is None:
+        return None
+    return pd.Timestamp(start).tz_localize("UTC").timestamp() if pd.Timestamp(start).tzinfo is None else pd.Timestamp(start).timestamp()
+
+
 def _get_team_radio_sync(year: int, round_num: int, session_type: str, on_progress=None) -> list[dict] | None:
     """Team radio clips with captions, timed against the replay frames.
     Run after _get_driver_positions_by_time_sync. None if there's no replay
@@ -1959,7 +1968,8 @@ def _get_team_radio_sync(year: int, round_num: int, session_type: str, on_progre
     path = session.api_path.removeprefix("/static/")
     label = f"{year} {session.event.get('EventName', '')}, {session.name}".strip(", ")
     try:
-        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress, year, label)
+        return team_radio.build_clips(captures, path, start.to_pydatetime(), drivers, on_progress, year, label,
+                                      store_prefix=f"sessions/{year}/{round_num}/{session_type}/team_radio")
     finally:
         team_radio.release_model()
 

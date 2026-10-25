@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import secrets
 import time
 import urllib.parse
@@ -143,6 +144,62 @@ async def content(content_id: str) -> dict[str, Any]:
     }
 
 
+# Our session types and the names on the season calendar
+_SESSION_NAMES = {
+    "R": ("Race",),
+    "Q": ("Qualifying",),
+    "S": ("Sprint",),
+    "SQ": ("Sprint Qualifying", "Sprint Shootout"),
+    "FP1": ("Practice 1",),
+    "FP2": ("Practice 2",),
+    "FP3": ("Practice 3",),
+}
+
+
+def _session_start(year: int, round_num: int, session_type: str) -> float | None:
+    """The session's scheduled start (epoch seconds), from the stored calendar."""
+    from services.schedule import schedule_path
+    from services.storage import get_json
+
+    names = _SESSION_NAMES.get(session_type, ())
+    for event in (get_json(schedule_path(year)) or {}).get("events", []):
+        if event.get("round_number") != round_num:
+            continue
+        for sess in event.get("sessions", []):
+            if sess.get("name") in names and sess.get("date_utc"):
+                from datetime import datetime
+                return datetime.fromisoformat(sess["date_utc"].replace("Z", "+00:00")).timestamp()
+    return None
+
+
+async def find_replay(year: int, round_num: int, session_type: str) -> dict[str, Any] | None:
+    """The F1 TV replay of a session: F1 TV's replays for that round, the
+    Formula 1 one (with onboards) whose start time is closest to the
+    session's. None if there isn't one (yet)."""
+    start = _session_start(year, round_num, session_type)
+    if start is None:
+        return None
+    body = await _get("PAGE/SEARCH/VOD/F1_TV_Pro_Annual/14", _token(), params={
+        "filter_objectSubtype": "Replay",
+        "filter_season": str(year),
+        "filter_Meeting_Number": str(round_num),
+    })
+    best: tuple[tuple[bool, float], dict] | None = None
+    for c in (body.get("resultObj") or {}).get("containers") or []:
+        meta = c.get("metadata") or {}
+        emf = meta.get("emfAttributes") or {}
+        if emf.get("Series") != "FORMULA 1" or not emf.get("sessionStartDate"):
+            continue
+        gap = abs(float(emf["sessionStartDate"]) / 1000 - start)
+        if gap > 3 * 3600:
+            continue
+        # The session itself has onboards; the shows around it don't
+        rank = (not emf.get("OBC"), gap)
+        if best is None or rank < best[0]:
+            best = (rank, {"content_id": str(meta.get("contentId")), "title": meta.get("title")})
+    return best[1] if best else None
+
+
 def _register(manifest_url: str, license_url: str | None) -> str:
     now = time.time()
     for pid in [p for p, pb in _playbacks.items() if now - pb.created > _PLAYBACK_TTL]:
@@ -153,17 +210,49 @@ def _register(manifest_url: str, license_url: str | None) -> str:
     return pid
 
 
+async def _video_start_utc(manifest_url: str) -> float | None:
+    """The real time (epoch seconds) at the video's 0:00. F1 TV's replays
+    are cut from the live stream, whose media timeline is epoch time: the
+    manifest's presentationTimeOffset / timescale. Falls back to the URL's
+    start parameter."""
+    for _ in range(2):  # the CDN occasionally answers with something else
+        try:
+            async with httpx.AsyncClient(timeout=15.0, follow_redirects=True) as client:
+                xml = (await client.get(manifest_url)).text
+        except Exception as e:
+            logger.warning("Couldn't read the F1 TV manifest's start time: %s", e)
+            continue
+        tag = re.search(r"<SegmentTemplate[^>]*>", xml)
+        if tag:
+            scale = re.search(r'timescale="(\d+)"', tag.group(0))
+            offset = re.search(r'presentationTimeOffset="(\d+)"', tag.group(0))
+            if scale and offset and int(scale.group(1)) > 0:
+                t = int(offset.group(1)) / int(scale.group(1))
+                if t > 1e9:  # an epoch time, not a programme-relative one
+                    return t
+    start = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(manifest_url).query)).get("start")
+    return float(start) if start and start.isdigit() else None
+
+
 async def play(content_id: str, channel_id: str | None = None) -> dict[str, Any]:
     token = _token()
     entitlement = await _entitlement_token(token)
     params = {"contentId": content_id}
     if channel_id:
         params["channelId"] = channel_id
-    body = await _get("CONTENT/PLAY", token, entitlement, params=params)
+    try:
+        body = await _get("CONTENT/PLAY", token, entitlement, params=params)
+    except F1TVError as e:
+        if e.status in (401, 403, 404):
+            logger.warning("F1 TV refused to play %s (channel %s): HTTP %s %s", content_id, channel_id, e.status, _redact(e.body))
+            raise F1TVError(_play_refusal(e.body, e.status), status=e.status, body=_redact(e.body)) from e
+        raise
     result = body.get("resultObj") or {}
     manifest = result.get("url")
     if not manifest:
-        raise F1TVError("F1 TV didn't return a stream URL", body=_redact(result))
+        logger.warning("F1 TV gave no stream for %s (channel %s): %s", content_id, channel_id,
+                       _redact({k: v for k, v in body.items() if k != "resultObj"}))
+        raise F1TVError(_play_refusal(body, None), status=403, body=_redact(body))
     license_url = result.get("laURL")
     pid = _register(manifest, license_url)
     return {
@@ -173,8 +262,37 @@ async def play(content_id: str, channel_id: str | None = None) -> dict[str, Any]
         "stream_type": result.get("streamType"),
         "drm_type": result.get("drmType"),
         "entitlement_token_used": entitlement is not None,
+        "video_start_utc": await _video_start_utc(manifest),
         "raw": _redact(result),
     }
+
+
+def _play_refusal(body: Any, status: int | None) -> str:
+    """A plain message for F1 TV refusing to play a video, with F1 TV's own
+    reason when it gives one."""
+    reason, code = "", ""
+    if isinstance(body, dict):
+        reason = str(body.get("errorDescription") or body.get("message") or "").strip()
+        code = str(body.get("resultCode") or "").strip()
+        if reason.isdigit():  # "message" is sometimes just the HTTP status
+            reason = ""
+    said = f" F1 TV said: \"{reason}\"{f' ({code})' if code and code != 'OK' else ''}." if reason else ""
+    text = f"{reason} {code}".lower()
+    if status == 401:
+        return "F1 TV's sign-in has expired. Sign in to F1 TV again." + said
+    if any(w in text for w in ("geo", "country", "region", "location", "territor", "not available in")):
+        return ("F1 TV won't stream this video where your connection appears to be. F1 TV decides by "
+                "your internet address, so a VPN set to another country can cause this. Turn the VPN "
+                "off or set it to your own country, then retry." + said)
+    if any(w in text for w in ("entitle", "subscri", "upgrade", "tier", "package")):
+        return ("Your F1 TV plan doesn't include this video. Video needs F1 TV Pro or Premium." + said)
+    if any(w in text for w in ("concurren", "simultaneous", "device limit", "too many")):
+        return ("F1 TV is already playing too many videos on this account. Close F1 TV on other "
+                "devices, or show fewer onboards, then retry." + said)
+    return ("F1 TV wouldn't stream this video." + (said or " It gave no reason.") +
+            " The usual cause is where your connection appears to be: F1 TV only streams in some "
+            "countries, and a VPN can make you appear elsewhere. If you're on a VPN, turn it off or "
+            "set it to your own country, then retry.")
 
 
 def _redact(obj: Any) -> Any:

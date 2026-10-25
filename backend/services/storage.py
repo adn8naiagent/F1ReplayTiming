@@ -270,6 +270,18 @@ async def aget_json(path: str) -> object | None:
     return await asyncio.to_thread(get_json, path)
 
 
+def put_bytes(path: str, body: bytes, content_type: str) -> None:
+    """Store a file as-is (audio, for one)."""
+    if _mode() == "r2":
+        _get_r2_client().put_object(Bucket=_r2_bucket(), Key=_r2_key(path), Body=body, ContentType=content_type)
+        logger.info(f"Uploaded {path} ({len(body)} bytes)")
+    else:
+        filepath = _data_dir() / path
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        filepath.write_bytes(body)
+        logger.info(f"Saved {path} ({len(body)} bytes)")
+
+
 def get_bytes(path: str) -> tuple[bytes, bool] | None:
     """Raw stored bytes for serving as-is, and whether they are gzipped.
 

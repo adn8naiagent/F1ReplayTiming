@@ -19,6 +19,8 @@ interface Props {
   extraActions?: React.ReactNode;
   mobileTeamAbbrHidden?: boolean;
   onReportProblem?: () => void;
+  /** Show Settings > Broadcast (F1 TV Pro or Premium) */
+  broadcastSettings?: boolean;
 }
 
 const SESSION_LABELS: Record<string, string> = {
@@ -84,12 +86,13 @@ export default function SessionBanner({
   extraActions,
   mobileTeamAbbrHidden,
   onReportProblem,
+  broadcastSettings,
 }: Props) {
   const settings = settingsProp || DEFAULT_SETTINGS;
   const isRace = sessionType === "R" || sessionType === "S";
   const isQualifying = sessionType === "Q" || sessionType === "SQ";
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Team Radio" | "Other" | "F1 TV" | "Report a bug">("Leaderboard");
+  const [settingsTab, setSettingsTab] = useState<"Leaderboard" | "Weather" | "Track Map" | "Race Control" | "Team Radio" | "Broadcast" | "Other" | "F1 TV" | "Report a bug">("Leaderboard");
   const appConfig = useAppConfig();
   const settingsRef = useRef<HTMLDivElement>(null);
 
@@ -235,7 +238,9 @@ export default function SessionBanner({
                   {/* Tab sidebar */}
                   <div className="flex flex-col border-r border-f1-border py-2 w-36 flex-shrink-0">
                     {([
-                      "Leaderboard", "Weather", "Track Map", "Race Control", "Team Radio", "Other",
+                      "Leaderboard", "Weather", "Track Map", "Race Control", "Team Radio",
+                      ...(broadcastSettings ? (["Broadcast"] as const) : []),
+                      "Other",
                       ...(appConfig?.f1tv ? (["F1 TV"] as const) : []),
                       ...(onReportProblem ? (["Report a bug"] as const) : []),
                     ] as const).map((tab) => (
@@ -371,6 +376,53 @@ export default function SessionBanner({
                         : "Captions are made locally using Whisper. Accuracy varies depending on quality and clarity."}
                     </p>
                     {appConfig?.f1tv && <CaptionSettings />}
+                  </>)}
+
+                  {settingsTab === "Broadcast" && broadcastSettings && (<>
+                    <div className="px-2 sm:px-6 pb-2">
+                      <span className="block text-sm text-white mb-1.5">View</span>
+                      <div className="grid grid-cols-2 gap-2">
+                        {([
+                          [true, "Multi-view", "The broadcast, up to two onboards and the track map side by side"],
+                          [false, "Single view", "The broadcast full width, with the track map over it"],
+                        ] as const).map(([value, label, hint]) => (
+                          <button
+                            key={label}
+                            onClick={() => onSettingChange?.("broadcastMultiView", value)}
+                            className={`text-left rounded border px-3 py-2 transition-colors ${
+                              settings.broadcastMultiView === value
+                                ? "border-f1-red bg-f1-red/10"
+                                : "border-f1-border hover:border-f1-muted"
+                            }`}
+                          >
+                            <span className="block text-xs font-bold text-white">{label}</span>
+                            <span className="block text-[10px] text-f1-muted mt-0.5 leading-snug">{hint}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {([
+                      ["broadcastTelemetry", "Onboard telemetry", "Speed, gear, throttle and brake along the bottom of each onboard"],
+                      ["broadcastMap", "Track map", "Beside the onboards, or over the broadcast"],
+                      ["broadcastRaceControl", "Race control", "The latest message along the bottom of the broadcast"],
+                    ] as const).map(([key, label, hint]) => (
+                      <button
+                        key={key}
+                        onClick={() => onSettingChange?.(key, !settings[key])}
+                        className="w-full flex items-center justify-between gap-3 px-2 sm:px-6 py-1.5 hover:bg-white/5 transition-colors text-left"
+                      >
+                        <span>
+                          <span className="block text-sm text-white">{label}</span>
+                          <span className="block text-[10px] text-f1-muted">{hint}</span>
+                        </span>
+                        <div className={`relative flex-shrink-0 w-9 h-5 rounded-full transition-colors ${settings[key] ? "bg-f1-red" : "bg-f1-border"}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${settings[key] ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+                        </div>
+                      </button>
+                    ))}
+                    <p className="px-2 sm:px-6 pt-3 text-xs text-f1-muted leading-relaxed">
+                      The broadcast&apos;s hover controls change these too, and your choices are remembered.
+                    </p>
                   </>)}
 
                   {settingsTab === "Other" && (<>
