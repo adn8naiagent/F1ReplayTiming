@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: f1-timing-ingress
+  namespace: f1-timing
+spec:
+  ingressClassName: nginx # Replace with 'traefik' or your active Ingress class if needed
+  tls:
+    - hosts:
+        - f1-timing.example.com
+      secretName: f1-timing-tls
+  rules:
+    - host: f1-timing.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: f1-timing-svc
+                port:
+                  name: http

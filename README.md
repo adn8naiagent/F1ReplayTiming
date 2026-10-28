@@ -305,6 +305,15 @@ volumes:
   f1cache:
 ```
 
+### Kubernetes
+
+Standard Kubernetes manifests (`Deployment`, `PVC`, `Service`, `Secret`, and `Ingress`) are provided in the [`k8s/`](./k8s) directory.
+
+```bash
+# Apply all Kubernetes manifests
+kubectl apply -f k8s/
+```
+
 ### Cloud hosting
 
 Deploy as a single service. Most platforms will detect the `Dockerfile` at the project root automatically.
@@ -315,6 +324,12 @@ Deploy as a single service. Most platforms will detect the `Dockerfile` at the p
 **Recommended setup:** run a self-hosted copy at home (Docker) that downloads sessions into your R2 bucket, and point the cloud copy at the same bucket to serve them. On the cloud copy, set `AUTO_PRECOMPUTE=off` and `RETENTION_SWEEP_ENABLED=false`, so only the home copy downloads and manages storage.
 
 Set your environment variables in the platform's dashboard. R2 credentials are needed since most cloud platforms have ephemeral filesystems.
+
+If running in a Kubernetes cluster hosted on a cloud network, precompute session data on a residential connection and copy the files to the persistent volume:
+ ```bash
+ kubectl cp ./data/. f1-timing/<pod-name>:/app/data/
+ ```
+ For complete deployment details, security context configurations, and data volume setup, see the [Kubernetes Deployment Guide](./k8s/README.md).
 
 ### Session data
 
@@ -423,3 +438,4 @@ This project is powered by [FastF1](https://github.com/theOehrly/Fast-F1), an op
 [MIT](LICENSE)
 
 > **Disclaimer:** This project is non-commercial. This website is unofficial and is not associated in any way with the Formula 1 companies. F1, FORMULA ONE, FORMULA 1, FIA FORMULA ONE WORLD CHAMPIONSHIP, GRAND PRIX and related marks are trade marks of Formula One Licensing B.V.
+
