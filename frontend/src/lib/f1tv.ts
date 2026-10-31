@@ -87,9 +87,13 @@ export const f1tv = {
    *  matched from the onboards' engine sound. Slow the first time. */
   sync: (year: number, round: number, type: string) =>
     request<{ offset: number; content_id: string; drivers?: string[] }>("GET", `/sync?year=${year}&round=${round}&type=${type}`),
+  /** Live: how long after the moment on screen F1 TV stamps its live video,
+   *  matched from engine sound */
+  liveSync: (year: number, round: number, type: string) =>
+    request<{ stamp_delay: number; drivers: string[] }>("GET", `/live-sync?year=${year}&round=${round}&type=${type}`),
   /** The F1 TV replay of a session, found from the round and session start */
-  find: (year: number, round: number, type: string) =>
-    request<{ content_id: string; title: string | null }>("GET", `/find?year=${year}&round=${round}&type=${type}`),
-  play: (content: string, channelId: string | null) =>
-    request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId }),
+  find: (year: number, round: number, type: string, live = false) =>
+    request<{ content_id: string; title: string | null }>("GET", `/find?year=${year}&round=${round}&type=${type}${live ? "&live=true" : ""}`),
+  play: (content: string, channelId: string | null, live = false) =>
+    request<F1TVPlayback>("POST", "/play", { content, channel_id: channelId, live }),
 };

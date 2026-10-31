@@ -8,6 +8,7 @@ and the real SignalR client for production (live sessions).
 import asyncio
 import logging
 import os
+from collections import deque
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query
 
@@ -16,6 +17,11 @@ router = APIRouter(tags=["live"])
 
 # Shared live session state
 _live_sessions: dict[str, "LiveSession"] = {}
+
+# The last two minutes of frames, one a second, sent to pages as they open:
+# the broadcast holds the timing back to match F1 TV's video (which runs
+# behind), so a page can start at the video's moment rather than waiting
+_HISTORY_S = 120
 
 
 class LiveSession:
@@ -35,6 +41,8 @@ class LiveSession:
         self._radio_tasks: set[asyncio.Task] = set()
         self._recorded_positions = False
         self._year: int | None = None  # picks the team radio caption vocabulary
+        self._history: deque[dict] = deque(maxlen=_HISTORY_S)
+        self._history_task: asyncio.Task | None = None
 
     async def start(
         self,
@@ -108,6 +116,7 @@ class LiveSession:
             self._mode = "signalr"
 
         self._started = True
+        self._history_task = asyncio.create_task(self._record_history())
         logger.info(f"Live session started: {self.key} (mode={self._mode})")
 
         # Team radio needs an F1 TV sign-in; load Whisper now rather than on
@@ -186,6 +195,22 @@ class LiveSession:
         if self._state_manager is not None:
             self._state_manager.set_radio_caption(clip["id"], transcript)
 
+    async def _record_history(self):
+        last_utc = None
+        while True:
+            await asyncio.sleep(1)
+            try:
+                frame = self.get_frame()
+            except Exception:
+                continue
+            # Only frames placed in real time, once the data has moved on
+            if frame and frame.get("utc") is not None and frame["utc"] != last_utc:
+                last_utc = frame["utc"]
+                self._history.append({**frame, "signed_in": self.signed_in()})
+
+    def history(self) -> list[dict]:
+        return list(self._history)
+
     def get_frame(self) -> dict | None:
         """Get the current frame from the state manager."""
         if self._state_manager is None:
@@ -221,6 +246,9 @@ class LiveSession:
         return len(self.clients)
 
     async def stop(self):
+        if self._history_task:
+            self._history_task.cancel()
+        self._history.clear()
         if self._replayer:
             self._replayer.stop()
         for task in list(self._radio_tasks):
@@ -385,6 +413,9 @@ async def live_websocket(
             "total_laps": 0,
             "quali_phases": None,
         })
+        history = session.history()
+        if history:
+            await websocket.send_json({"type": "history", "frames": history})
 
         # Broadcast loop: push frames to this client at ~2Hz
         frame_interval = 0.5

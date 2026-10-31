@@ -306,12 +306,15 @@ class LiveSignalRClient:
         except urllib.error.HTTPError as e:
             if not token or e.code not in (401, 403):
                 raise
-            logger.warning("F1 rejected the F1 TV token (HTTP %s), using the free feed", e.code)
-            self._auth_rejected = True
             token = None
             connection_token, cookie = await asyncio.get_event_loop().run_in_executor(
                 None, self._negotiate, None
             )
+            # Only now is it the token: when F1 refuses this connection
+            # altogether (a VPN), the line above raises and the token is
+            # tried again next time
+            logger.warning("F1 rejected the F1 TV token (HTTP %s), using the free feed", e.code)
+            self._auth_rejected = True
         topics = _TOPICS + _AUTH_TOPICS if token else _TOPICS
         self.signed_in = bool(token)
 

@@ -21,6 +21,7 @@ router = APIRouter(prefix="/api/f1tv", tags=["f1tv"])
 class PlayRequest(BaseModel):
     content: str  # content id or F1 TV link
     channel_id: Optional[str] = None
+    live: bool = False  # live streams skip reading the video's start time
 
 
 def _error(e: f1tv_video.F1TVError) -> JSONResponse:
@@ -39,6 +40,25 @@ async def sync(year: int, round: int, type: str):
         return await broadcast_sync.offset(year, round, type)
     except Exception as e:
         logger.info("Broadcast sync for %s %s %s: %s", year, round, type, e)
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/live-sync")
+async def live_sync(year: int, round: int, type: str):
+    """How long after the moment on screen F1 TV stamps this session's live
+    video (seconds), matched from an onboard's engine sound against live
+    timing. 404 until it can be worked out (it needs a couple of minutes of
+    live driving). 409 when F1 TV encrypts the onboards' sound, so it never
+    can be."""
+    from services import broadcast_sync
+
+    try:
+        return await broadcast_sync.live_stamp_delay(year, round, type)
+    except broadcast_sync.AudioProtected as e:
+        logger.info("Live broadcast sync for %s %s %s: %s", year, round, type, e)
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        logger.info("Live broadcast sync for %s %s %s: %s", year, round, type, e)
         raise HTTPException(status_code=404, detail=str(e))
 
 
@@ -69,14 +89,18 @@ async def replay_start(year: int, round: int, type: str):
 
 
 @router.get("/find")
-async def find(year: int, round: int, type: str):
-    """The F1 TV replay of a session, so Broadcast can open it without a link."""
+async def find(year: int, round: int, type: str, live: bool = False):
+    """The F1 TV replay of a session (or its live stream, with live=true),
+    so Broadcast can open it without a link."""
     try:
-        found = await f1tv_video.find_replay(year, round, type)
+        found = await (f1tv_video.find_live if live else f1tv_video.find_replay)(year, round, type)
     except f1tv_video.F1TVError as e:
         raise HTTPException(status_code=e.status or 502, detail=str(e))
     if not found:
-        raise HTTPException(status_code=404, detail="No F1 TV replay found for this session yet")
+        raise HTTPException(
+            status_code=404,
+            detail="F1 TV isn't streaming this session yet" if live else "No F1 TV replay found for this session yet",
+        )
     return found
 
 
@@ -91,7 +115,7 @@ async def content(q: str):
 @router.post("/play")
 async def play(body: PlayRequest):
     try:
-        return await f1tv_video.play(f1tv_video.parse_content_id(body.content), body.channel_id)
+        return await f1tv_video.play(f1tv_video.parse_content_id(body.content), body.channel_id, live=body.live)
     except f1tv_video.F1TVError as e:
         return _error(e)
 
