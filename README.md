@@ -26,7 +26,7 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 
 ## Features
 
-- **F1 TV broadcast** (new in 2.5, replays only) - watch a session's F1 TV replay inside the app, synced automatically to the timing, with onboard cameras, telemetry and mini-sectors beside it. See [F1 TV broadcast](#f1-tv-broadcast)
+- **F1 TV broadcast** (new in 2.5, live timing in 2.5.1) - watch a session's F1 TV broadcast inside the app, live or as a replay, synced automatically to the timing, with onboard cameras, telemetry and mini-sectors beside it. See [F1 TV broadcast](#f1-tv-broadcast)
 - **Live timing** (Beta) - connect to live F1 sessions during race weekends with real-time data from the F1 SignalR stream, including a broadcast delay slider and automatic detection of post-session replays
 - **Track map** with real-time car positions from GPS telemetry, updating every 0.5 seconds with smooth interpolation, marshal sector flags, and toggleable corner numbers
 - **Driver leaderboard** showing position, gap to leader, interval, last lap time, sector indicators (qualifying/practice), tyre compound and age, tyre history, pit stop count and live pit timer, grid position changes, fastest lap indicator, investigation/penalty status, and sub-1-second interval highlighting
@@ -51,16 +51,21 @@ A web app for watching Formula 1 sessions with real timing data, car positions o
 
 ## F1 TV Broadcast
 
-Watch the session's F1 TV replay inside the app, in step with the timing. Switch the track map to **Broadcast** (top right of the track map): the app finds the session on F1 TV, lines the video up with the timing, and keeps it there as you play, pause, change speed and skip, including **Skip to restart** after a red flag.
-
-**Replays only for now.** Broadcast isn't available in live timing yet.
+Watch the session's F1 TV broadcast inside the app, in step with the timing, in replays and live timing. Switch the track map to **Broadcast** (top right of the track map): the app finds the session on F1 TV and lines the video up with the timing. In replays it keeps it there as you play, pause, change speed and skip, including **Skip to restart** after a red flag. In live timing, see [Live](#live).
 
 **Needs:** an F1 TV **Pro or Premium** subscription, signed in on the server (see [F1 TV account](#f1-tv-account)). Self-hosted only. Tablets and larger screens. F1 TV only streams in some countries and decides by your internet address, so a VPN can stop the video; if it won't play, the app says why.
 
 ### Views
 
-- **Multi-view** - the broadcast with up to two drivers' onboard cameras and the track map beside it. Pick each onboard from a driver menu; drag the edge of the side panel to make it narrower.
-- **Single view** - the broadcast full width, with the track map's lines over it.
+- **Multi-view** - the broadcast and drivers' onboard cameras with the track map, in one of five layouts picked from the box icons in the hover controls:
+  - **Main + 2** - the main view, with two smaller views and the track map beside it. Drag the edge of the side panel to make it narrower.
+  - **Main + 4** - the main view, with four smaller views and the track map along the bottom.
+  - **Side by side** - two views, with the track map below.
+  - **2×2** - four views in a square, with the track map in the middle.
+  - **Grid** - five views and the track map, all the same size.
+- **Single view** - one view full width, with the track map's lines over it.
+
+Pick each view from its menu: the broadcast or any driver's onboard. **Main view** picks what the main view shows, and **⇄** on a smaller view swaps it in. The sound follows the main view; a view's speaker button plays its sound instead.
 
 Choose which opens in **Settings > Broadcast**, along with onboard telemetry, the track map and race control. The hover controls on the video change the same choices, and they're remembered. On touch screens, tap the video to show the controls.
 
@@ -91,9 +96,17 @@ The hover controls show how the session is synced:
 | Synced by video time stamp (approximate) | F1 TV protects some sessions' audio, so the engine sound can't be matched; the time stamp in F1 TV's video is used instead, usually within a second or two |
 | Synced manually | You lined it up yourself |
 
-**Fine-tune video sync** nudges the video ±0.5s or ±5s; the adjustment is remembered per session, and its × goes back to the automatic sync. **Sync manually** gives the video its own play bar: find the moment that matches the timing (lights out or a car crossing the line works well) and press **Set sync here**.
+**Fine-tune video sync** nudges the video ±0.5s or ±5s; the adjustment is remembered per session, shows in the status, and its × goes back to the automatic sync. In races and sprints, **Leader crossed the line** does it for you: press it as the leader crosses the line on screen (when the lap count changes), within 30 seconds of the timing's lap change. **Sync manually** gives the video its own play bar: find the moment that matches the timing (lights out or a car crossing the line works well) and press **Set sync here**.
 
 Picture quality adjusts to your connection: it starts lower and improves after a few seconds.
+
+### Live
+
+The app finds the session's stream once F1 TV marks it as live, and checks every 30 seconds until F1 TV is streaming it. The video plays at F1 TV's live pace, which runs behind the timing, so the timing is held back to match: the delay button shows the broadcast's delay while it's on, and **Fine-tune video sync** and **Leader crossed the line** adjust it. The sync uses the time stamp in F1 TV's video; where F1 TV doesn't encrypt the onboards' sound, it's checked against the engine sound.
+
+The server keeps the last two minutes of live timing, so turning the broadcast on jumps the timing back to the video's moment instead of freezing it. If the server has only just connected to live timing (the first viewer of a session), a notice over the timing tower and track map shows how far the timing is held back and counts down until it catches up.
+
+Mute, volume, the lap count and fullscreen are in the bottom bar, as in replays.
 
 ## Architecture
 
