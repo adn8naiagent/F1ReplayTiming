@@ -81,6 +81,8 @@ export interface ReplayFrame {
   rc_messages?: RCMessage[];
   red_flag_end?: number;
   sector_flags?: { sector: number; flag: string; driver: string }[];
+  /** Live only: the real time (UTC, epoch seconds) of the frame's data */
+  utc?: number | null;
   /** Live only: the latest captioned team radio clips */
   team_radio?: RadioClip[];
   /** Live only: mini-sectors per sector, when the feed has them */

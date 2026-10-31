@@ -115,7 +115,7 @@ export function useF1TVStream(videoRef: React.RefObject<HTMLVideoElement | null>
   useEffect(() => () => { void unload(); }, [unload]);
 
   const load = useCallback(
-    async (content: string, channelId: string | null, opts: StreamOptions) => {
+    async (content: string, channelId: string | null, opts: StreamOptions, live = false) => {
       const video = videoRef.current;
       if (!video) return;
       await unload();
@@ -131,7 +131,7 @@ export function useF1TVStream(videoRef: React.RefObject<HTMLVideoElement | null>
 
       let pb: F1TVPlayback;
       try {
-        pb = await f1tv.play(content, channelId);
+        pb = await f1tv.play(content, channelId, live);
       } catch (e) {
         const err = e as F1TVRequestError;
         return fail(err.message, err.status, err.body);
@@ -218,5 +218,14 @@ export function useF1TVStream(videoRef: React.RefObject<HTMLVideoElement | null>
     return () => clearInterval(id);
   }, [state]);
 
-  return { state, debug, load, unload };
+  /** The real time (epoch seconds) of the moment showing, for a live stream:
+   *  F1 TV's live video carries the time it was sent out. Null otherwise. */
+  const playheadUtc = useCallback((): number | null => {
+    const player = playerRef.current;
+    if (!player || !player.isLive()) return null;
+    const date = player.getPlayheadTimeAsDate();
+    return date ? date.getTime() / 1000 : null;
+  }, []);
+
+  return { state, debug, load, unload, playheadUtc };
 }

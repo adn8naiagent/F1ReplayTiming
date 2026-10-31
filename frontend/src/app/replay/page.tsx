@@ -10,7 +10,7 @@ import { matchFrame } from "@/lib/replayMatch";
 import { useSettings } from "@/hooks/useSettings";
 import SessionBanner from "@/components/SessionBanner";
 import TrackCanvas from "@/components/TrackCanvas";
-import Leaderboard, { type LapEntry } from "@/components/Leaderboard";
+import Leaderboard, { leaderCrossingTimes, type LapEntry } from "@/components/Leaderboard";
 import PlaybackControls from "@/components/PlaybackControls";
 import TelemetryChart from "@/components/TelemetryChart";
 import SyncPhoto from "@/components/SyncPhoto";
@@ -257,6 +257,10 @@ export default function ReplayPage() {
 
   // Build lookup: driver -> lap_number -> lap_time
   const lapData = useMemo(() => (lapsResponse?.laps ? buildLapData(lapsResponse.laps) : undefined), [lapsResponse]);
+  const leaderCrossings = useMemo(
+    () => ((sessionType === "R" || sessionType === "S") && lapsResponse?.laps ? leaderCrossingTimes(lapsResponse.laps) : undefined),
+    [sessionType, lapsResponse],
+  );
 
   // Which player: the server setting, a per-tab ?player=old|new override, or
   // the WebSocket player if the static files can't be loaded.
@@ -835,6 +839,7 @@ export default function ReplayPage() {
                 <BroadcastView
                   sessionKey={`${year}_${round}_${sessionType}`}
                   timestamp={replay.frame?.timestamp}
+                  leaderCrossings={leaderCrossings}
                   playing={replay.playing}
                   speed={replay.speed}
                   multiView={settings.broadcastMultiView}

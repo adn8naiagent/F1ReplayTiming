@@ -27,6 +27,18 @@ export interface LapEntry {
   pit_out: boolean;
 }
 
+/** When the leader crossed the line at the end of each lap: each lap's
+ *  earliest completion. */
+export function leaderCrossingTimes(laps: LapEntry[]): number[] {
+  const first = new Map<number, number>();
+  for (const l of laps) {
+    if (l.time == null || !l.lap_number) continue;
+    const t = first.get(l.lap_number);
+    if (t === undefined || l.time < t) first.set(l.lap_number, l.time);
+  }
+  return Array.from(first.values()).sort((a, b) => a - b);
+}
+
 interface Props {
   drivers: ReplayDriver[];
   highlightedDrivers: string[];
