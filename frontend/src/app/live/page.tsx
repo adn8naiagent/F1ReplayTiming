@@ -18,10 +18,12 @@ import SessionLapAnalysis from "@/components/SessionLapAnalysis";
 import SectorFocusChips, { sectorTarget } from "@/components/SectorFocus";
 import TeamRadio from "@/components/TeamRadio";
 import TelemetryChart from "@/components/TelemetryChart";
-import Leaderboard from "@/components/Leaderboard";
+import Leaderboard, { leaderCrossingTimes } from "@/components/Leaderboard";
 import { miniMarkersWidth, MINI_HEX } from "@/lib/miniSectors";
 import PiPWindow from "@/components/PiPWindow";
-import { Maximize, Minimize, ArrowUpRight } from "lucide-react";
+import BroadcastView from "@/components/BroadcastView";
+import { f1tv } from "@/lib/f1tv";
+import { Maximize, Minimize, ArrowUpRight, Volume2, VolumeX } from "lucide-react";
 
 interface TrackData {
   track_points: { x: number; y: number }[];
@@ -199,7 +201,54 @@ function LiveTiming() {
     `/api/sessions/${year}/${round}/track?type=${sessionType}`,
   );
 
-  const live = useLiveSocket(year, round, sessionType, speed, delayOffset);
+  // F1 TV broadcast (Pro or Premium): its live stream runs behind the
+  // timing, so while it shows, the timing is delayed to match it
+  const appConfig = useAppConfig();
+  const [f1tvVideo, setF1tvVideo] = useState(false);
+  useEffect(() => {
+    if (!appConfig?.f1tv) return;
+    f1tv.status().then((st) => setF1tvVideo(st.signed_in && /\b(pro|premium)\b/i.test(st.product ?? ""))).catch(() => {});
+  }, [appConfig?.f1tv]);
+  const [broadcastOn, setBroadcastOn] = useState(false);
+  const [broadcastDelay, setBroadcastDelay] = useState<number | null>(null);
+  const effectiveDelay = broadcastOn && broadcastDelay !== null ? broadcastDelay : delayOffset;
+  // Touch screens can't hover: a tap on the broadcast shows its controls for a few seconds
+  const [broadcastControls, setBroadcastControls] = useState(false);
+  const broadcastControlsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const revealBroadcastControls = useCallback(() => {
+    setBroadcastControls(true);
+    clearTimeout(broadcastControlsTimer.current);
+    broadcastControlsTimer.current = setTimeout(() => setBroadcastControls(false), 4000);
+  }, []);
+  // The broadcast's sound (shared with replays)
+  const [broadcastMuted, setBroadcastMuted] = useState(() => {
+    try { return localStorage.getItem("f1tv_muted") === "1"; } catch { return false; }
+  });
+  const toggleBroadcastMute = () => setBroadcastMuted((m) => {
+    try { localStorage.setItem("f1tv_muted", m ? "0" : "1"); } catch {}
+    return !m;
+  });
+  const [broadcastVolume, setBroadcastVolumeState] = useState(() => {
+    try { const v = Number(localStorage.getItem("f1tv_volume")); return Number.isFinite(v) && localStorage.getItem("f1tv_volume") !== null ? v : 1; } catch { return 1; }
+  });
+  const setBroadcastVolume = (v: number) => {
+    setBroadcastVolumeState(v);
+    try { localStorage.setItem("f1tv_volume", String(v)); } catch {}
+    // Moving the slider up is asking to hear it
+    if (v > 0 && broadcastMuted) toggleBroadcastMute();
+  };
+
+  const live = useLiveSocket(year, round, sessionType, speed, effectiveDelay);
+  const latestFrame = useRef(live.frame);
+  latestFrame.current = live.frame;
+  const broadcastLive = useMemo(() => ({
+    arrivalLag: live.arrivalLag,
+    onDelay: setBroadcastDelay,
+    frameClock: () => {
+      const f = latestFrame.current;
+      return f && typeof f.utc === "number" ? { timestamp: f.timestamp, utc: f.utc } : null;
+    },
+  }), [live.arrivalLag]);
 
   // Wake Lock — prevent screen sleep during live sessions
   const wakeLockRef = useRef<WakeLockSentinel | null>(null);
@@ -220,6 +269,20 @@ function LiveTiming() {
   const sessionTypeUpper = sessionType.toUpperCase();
   const isRace = sessionTypeUpper === "R" || sessionTypeUpper === "S";
   const isQualifying = sessionTypeUpper === "Q" || sessionTypeUpper === "SQ";
+  // While the timing is held back further than there's timing yet (the
+  // server has only just connected): over the timing and the map
+  const delayNotice = live.delayWait !== null && (
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-f1-card/85 backdrop-blur-sm pointer-events-none px-4">
+      <div className="text-center">
+        <p className="text-sm font-bold text-white">{broadcastOn ? "Syncing with the broadcast" : "Applying the delay"}</p>
+        <p className="text-xs text-f1-muted mt-1 leading-relaxed">
+          Timing held back {Math.round(Math.abs(effectiveDelay))}s{broadcastOn ? " to match the video" : ""}.
+          {" "}Showing in {live.delayWait}s.
+        </p>
+      </div>
+    </div>
+  );
+  const leaderCrossings = useMemo(() => (isRace && live.laps ? leaderCrossingTimes(live.laps) : undefined), [isRace, live.laps]);
 
   // RC sound notification
   const lastRcCountRef = useRef(0);
@@ -386,6 +449,7 @@ function LiveTiming() {
           year={year}
           settings={settings}
           onSettingChange={updateSetting}
+          broadcastSettings={f1tvVideo}
           weather={weather}
           extraActions={
             <a
@@ -416,7 +480,10 @@ function LiveTiming() {
           )}
 
           {(!isMobile || mobileTrackOpen) && (
-            <div className="h-[42vh] sm:h-full relative">
+            <div
+              onPointerDown={(e) => { if (broadcastOn && e.pointerType !== "mouse") revealBroadcastControls(); }}
+              className="h-[42vh] sm:h-full relative group/view"
+            >
               {/* Waiting for session overlay */}
               {waitingForSession && (
                 <div className="absolute inset-0 z-30 flex items-center justify-center">
@@ -476,8 +543,28 @@ function LiveTiming() {
                 </div>
               )}
 
-              {/* LIVE badge + Race Control toggle */}
-              <div className="absolute top-3 right-3 z-10 flex items-center gap-2">
+              {/* LIVE badge + Race Control toggle (and, over the broadcast,
+                  shown on hover like the player's controls) */}
+              <div className={`absolute top-3 right-3 z-30 flex items-center gap-2 ${
+                broadcastOn ? `transition-opacity ${broadcastControls ? "opacity-100" : "opacity-0 group-hover/view:opacity-100 [@media(hover:none)]:pointer-events-none"}` : ""
+              }`}>
+                {f1tvVideo && !isMobile && (
+                  <div className="flex items-center rounded border border-f1-border bg-f1-card/90 backdrop-blur-sm overflow-hidden">
+                    {([false, true] as const).map((on) => (
+                      <button
+                        key={String(on)}
+                        onClick={() => { setBroadcastOn(on); if (!on) setBroadcastDelay(null); }}
+                        className={`px-2 py-1 text-xs font-bold transition-colors ${
+                          broadcastOn === on ? "bg-f1-red text-white" : "text-f1-muted hover:text-white"
+                        }`}
+                        title={on ? "Show F1 TV's live broadcast, with the timing delayed to match" : "Show the track map"}
+                      >
+                        {on ? "Broadcast" : "Track map"}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {!broadcastOn && (
                 <button
                   onClick={() => setRcPanelOpen(!rcPanelOpen)}
                   className={`hidden sm:flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
@@ -492,6 +579,7 @@ function LiveTiming() {
                   </svg>
                   RC
                 </button>
+                )}
                 <div className="flex items-center gap-1.5 px-2 py-1 bg-red-600 rounded text-xs font-extrabold text-white uppercase">
                   <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                   LIVE
@@ -499,7 +587,7 @@ function LiveTiming() {
               </div>
 
               {/* Race Control Messages panel */}
-              {rcPanelOpen && (
+              {rcPanelOpen && !broadcastOn && (
                 <div
                   ref={rcPanelRef}
                   className={`z-20 w-80 bg-f1-card/95 border border-f1-border rounded-lg shadow-xl backdrop-blur-sm overflow-hidden flex flex-col ${
@@ -578,7 +666,7 @@ function LiveTiming() {
               )}
 
               {/* Track dominance legend (from Lap Analysis → Compare) */}
-              {dominance && (
+              {dominance && !broadcastOn && (
                 <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-3 py-1.5 rounded bg-f1-card/90 border border-f1-border backdrop-blur-sm text-[10px]">
                   <span className="font-bold text-f1-muted uppercase tracking-wider">Track dominance</span>
                   {dominance.legend.map((l) => (
@@ -604,7 +692,7 @@ function LiveTiming() {
               />
 
               {/* Lap Analysis button - desktop only, bottom-right */}
-              {!isMobile && liveLaps && (
+              {!isMobile && liveLaps && !broadcastOn && (
                 <button
                   onClick={() => setLapAnalysisOpen(!lapAnalysisOpen)}
                   className={`absolute bottom-2 right-3 z-20 flex items-center gap-1 px-2 py-1 rounded text-xs font-bold transition-colors ${
@@ -628,21 +716,8 @@ function LiveTiming() {
                 drivers={drivers}
               />
 
-              {/* Live positions unavailable: only when the server's live
-                  connection isn't signed in to F1 TV */}
-              {live.frame?.signed_in === false && !hasTelemetry && !drivers.some((d) => d.x !== 0 || d.y !== 0) && (
-              <div className="absolute inset-0 z-10 flex items-end justify-center pointer-events-none pb-4">
-                <div className="bg-f1-card/90 border border-f1-border rounded-lg px-4 py-2.5 backdrop-blur-sm text-center max-w-sm">
-                  <p className="text-f1-muted text-xs leading-relaxed">
-                    Car positions and telemetry in live timing need an F1 TV sign-in on this server.
-                    They&apos;ll be in the replay once the session is processed.
-                  </p>
-                </div>
-              </div>
-              )}
-
               {/* Telemetry overlay - desktop only, bottom-left (telemetry arrives with an F1 TV sign-in) */}
-              {hasTelemetry && !isMobile && showTelemetry && (
+              {hasTelemetry && !isMobile && showTelemetry && !broadcastOn && (
                 <div className="absolute bottom-2 left-3 z-10 flex flex-col gap-1">
                   <button
                     onClick={() => setShowTelemetry(false)}
@@ -662,7 +737,7 @@ function LiveTiming() {
               )}
 
               {/* Telemetry toggle - desktop only, bottom-left */}
-              {hasTelemetry && !isMobile && !showTelemetry && (
+              {hasTelemetry && !isMobile && !showTelemetry && !broadcastOn && (
                 <button
                   onClick={() => setShowTelemetry(true)}
                   className="absolute bottom-2 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
@@ -671,18 +746,70 @@ function LiveTiming() {
                 </button>
               )}
 
-              {trackPoints.length > 0 ? (
-                <TrackCanvas
-                  trackPoints={trackPoints}
-                  rotation={rotation}
-                  trackStatus={trackStatus}
-                  drivers={trackDrivers}
-                  highlightedDrivers={selectedDrivers}
-                  playbackSpeed={1}
-                  showDriverNames={settings.showDriverNames}
-                  corners={settings.showCorners ? trackData?.corners : null}
-                  {...trackExtras}
+              {broadcastOn ? (
+                <BroadcastView
+                  sessionKey={`${year}_${round}_${sessionType}`}
+                  timestamp={live.frame?.timestamp}
+                  playing
+                  speed={1}
+                  live={broadcastLive}
+                  leaderCrossings={leaderCrossings}
+                  multiView={settings.broadcastMultiView}
+                  onMultiViewChange={(v) => updateSetting("broadcastMultiView", v)}
+                  showTelemetry={settings.broadcastTelemetry}
+                  showMap={settings.broadcastMap}
+                  onToggleMap={() => updateSetting("broadcastMap", !settings.broadcastMap)}
+                  trackOverlay={
+                    <div className="relative w-full h-full">
+                      <TrackCanvas
+                        trackPoints={trackPoints}
+                        rotation={rotation}
+                        trackStatus={trackStatus}
+                        drivers={trackDrivers}
+                        highlightedDrivers={selectedDrivers}
+                        playbackSpeed={1}
+                        showDriverNames={settings.showDriverNames}
+                        corners={settings.showCorners ? trackData?.corners : null}
+                        marshalSectors={trackData?.marshal_sectors}
+                        trackWidth={5}
+                        lightTrack
+                        compact
+                      />
+                      {delayNotice}
+                    </div>
+                  }
+                  raceControl={settings.broadcastRaceControl ? (live.rcMessages || [])[0] ?? null : null}
+                  raceControlOn={settings.broadcastRaceControl}
+                  onToggleRaceControl={() => updateSetting("broadcastRaceControl", !settings.broadcastRaceControl)}
+                  teamRadioOn={settings.showTeamRadio}
+                  onToggleTeamRadio={() => updateSetting("showTeamRadio", !settings.showTeamRadio)}
+                  radioAudioOn={!settings.teamRadioMuted}
+                  onToggleRadioAudio={() => updateSetting("teamRadioMuted", !settings.teamRadioMuted)}
+                  controlsShown={broadcastControls}
+                  muted={broadcastMuted}
+                  volume={broadcastVolume}
+                  driversByNumber={Object.fromEntries(
+                    drivers.flatMap((d) => {
+                      const n = sessionData?.drivers.find((sd) => sd.abbreviation === d.abbr)?.driver_number;
+                      return n ? [[n, d]] : [];
+                    }),
+                  )}
                 />
+              ) : trackPoints.length > 0 ? (
+                <>
+                  <TrackCanvas
+                    trackPoints={trackPoints}
+                    rotation={rotation}
+                    trackStatus={trackStatus}
+                    drivers={trackDrivers}
+                    highlightedDrivers={selectedDrivers}
+                    playbackSpeed={1}
+                    showDriverNames={settings.showDriverNames}
+                    corners={settings.showCorners ? trackData?.corners : null}
+                    {...trackExtras}
+                  />
+                  {delayNotice}
+                </>
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <p className="text-f1-muted text-sm">Track data not available</p>
@@ -690,7 +817,7 @@ function LiveTiming() {
               )}
 
               {/* Sector overlay controls - qualifying and practice */}
-              {hasSectors && trackData?.sector_boundaries && (
+              {hasSectors && trackData?.sector_boundaries && !broadcastOn && (
                 <div className={`absolute bottom-2 z-20 flex items-center gap-1 ${isMobile ? "left-2 right-2" : liveLaps ? "right-24" : "right-3"}`}>
                   {showSectorOverlay && (
                     <SectorFocusChips selected={selectedDrivers} drivers={drivers} target={sectorFocus} onPick={setSectorFocusDriver} />
@@ -726,24 +853,6 @@ function LiveTiming() {
                 </div>
               )}
 
-              {/* Fullscreen toggle - top-left */}
-              {!isMobile && (
-                <button
-                  onClick={() => {
-                    const next = !fullscreen;
-                    setFullscreen(next);
-                    if (next && document.documentElement.requestFullscreen) {
-                      document.documentElement.requestFullscreen();
-                    } else if (!next && document.fullscreenElement) {
-                      document.exitFullscreen();
-                    }
-                  }}
-                  className="absolute top-3 left-3 z-20 px-2 py-1 bg-f1-card/90 border border-f1-border rounded text-[10px] font-bold text-f1-muted hover:text-white transition-colors backdrop-blur-sm"
-                  title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
-                >
-                  {fullscreen ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
-                </button>
-              )}
             </div>
           )}
         </div>
@@ -826,6 +935,8 @@ function LiveTiming() {
             )}
 
             {(!isMobile || mobileLeaderboardOpen) && (
+              <div className="relative h-full">
+              {delayNotice}
               <Leaderboard
                 drivers={drivers}
                 highlightedDrivers={selectedDrivers}
@@ -837,6 +948,7 @@ function LiveTiming() {
                 onScaleChange={setLeaderboardScale}
                 miniSectors={miniSectors}
               />
+              </div>
             )}
           </div>
           </div>
@@ -880,16 +992,29 @@ function LiveTiming() {
       </div>
 
       {/* Live info bar (replaces playback controls) */}
-      <div className="flex-shrink-0 bg-f1-card border-t border-f1-border px-4 py-2 flex items-center justify-between">
+      <div className="flex-shrink-0 bg-f1-card border-t border-f1-border px-4 py-2 sm:px-6 sm:py-3 flex items-center justify-between">
         <div className="flex items-center gap-4">
-          {/* Lap counter */}
-          {isRace && live.frame && (
-            <div className="text-sm">
-              <span className="text-f1-muted">Lap </span>
-              <span className="text-white font-bold">{live.frame.lap}</span>
-              {live.frame.total_laps > 0 && (
-                <span className="text-f1-muted">/{live.frame.total_laps}</span>
-              )}
+          {/* The broadcast's sound, far left while it's showing: mute, and a
+              volume slider that opens on hover (as in replays) */}
+          {broadcastOn && (
+            <div className="group/volume flex items-center">
+              <button
+                onClick={toggleBroadcastMute}
+                className={`w-8 h-8 flex items-center justify-center rounded transition-colors ${broadcastMuted ? "text-f1-red hover:bg-f1-red/10" : "text-f1-muted hover:text-white hover:bg-white/10"}`}
+                title={broadcastMuted ? "Unmute the broadcast" : "Mute the broadcast"}
+              >
+                {broadcastMuted || broadcastVolume === 0 ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+              <input
+                type="range"
+                min={0}
+                max={100}
+                value={broadcastMuted ? 0 : Math.round(broadcastVolume * 100)}
+                onChange={(e) => setBroadcastVolume(Number(e.target.value) / 100)}
+                className="w-0 opacity-0 group-hover/volume:w-20 group-hover/volume:opacity-100 focus:w-20 focus:opacity-100 ml-1 transition-all duration-200 accent-white cursor-pointer"
+                aria-label="Broadcast volume"
+                title={`Volume ${broadcastMuted ? 0 : Math.round(broadcastVolume * 100)}%`}
+              />
             </div>
           )}
 
@@ -944,7 +1069,9 @@ function LiveTiming() {
                   : "bg-f1-dark border-f1-border text-f1-muted hover:text-white"
               }`}
             >
-              Delay: {formatDelayShort(delayOffset)}
+              {broadcastOn && broadcastDelay !== null
+                ? `Delay: ${formatDelayShort(broadcastDelay)} (broadcast)`
+                : `Delay: ${formatDelayShort(delayOffset)}`}
             </button>
             {showDelaySlider && (<>
               {/* Modal backdrop */}
@@ -1095,6 +1222,12 @@ function LiveTiming() {
               <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
               <span className="text-xs font-bold text-red-400 uppercase">Live</span>
             </div>
+            {/* Lap counter, where replays have it */}
+            {isRace && live.frame && live.frame.lap > 0 && (
+              <span className="text-sm font-extrabold text-white tabular-nums">
+                Lap {live.frame.lap}{live.frame.total_laps > 0 && `/${live.frame.total_laps}`}
+              </span>
+            )}
             {!isMobile && !isIOS && (
               <button
                 onClick={() => setPipActive(!pipActive)}
@@ -1110,6 +1243,24 @@ function LiveTiming() {
                   <rect x="12" y="10" width="10" height="10" rx="1" fill="currentColor" opacity="0.3" />
                 </svg>
                 PiP
+              </button>
+            )}
+            {/* Fullscreen, far right (as in replays) */}
+            {!isMobile && (
+              <button
+                onClick={() => {
+                  const next = !fullscreen;
+                  setFullscreen(next);
+                  if (next && document.documentElement.requestFullscreen) {
+                    document.documentElement.requestFullscreen();
+                  } else if (!next && document.fullscreenElement) {
+                    document.exitFullscreen();
+                  }
+                }}
+                className="px-3 py-1.5 rounded border border-f1-border text-f1-muted hover:text-white hover:bg-white/10 transition-colors text-xs font-bold"
+                title={fullscreen ? "Exit fullscreen" : "Fullscreen"}
+              >
+                {fullscreen ? <Minimize className="w-4 h-4 inline-block -mt-0.5" /> : <Maximize className="w-4 h-4 inline-block -mt-0.5" />}
               </button>
             )}
           </div>

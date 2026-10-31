@@ -141,7 +141,7 @@ async def _audio(manifest_url: str, start_s: float, end_s: float) -> tuple[np.nd
 
 
 def _match(pcm: np.ndarray, audio_start: float, ts: np.ndarray, rpm: np.ndarray,
-           t0: float, lo: float, hi: float) -> tuple[float, float]:
+           t0: float, lo: float, hi: float, window_s: float = _WINDOW_S) -> tuple[float, float]:
     """The offset (lo..hi) where the audio's energy along the engine's
     harmonics is strongest, and how clearly it beats any other offset."""
     hop = int(_HOP_S * _SR)
@@ -165,7 +165,7 @@ def _match(pcm: np.ndarray, audio_start: float, ts: np.ndarray, rpm: np.ndarray,
         np.maximum(widened, np.roll(spec, -k, axis=1), out=widened)
     spec = widened
 
-    tt = np.arange(t0, t0 + _WINDOW_S, _HOP_S)
+    tt = np.arange(t0, t0 + window_s, _HOP_S)
     rr = np.interp(tt, ts, rpm)
     # A V6 four-stroke's harmonics are multiples of rpm/120. Scored against
     # the energy halfway between them, so audio full of other tones (music,
@@ -290,4 +290,196 @@ async def offset(year: int, round_num: int, session_type: str) -> dict[str, Any]
     finally:
         _running.pop(key, None)
     await asyncio.to_thread(put_json, path, result)
+    return result
+
+
+# --- Live -------------------------------------------------------------------
+#
+# F1 TV's live video is stamped with the real time each piece was sent out,
+# a few seconds after it happened (7.7s on replays). The live version of the
+# match measures that gap for this stream: an onboard's recent engine sound,
+# placed by its stamps, against the driver's revs from live timing, placed by
+# their real times. The broadcast then delays the timing by exactly that.
+
+_LIVE_WINDOW_S = 75.0  # of recent driving to compare
+_LIVE_LO, _LIVE_HI = -5.0, 40.0  # how far the stamps may run after the moment
+_live_results: dict[str, dict[str, Any]] = {}
+
+
+def _iso_seconds(value: str | None) -> float:
+    """An ISO 8601 date-time as epoch seconds (0 if missing)."""
+    if not value:
+        return 0.0
+    from datetime import datetime
+    return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+
+
+def _duration_seconds(value: str | None) -> float:
+    """An ISO 8601 duration such as PT1H2M3.5S as seconds (0 if missing)."""
+    m = re.fullmatch(r"P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?", value or "")
+    if not m:
+        return 0.0
+    d, h, mi, sec = (float(x) if x else 0.0 for x in m.groups())
+    return d * 86400 + h * 3600 + mi * 60 + sec
+
+
+def live_audio_segments(xml: str, manifest_url: str) -> tuple[str, list[tuple[float, float, str]]]:
+    """A live manifest's audio: the init segment's URL, and each media
+    segment as (real start time, duration, URL). Real time follows DASH (and
+    the browser's player): availabilityStartTime + period start +
+    (segment time - presentationTimeOffset) / timescale."""
+    mpd = re.search(r"<MPD[^>]*>", xml)
+    period = re.search(r"<Period[^>]*>", xml)
+    ast = _iso_seconds(re.search(r'availabilityStartTime="([^"]+)"', mpd.group(0)).group(1)) if mpd and "availabilityStartTime" in mpd.group(0) else 0.0
+    pstart = _duration_seconds((re.search(r'start="([^"]+)"', period.group(0)) or [None, None])[1]) if period else 0.0
+    sets = re.findall(r"<AdaptationSet[^>]*>.*?</AdaptationSet>", xml, re.S)
+    audio = next((a for a in sets if re.search(r'(contentType|mimeType)="audio', a)), None)
+    if audio is None:
+        raise RuntimeError("No audio in this feed")
+    if "ContentProtection" in audio:
+        raise AudioProtected("This feed's audio is encrypted")
+    tpl_tag = re.search(r"<SegmentTemplate[^>]*>", audio)
+    rep = re.search(r'<Representation[^>]*id="([^"]+)"[^>]*?(?:bandwidth="(\d+)")?', audio)
+    if not tpl_tag or not rep:
+        raise RuntimeError("Couldn't read this feed's audio")
+    tpl = tpl_tag.group(0)
+    attr = lambda name, default=None: (re.search(rf'{name}="([^"]*)"', tpl) or [None, default])[1]
+    scale = int(attr("timescale", "1"))
+    pto = int(attr("presentationTimeOffset", "0"))
+    number = int(attr("startNumber", "1"))
+    fill = lambda u, t, n: urllib.parse.urljoin(
+        manifest_url,
+        u.replace("$RepresentationID$", rep.group(1)).replace("$Bandwidth$", rep.group(2) or "")
+         .replace("$Number$", str(n)).replace("$Time$", str(t)),
+    )
+    segments: list[tuple[float, float, str]] = []
+    t = 0
+    for s_tag in re.findall(r"<S [^>]*/?>", audio):
+        get = lambda name: (re.search(rf'\b{name}="(-?\d+)"', s_tag) or [None, None])[1]
+        if get("t") is not None:
+            t = int(get("t"))
+        d = int(get("d"))
+        for _ in range(int(get("r") or 0) + 1):
+            segments.append((ast + pstart + (t - pto) / scale, d / scale, fill(attr("media"), t, number)))
+            t += d
+            number += 1
+    return fill(attr("initialization"), 0, 0), segments
+
+
+async def _live_audio(manifest_url: str, start: float, end: float) -> tuple[np.ndarray, float]:
+    """Mono audio from a live feed between two real (stamp) times, and the
+    real time it starts at."""
+    import av
+
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        xml = (await client.get(manifest_url)).text
+        init_url, segments = live_audio_segments(xml, manifest_url)
+        wanted = [seg for seg in segments if seg[0] + seg[1] > start and seg[0] < end]
+        if not wanted or wanted[-1][0] + wanted[-1][1] < end - 1:
+            raise RuntimeError("The live stream doesn't reach that far yet")
+        sem = asyncio.Semaphore(6)
+
+        async def get(url: str) -> bytes:
+            async with sem:
+                for attempt in range(3):
+                    try:
+                        r = await client.get(url)
+                        return r.content if r.status_code == 200 else b""
+                    except httpx.TransportError:
+                        await asyncio.sleep(1 + attempt)
+                return b""
+
+        init = (await client.get(init_url)).content
+        data = await asyncio.gather(*[get(seg[2]) for seg in wanted])
+
+    def decode() -> np.ndarray:
+        if not all(data):
+            raise RuntimeError("A piece of the live audio didn't download")
+        container = av.open(io.BytesIO(init + b"".join(data)))
+        resampler = av.AudioResampler(format="flt", layout="mono", rate=_SR)
+        out = []
+        for frame in container.decode(audio=0):
+            out.extend(f.to_ndarray().reshape(-1) for f in resampler.resample(frame))
+        return np.concatenate(out)
+
+    return await asyncio.to_thread(decode), wanted[0][0]
+
+
+class AudioProtected(RuntimeError):
+    """F1 TV encrypts the stream's audio, so its engine sound can't be read."""
+
+
+async def _compute_live(year: int, round_num: int, session_type: str) -> dict[str, Any]:
+    from routers.live import _live_sessions
+
+    session = _live_sessions.get(f"{year}_{round_num}_{session_type}")
+    state = getattr(session, "_state_manager", None)
+    revs: dict[str, Any] = getattr(state, "rpm", None) or {}
+    if not revs:
+        raise RuntimeError("No live engine data yet")
+    found = await f1tv_video.find_live(year, round_num, session_type)
+    if not found:
+        raise RuntimeError("F1 TV isn't streaming this session")
+    content = await f1tv_video.content(found["content_id"])
+    onboards = {str(c.get("driver_number")): c["channel_id"] for c in content.get("channels", [])
+                if c.get("channel_id") and c.get("driver_number")}
+
+    # Drivers with an onboard who've been working the engine hard lately
+    n = int(_LIVE_WINDOW_S * 4)
+    candidates = []
+    for number, buf in revs.items():
+        if number not in onboards or len(buf) < n:
+            continue
+        a = np.array(buf, dtype=np.float64)
+        candidates.append(((a[-n:, 1] > _MIN_RPM).mean(), number, a))
+    candidates.sort(key=lambda c: c[0], reverse=True)
+
+    results: list[tuple[float, float, str]] = []
+    tried = protected = 0
+    for share, number, a in candidates[:4]:
+        if share < 0.6:
+            break
+        play = await f1tv_video.play(found["content_id"], onboards[number])
+        try:
+            async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+                xml = (await client.get(play["manifest_url"])).text
+            _, segments = live_audio_segments(xml, play["manifest_url"])
+            newest = segments[-1][0] + segments[-1][1] if segments else 0.0
+            # The newest stretch whose sound (up to _LIVE_HI later) is out
+            t1 = min(float(a[-1, 0]), newest - _LIVE_HI - 1)
+            t0 = t1 - _LIVE_WINDOW_S
+            if t0 < a[0, 0]:
+                continue
+            pcm, start = await _live_audio(play["manifest_url"], t0 + _LIVE_LO, t1 + _LIVE_HI)
+        except Exception as e:
+            tried += 1
+            protected += isinstance(e, AudioProtected)
+            logger.info("Live broadcast sync: no audio for car %s: %s", number, e)
+            continue
+        tried += 1
+        delay, margin = await asyncio.to_thread(
+            _match, pcm, start, a[:, 0], a[:, 1], t0, _LIVE_LO, _LIVE_HI, _LIVE_WINDOW_S,
+        )
+        logger.info("Live broadcast sync: car %s -> stamps %.1fs after the moment (margin %.1f)", number, delay, margin)
+        if margin < _MARGIN:
+            continue
+        results.append((delay, margin, number))
+        agreeing = [r for r in results if abs(r[0] - delay) <= _AGREE_S]
+        if len(agreeing) >= 2:
+            return {"stamp_delay": round(float(np.median([r[0] for r in agreeing])), 2),
+                    "drivers": [r[2] for r in agreeing]}
+    if tried and protected == tried:
+        raise AudioProtected("F1 TV encrypts this live stream's onboard sound, so it can't be matched")
+    raise RuntimeError("Couldn't match the onboard sound to the live timing yet")
+
+
+async def live_stamp_delay(year: int, round_num: int, session_type: str) -> dict[str, Any]:
+    """How long after the moment on screen F1 TV stamps its live video, for
+    this session, by engine sound. Kept once found (it doesn't change during
+    a stream)."""
+    key = f"{year}_{round_num}_{session_type}"
+    if key in _live_results:
+        return _live_results[key]
+    result = await _compute_live(year, round_num, session_type)
+    _live_results[key] = result
     return result

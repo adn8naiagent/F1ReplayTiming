@@ -2,6 +2,36 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
+## 2.5.1
+
+### Features
+
+- **F1 TV broadcast in live timing** — with F1 TV Pro or Premium, switch the live track map to **Broadcast** to watch the session live, with the same views, onboards, track map, race control and team radio as in replays. The app finds the stream once F1 TV marks the session as live, and checks again every 30 seconds until it's streaming. The timing is held back to match the video, and the delay button shows the broadcast's delay while it's on. The sync uses the video's time stamp; where F1 TV doesn't encrypt the onboards' sound, it's checked against the engine sound. **Fine-tune video sync** adds to it.
+
+- **More multi-view layouts** — **Main + 2**, **Main + 4**, **Side by side**, **2×2** and **Grid** (three across and two down, with the track map bottom right), picked from box icons in the hover controls. **⇄** on a view swaps it into the main view, and **Main view** picks what the main view shows: the broadcast or any driver's onboard. Swapping doesn't reload the videos.
+
+- **Sound per view** — the sound follows the main view; a view's speaker button plays its sound instead.
+
+- **Leader crossed the line sync** — in races and sprints, press it under **Fine-tune video sync** as the leader crosses the line on screen (when the lap count changes) to line the timing up with that moment. Works in live timing and replays, within 30 seconds of a lap change.
+
+### Improvements
+
+- **Live timing goes back to the broadcast's moment** — the server keeps the last two minutes of live timing and sends them when the page opens, so turning the broadcast on, or making the delay longer, jumps the timing back instead of freezing it. If the server has only just connected and has less timing than the delay, a notice over the timing tower and track map says how far the timing is held back and counts down until it shows.
+
+- **Live timing looks like replays** — the lap count, broadcast mute and volume, and the fullscreen button are in the bottom bar, where replays have them.
+
+- **Sync status shows fine-tuning** — when the sync has been fine-tuned, the status says by how much.
+
+- **Lap notifications and team radio show over the videos**, and view menus open above the other views and the track map, upwards when there's no room below.
+
+- **Single view shows the track map over an onboard** in the main view too, following the Track map setting.
+
+### Fixes
+
+- **Live timing no longer asks you to sign in to F1 TV** — the notice is gone, as you're always signed in.
+
+- **A refused live connection no longer signs F1 TV out** — when F1 refused live timing (for example on a VPN), the app treated the F1 TV sign-in as rejected and stopped using it.
+
 ## 2.5.0
 
 ### Features
