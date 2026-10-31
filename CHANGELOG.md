@@ -12,7 +12,7 @@ All notable changes to F1 Replay Timing will be documented in this file.
 
 - **Sound per view** — the sound follows the main view; a view's speaker button plays its sound instead.
 
-- **Leader crossed the line** — in races and sprints, press it under **Fine-tune video sync** as the leader crosses the line on screen (when the lap count changes) to line the timing up with that moment. Works in live timing and replays, within 30 seconds of a lap change.
+- **Leader crossed the line sync** — in races and sprints, press it under **Fine-tune video sync** as the leader crosses the line on screen (when the lap count changes) to line the timing up with that moment. Works in live timing and replays, within 30 seconds of a lap change.
 
 ### Improvements
 
