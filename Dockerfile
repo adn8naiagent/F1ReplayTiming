@@ -1,5 +1,7 @@
 # ── Stage 1: Build frontend ──
-FROM node:20-alpine AS frontend
+# Static files work on any platform, so build once on the builder's own
+# platform instead of under emulation (Next.js crashes under arm64 emulation)
+FROM --platform=$BUILDPLATFORM node:20-alpine AS frontend
 WORKDIR /app
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
