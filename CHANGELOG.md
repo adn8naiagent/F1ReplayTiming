@@ -2,12 +2,6 @@
 
 All notable changes to F1 Replay Timing will be documented in this file.
 
-## 2.5.2
-
-### Fixes
-
-- **Docker images for 2.5.1 weren't published** — the image build failed while building the web app for ARM computers (such as Apple silicon Macs and Raspberry Pis), so no 2.5.1 image was released. The web app is now built once and shared by both images. 2.5.2 is 2.5.1 with this fix.
-
 ## 2.5.1
 
 v2.5.1 F1 TV Live broadcast support, improved multi-view and broadcast sync
