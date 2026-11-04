@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: f1-replay-timing
+  namespace: f1-timing
+  labels:
+    app.kubernetes.io/name: f1-replay-timing
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: f1-replay-timing
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: f1-replay-timing
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: f1-timing
+          image: ghcr.io/adn8naiagent/f1replaytiming:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "8000"
+            - name: HOME
+              value: "/app/data"
+            - name: XDG_CONFIG_HOME
+              value: "/app/data/.config"
+            - name: F1TV_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: f1-timing-creds
+                  key: F1TV_SECRET_KEY
+            - name: F1_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: f1-timing-creds
+                  key: F1_USERNAME
+                  optional: true
+            - name: F1_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: f1-timing-creds
+                  key: F1_PASSWORD
+                  optional: true
+          resources:
+            limits:
+              cpu: "2"
+              memory: 4Gi
+            requests:
+              cpu: "500m"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data-volume
+              mountPath: /app/data
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: f1-data-pvc
